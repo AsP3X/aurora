@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { login, register } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -26,7 +27,9 @@ export default function Login() {
         setSuccess("Account created successfully! Signing you in...");
         await new Promise((resolve) => setTimeout(resolve, 1200));
       }
-      setAuth(res.token, res.user);
+      flushSync(() => {
+        setAuth(res.token, res.user);
+      });
       navigate("/");
     } catch (err: any) {
       setError(err.message || "Authentication failed");

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
+mod admin;
 mod auth;
 mod config;
 mod db;
@@ -108,6 +109,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .put(permissions::handlers::replace_user_permissions))
         .route("/api/v1/admin/users/{id}/permissions/{key}", axum::routing::delete(permissions::handlers::revoke_user_permission))
         .route("/api/v1/admin/users/{id}/effective-permissions", get(permissions::handlers::get_user_effective_permissions))
+        .route("/api/v1/admin/users/{id}/role", axum::routing::put(admin::handlers::update_user_role))
+        .route("/api/v1/admin/users/{id}", axum::routing::delete(admin::handlers::delete_user))
+        .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
+        .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song))
+        .route("/api/v1/admin/playlists", get(admin::handlers::list_all_playlists))
+        .route("/api/v1/admin/playlists/{id}", axum::routing::delete(admin::handlers::delete_playlist))
+        .route("/api/v1/admin/stats", get(admin::handlers::get_admin_stats))
+        .route("/api/v1/admin/settings", get(admin::handlers::list_settings).put(admin::handlers::update_setting))
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 
     Router::new()

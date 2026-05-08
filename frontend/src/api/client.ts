@@ -221,3 +221,64 @@ export async function setUserPermissions(userId: string, permissionKeys: string[
 export async function fetchUserEffectivePermissions(userId: string) {
   return apiFetch(`/admin/users/${userId}/effective-permissions`) as Promise<string[]>;
 }
+
+export async function updateUserRole(userId: string, role: string) {
+  return apiFetch(`/admin/users/${userId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function deleteUser(userId: string) {
+  return apiFetch(`/admin/users/${userId}`, { method: "DELETE" });
+}
+
+export async function fetchAdminSongs(params?: { q?: string; limit?: number; offset?: number; order_by?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+  if (params?.order_by) qs.set("order_by", params.order_by);
+  return apiFetch(`/admin/songs?${qs.toString()}`) as Promise<Song[]>;
+}
+
+export async function deleteAdminSong(id: string) {
+  return apiFetch(`/admin/songs/${id}`, { method: "DELETE" });
+}
+
+export async function fetchAdminPlaylists() {
+  return apiFetch("/admin/playlists") as Promise<Array<{
+    id: string;
+    user_id: string;
+    name: string;
+    description: string | null;
+    is_public: boolean;
+    created_at: string;
+    owner_email: string;
+    song_count: number;
+  }>>;
+}
+
+export async function deleteAdminPlaylist(id: string) {
+  return apiFetch(`/admin/playlists/${id}`, { method: "DELETE" });
+}
+
+export async function fetchAdminStats() {
+  return apiFetch("/admin/stats") as Promise<{
+    total_users: number;
+    total_songs: number;
+    total_playlists: number;
+    total_storage_bytes: number;
+  }>;
+}
+
+export async function fetchAdminSettings() {
+  return apiFetch("/admin/settings") as Promise<Array<{ key: string; value: string; updated_at: string }>>;
+}
+
+export async function updateAdminSetting(key: string, value: string) {
+  return apiFetch(`/admin/settings/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+}
