@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login, register } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import NetworkBackground from "../components/NetworkBackground";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -29,8 +30,10 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 aurora-glow">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 aurora-glow relative overflow-hidden">
+      <NetworkBackground />
+      <div className="absolute inset-0 bg-gradient-to-b from-surface-950/20 via-transparent to-surface-950/60 z-[1] pointer-events-none" />
+      <div className="w-full max-w-md relative z-10">
         <div className="flex items-center justify-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center shadow-lg shadow-aurora-500/20">
             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
