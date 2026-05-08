@@ -1,11 +1,9 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use uuid::Uuid;
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Song {
-    pub id: Uuid,
+    pub id: String,
     pub title: String,
     pub artist: String,
     pub album: Option<String>,
@@ -20,7 +18,7 @@ pub struct Song {
     pub bitrate_kbps: Option<i32>,
     pub sample_rate_hz: Option<i32>,
     pub artwork_key: Option<String>,
-    pub publisher_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub publisher_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

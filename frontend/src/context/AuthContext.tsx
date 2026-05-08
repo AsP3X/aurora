@@ -3,17 +3,18 @@ import { me } from "../api/client";
 
 interface AuthContextType {
   token: string | null;
-  user: { id: string; email: string; role: string } | null;
-  setAuth: (token: string, user: { id: string; email: string; role: string }) => void;
+  user: { id: string; email: string; role: string; permissions: string[] } | null;
+  setAuth: (token: string, user: { id: string; email: string; role: string; permissions: string[] }) => void;
   logout: () => void;
   loading: boolean;
+  can: (permission: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("aurora_token"));
-  const [user, setUser] = useState<{ id: string; email: string; role: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; role: string; permissions: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const setAuth = (newToken: string, newUser: { id: string; email: string; role: string }) => {
+  const setAuth = (newToken: string, newUser: { id: string; email: string; role: string; permissions: string[] }) => {
     localStorage.setItem("aurora_token", newToken);
     setToken(newToken);
     setUser(newUser);
@@ -42,8 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const can = (permission: string) => {
+    return user != null && user.permissions.length > 0 && user.permissions.includes(permission);
+  };
+
   return (
-    <AuthContext.Provider value={{ token, user, setAuth, logout, loading }}>
+    <AuthContext.Provider value={{ token, user, setAuth, logout, loading, can }}>
       {children}
     </AuthContext.Provider>
   );

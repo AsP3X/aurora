@@ -1,0 +1,17 @@
+{
+  "name": "aurora",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" --names \"API,WEB\" --prefix-colors \"cyan,magenta\"",
+    "dev:backend": "cd backend && cargo run",
+    "dev:frontend": "cd frontend && pnpm dev",
+    "build": "cd frontend && npm run build",
+    "lint": "cd frontend && npm run lint",
+    "docker:up": "docker-compose up",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

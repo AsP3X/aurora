@@ -8,6 +8,7 @@ pub trait Storage: Send + Sync + Clone + 'static {
         key: &str,
     ) -> impl std::future::Future<Output = anyhow::Result<(ReaderStream<File>, u64, String)>> + Send;
 
+    #[allow(dead_code)]
     fn exists(
         &self, key: &str
     ) -> impl std::future::Future<Output = anyhow::Result<bool>> + Send;

@@ -4,13 +4,14 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
 mod auth;
 mod config;
 mod db;
 mod error;
+mod permissions;
 mod playlists;
 mod search;
 mod songs;
@@ -18,19 +19,29 @@ mod storage;
 
 use config::Config;
 use storage::LocalStorage;
+use sqlx::AnyPool;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: sqlx::PgPool,
+    pub pool: AnyPool,
     pub storage: LocalStorage,
     pub jwt_secret: String,
+}
+
+fn install_sqlx_drivers() {
+    sqlx::any::install_default_drivers();
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
         .init();
+
+    install_sqlx_drivers();
 
     let config = Config::from_env()?;
 
@@ -60,25 +71,45 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))
-        .route("/api/v1/auth/oauth/:provider", get(auth::handlers::oauth_placeholder))
-        .route("/api/v1/songs/:id/stream", get(songs::handlers::stream_song))
-        .route("/api/v1/songs/:id/artwork", get(songs::handlers::get_artwork));
+        .route("/api/v1/auth/oauth/{provider}", get(auth::handlers::oauth_placeholder))
+        .route("/api/v1/songs/{id}/stream", get(songs::handlers::stream_song))
+        .route("/api/v1/songs/{id}/artwork", get(songs::handlers::get_artwork));
 
     let protected_routes = Router::new()
         .route("/api/v1/me", get(auth::handlers::me))
         .route("/api/v1/songs", get(songs::handlers::list_songs))
-        .route("/api/v1/songs/:id", get(songs::handlers::get_song))
+        .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
         .route("/api/v1/search", get(search::handlers::search))
         .route("/api/v1/playlists", get(playlists::handlers::list_playlists).post(playlists::handlers::create_playlist))
-        .route("/api/v1/playlists/:id", get(playlists::handlers::get_playlist))
-        .route("/api/v1/playlists/:id/songs", post(playlists::handlers::add_song))
-        .route("/api/v1/playlists/:id/songs/:song_id", axum::routing::delete(playlists::handlers::remove_song))
+        .route("/api/v1/playlists/{id}", get(playlists::handlers::get_playlist))
+        .route("/api/v1/playlists/{id}/songs", post(playlists::handlers::add_song))
+        .route("/api/v1/playlists/{id}/songs/{song_id}", axum::routing::delete(playlists::handlers::remove_song))
         .route("/api/v1/history", post(songs::handlers::log_history))
-        .layer(middleware::from_fn(auth::auth_middleware));
+        .route("/api/v1/admin/permissions", get(permissions::handlers::list_permissions))
+        .route("/api/v1/admin/groups", get(permissions::handlers::list_groups).post(permissions::handlers::create_group))
+        .route("/api/v1/admin/groups/{id}", get(permissions::handlers::get_group))
+        .route("/api/v1/admin/groups/{id}/permissions",
+            get(permissions::handlers::list_group_permissions)
+            .post(permissions::handlers::grant_group_permission)
+            .put(permissions::handlers::replace_group_permissions))
+        .route("/api/v1/admin/groups/{id}/permissions/{key}", axum::routing::delete(permissions::handlers::revoke_group_permission))
+        .route("/api/v1/admin/groups/{id}/members",
+            get(permissions::handlers::list_group_members)
+            .post(permissions::handlers::add_group_member))
+        .route("/api/v1/admin/groups/{id}/members/{user_id}", axum::routing::delete(permissions::handlers::remove_group_member))
+        .route("/api/v1/admin/users", get(permissions::handlers::list_users))
+        .route("/api/v1/admin/users/{id}/permissions",
+            get(permissions::handlers::list_user_permissions)
+            .post(permissions::handlers::grant_user_permission)
+            .put(permissions::handlers::replace_user_permissions))
+        .route("/api/v1/admin/users/{id}/permissions/{key}", axum::routing::delete(permissions::handlers::revoke_user_permission))
+        .route("/api/v1/admin/users/{id}/effective-permissions", get(permissions::handlers::get_user_effective_permissions))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .with_state(state)
         .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
 }

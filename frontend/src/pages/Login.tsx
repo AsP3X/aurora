@@ -9,6 +9,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuth();
   const navigate = useNavigate();
@@ -16,10 +17,15 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
     try {
       const fn = isRegister ? register : login;
       const res = await fn(email, password);
+      if (isRegister) {
+        setSuccess("Account created successfully! Signing you in...");
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
       setAuth(res.token, res.user);
       navigate("/");
     } catch (err: any) {
@@ -84,6 +90,15 @@ export default function Login() {
               </div>
             )}
 
+            {success && (
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                {success}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -105,7 +120,7 @@ export default function Login() {
               {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
               <button
                 type="button"
-                onClick={() => { setIsRegister(!isRegister); setError(""); }}
+                onClick={() => { setIsRegister(!isRegister); setError(""); setSuccess(""); }}
                 className="text-aurora-400 hover:text-aurora-300 font-medium transition-colors"
               >
                 {isRegister ? "Sign in" : "Create one"}

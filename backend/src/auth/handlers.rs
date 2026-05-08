@@ -3,17 +3,17 @@ use argon2::{
     Argon2,
 };
 use axum::{extract::State, Json};
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{error::AppError, AppState};
+use crate::{error::AppError, permissions::get_user_permission_keys, AppState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: Uuid,
+    pub sub: String,
     pub email: String,
     pub role: String,
     pub exp: i64,
@@ -34,9 +34,10 @@ pub struct AuthResponse {
 
 #[derive(Debug, Serialize)]
 pub struct UserDto {
-    pub id: Uuid,
+    pub id: String,
     pub email: String,
     pub role: String,
+    pub permissions: Vec<String>,
 }
 
 fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
@@ -56,7 +57,7 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::password_
         .is_ok())
 }
 
-fn create_token(user_id: Uuid, email: String, role: String, secret: &str) -> anyhow::Result<String> {
+fn create_token(user_id: String, email: String, role: String, secret: &str) -> anyhow::Result<String> {
     let now = Utc::now();
     let claims = Claims {
         sub: user_id,
@@ -90,28 +91,50 @@ pub async fn register(
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
-    let user_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4().to_string();
 
-    let result = sqlx::query_as::<_, (Uuid,)>(
+    let mut tx = state.pool.begin().await?;
+
+    let result = sqlx::query_as::<_, (String,)>(
         "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, 'listener') RETURNING id",
     )
-    .bind(user_id)
+    .bind(&user_id)
     .bind(&body.email)
     .bind(&password_hash)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *tx)
     .await;
 
     match result {
         Ok((id,)) => {
+            let membership_id = Uuid::new_v4().to_string();
+            sqlx::query(
+                "INSERT INTO group_memberships (id, user_id, group_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001')"
+            )
+            .bind(&membership_id)
+            .bind(&user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                    AppError::Conflict("user already in default group".into())
+                }
+                _ => AppError::Database(e),
+            })?;
+
+            tx.commit().await?;
+
             let token = create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
                 .map_err(|e| AppError::Internal(e.into()))?;
+
+            let permissions = get_user_permission_keys(&state.pool, &user_id).await;
 
             Ok(Json(AuthResponse {
                 token,
                 user: UserDto {
-                    id,
+                    id: user_id,
                     email: body.email,
                     role: "listener".into(),
+                    permissions,
                 },
             }))
         }
@@ -126,7 +149,7 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    let row = sqlx::query_as::<_, (Uuid, String, String, String)>(
+    let row = sqlx::query_as::<_, (String, String, String, String)>(
         "SELECT id, email, password_hash, role FROM users WHERE email = $1"
     )
     .bind(&body.email)
@@ -141,8 +164,10 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let token = create_token(id, email.clone(), role.clone(), &state.jwt_secret)
+    let token = create_token(id.clone(), email.clone(), role.clone(), &state.jwt_secret)
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    let permissions = get_user_permission_keys(&state.pool, &id).await;
 
     Ok(Json(AuthResponse {
         token,
@@ -150,6 +175,7 @@ pub async fn login(
             id,
             email,
             role,
+            permissions,
         },
     }))
 }
@@ -158,19 +184,22 @@ pub async fn me(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<Claims>,
 ) -> Result<Json<UserDto>, AppError> {
-    let row = sqlx::query_as::<_, (Uuid, String, String)>(
+    let row = sqlx::query_as::<_, (String, String, String)>(
         "SELECT id, email, role FROM users WHERE id = $1"
     )
-    .bind(claims.sub)
+    .bind(&claims.sub)
     .fetch_optional(&state.pool)
     .await?;
 
     let (id, email, role) = row.ok_or(AppError::NotFound)?;
 
+    let permissions = get_user_permission_keys(&state.pool, &id).await;
+
     Ok(Json(UserDto {
         id,
         email,
         role,
+        permissions,
     }))
 }
 
