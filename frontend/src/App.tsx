@@ -108,7 +108,7 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
         if (!cancelled) setSetupComplete(true);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (setupComplete === null) return;

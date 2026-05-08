@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { setup } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -71,9 +70,7 @@ export default function Setup() {
         allow_public_registration: allowPublicRegistration,
         music_dir: musicDir.trim(),
       });
-      flushSync(() => {
-        setAuth(res.token, res.user);
-      });
+      setAuth(res.token, res.user);
       navigate("/", { replace: true });
     } catch (e: any) {
       setError(e.message || "Setup failed");
