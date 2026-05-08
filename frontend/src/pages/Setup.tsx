@@ -1,13 +1,83 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { setup } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import NetworkBackground from "../components/NetworkBackground";
 
 type Step = 1 | 2 | 3;
 
-export default function SetupWireframe() {
-  const [step, setStep] = useState<Step>(1);
+export default function Setup() {
+  const navigate = useNavigate();
+  const { setAuth } = useAuth();
 
-  const next = () => setStep((s) => Math.min(s + 1, 3) as Step);
-  const back = () => setStep((s) => Math.max(s - 1, 1) as Step);
+  const [step, setStep] = useState<Step>(1);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [instanceName, setInstanceName] = useState("Aurora Music");
+  const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
+  const [musicDir, setMusicDir] = useState("/music");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function validateStep1(): string | null {
+    if (!email.trim()) return "Email is required";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Invalid email address";
+    if (password.length < 8) return "Password must be at least 8 characters";
+    if (password !== confirmPassword) return "Passwords do not match";
+    return null;
+  }
+
+  function validateStep2(): string | null {
+    if (!instanceName.trim()) return "Instance name is required";
+    return null;
+  }
+
+  function validateStep3(): string | null {
+    if (!musicDir.trim()) return "Music library path is required";
+    return null;
+  }
+
+  const next = () => {
+    setError("");
+    if (step === 1) {
+      const err = validateStep1();
+      if (err) { setError(err); return; }
+      setStep(2);
+    } else if (step === 2) {
+      const err = validateStep2();
+      if (err) { setError(err); return; }
+      setStep(3);
+    }
+  };
+
+  const back = () => {
+    setError("");
+    setStep((s) => Math.max(s - 1, 1) as Step);
+  };
+
+  async function handleSubmit() {
+    setError("");
+    const err = validateStep3();
+    if (err) { setError(err); return; }
+
+    setLoading(true);
+    try {
+      const res = await setup({
+        email: email.trim(),
+        password,
+        instance_name: instanceName.trim(),
+        allow_public_registration: allowPublicRegistration,
+        music_dir: musicDir.trim(),
+      });
+      setAuth(res.token, res.user);
+      navigate("/", { replace: true });
+    } catch (e: any) {
+      setError(e.message || "Setup failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 aurora-glow relative overflow-hidden">
@@ -66,21 +136,37 @@ export default function SetupWireframe() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Email address</label>
-                  <div className="w-full h-10 bg-surface-950 border border-white/10 rounded-xl flex items-center px-4">
-                    <span className="text-surface-600 text-sm">admin@company.com</span>
-                  </div>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="admin@company.com"
+                    className="w-full h-10 px-4 bg-surface-950 border border-white/10 rounded-xl text-white placeholder-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 focus:border-aurora-500/50 transition-all"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
-                  <div className="w-full h-10 bg-surface-950 border border-white/10 rounded-xl flex items-center px-4">
-                    <span className="text-surface-600 text-sm">••••••••••••</span>
-                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full h-10 px-4 bg-surface-950 border border-white/10 rounded-xl text-white placeholder-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 focus:border-aurora-500/50 transition-all"
+                  />
+                  <p className="text-xs text-surface-500 mt-1.5">Must be at least 8 characters</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Confirm password</label>
-                  <div className="w-full h-10 bg-surface-950 border border-white/10 rounded-xl flex items-center px-4">
-                    <span className="text-surface-600 text-sm">••••••••••••</span>
-                  </div>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full h-10 px-4 bg-surface-950 border border-white/10 rounded-xl text-white placeholder-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 focus:border-aurora-500/50 transition-all"
+                  />
                 </div>
               </div>
             </div>
@@ -97,9 +183,14 @@ export default function SetupWireframe() {
               <div className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Instance name</label>
-                  <div className="w-full h-10 bg-surface-950 border border-white/10 rounded-xl flex items-center px-4">
-                    <span className="text-surface-600 text-sm">Aurora Music</span>
-                  </div>
+                  <input
+                    type="text"
+                    value={instanceName}
+                    onChange={(e) => setInstanceName(e.target.value)}
+                    required
+                    placeholder="Aurora Music"
+                    className="w-full h-10 px-4 bg-surface-950 border border-white/10 rounded-xl text-white placeholder-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 focus:border-aurora-500/50 transition-all"
+                  />
                 </div>
 
                 <div className="flex items-center justify-between py-1">
@@ -107,9 +198,13 @@ export default function SetupWireframe() {
                     <p className="text-sm font-medium text-surface-200">Allow public registration</p>
                     <p className="text-xs text-surface-500 mt-0.5">Anyone can create an account</p>
                   </div>
-                  <div className="w-11 h-6 rounded-full bg-aurora-600 relative shrink-0">
-                    <div className="absolute right-1 top-1 w-4 h-4 rounded-full bg-white shadow" />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAllowPublicRegistration((v) => !v)}
+                    className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${allowPublicRegistration ? "bg-aurora-600" : "bg-surface-700"}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${allowPublicRegistration ? "right-1" : "left-1"}`} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -127,12 +222,14 @@ export default function SetupWireframe() {
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Music library path</label>
                   <div className="flex gap-2">
-                    <div className="flex-1 h-10 bg-surface-950 border border-white/10 rounded-xl flex items-center px-4">
-                      <span className="text-surface-600 text-sm">/var/music</span>
-                    </div>
-                    <div className="h-10 px-4 bg-surface-800 border border-white/10 rounded-xl flex items-center justify-center text-sm text-surface-300 hover:bg-surface-700 transition-colors">
-                      Browse
-                    </div>
+                    <input
+                      type="text"
+                      value={musicDir}
+                      onChange={(e) => setMusicDir(e.target.value)}
+                      required
+                      placeholder="/music"
+                      className="flex-1 h-10 px-4 bg-surface-950 border border-white/10 rounded-xl text-white placeholder-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 focus:border-aurora-500/50 transition-all"
+                    />
                   </div>
                 </div>
 
@@ -148,25 +245,45 @@ export default function SetupWireframe() {
             </div>
           )}
 
+          {error && (
+            <div className="mt-5 flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {error}
+            </div>
+          )}
+
           {/* ── NAVIGATION ── */}
           <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
             <button
+              type="button"
               onClick={back}
-              disabled={step === 1}
+              disabled={step === 1 || loading}
               className="text-sm text-surface-400 hover:text-white transition-colors disabled:opacity-0"
             >
               Back
             </button>
             <button
-              onClick={next}
-              className="h-10 px-6 bg-gradient-to-r from-aurora-600 to-aurora-700 hover:from-aurora-500 hover:to-aurora-600 text-white font-medium rounded-xl shadow-lg shadow-aurora-500/20 hover:shadow-aurora-500/30 transition-all"
+              type="button"
+              onClick={step === 3 ? handleSubmit : next}
+              disabled={loading}
+              className="h-10 px-6 bg-gradient-to-r from-aurora-600 to-aurora-700 hover:from-aurora-500 hover:to-aurora-600 text-white font-medium rounded-xl shadow-lg shadow-aurora-500/20 hover:shadow-aurora-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {step === 3 ? "Complete Setup" : "Continue"}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Setting up...
+                </span>
+              ) : step === 3 ? (
+                "Complete Setup"
+              ) : (
+                "Continue"
+              )}
             </button>
           </div>
         </div>
 
-        {/* Footer */}
         <p className="text-center text-xs text-surface-600 mt-6">
           Aurora Music — Self-hosted music streaming
         </p>

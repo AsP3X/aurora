@@ -14,6 +14,7 @@ mod error;
 mod permissions;
 mod playlists;
 mod search;
+mod setup;
 mod songs;
 mod storage;
 
@@ -69,6 +70,8 @@ async fn main() -> anyhow::Result<()> {
 
 pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
+        .route("/api/v1/setup/status", get(setup::handlers::setup_status))
+        .route("/api/v1/setup", post(setup::handlers::setup))
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))
         .route("/api/v1/auth/oauth/{provider}", get(auth::handlers::oauth_placeholder))
