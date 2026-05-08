@@ -6,6 +6,7 @@ import Player from "./pages/Player";
 import Playlists from "./pages/Playlists";
 import PlaylistDetail from "./pages/PlaylistDetail";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import SetupWireframe from "./pages/Setup";
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   const { pathname } = useLocation();
@@ -92,6 +93,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
+      <Route path="/setup" element={<SetupWireframe />} />
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<RequireAuth><Library /></RequireAuth>} />
       <Route path="/player/:id" element={<RequireAuth><Player /></RequireAuth>} />
