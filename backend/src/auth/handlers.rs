@@ -40,7 +40,7 @@ pub struct UserDto {
     pub permissions: Vec<String>,
 }
 
-fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
+pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
     let password_hash = argon2
@@ -57,7 +57,7 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::password_
         .is_ok())
 }
 
-fn create_token(user_id: String, email: String, role: String, secret: &str) -> anyhow::Result<String> {
+pub fn create_token(user_id: String, email: String, role: String, secret: &str) -> anyhow::Result<String> {
     let now = Utc::now();
     let claims = Claims {
         sub: user_id,

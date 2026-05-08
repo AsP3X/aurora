@@ -1,12 +1,14 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { setupStatus } from "./api/client";
 import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import Library from "./pages/Library";
 import Player from "./pages/Player";
 import Playlists from "./pages/Playlists";
 import PlaylistDetail from "./pages/PlaylistDetail";
 import AdminDashboard from "./pages/admin/AdminDashboard";
-import SetupWireframe from "./pages/Setup";
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   const { pathname } = useLocation();
@@ -90,16 +92,48 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+function SetupGuard({ children }: { children: React.ReactNode }) {
+  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    setupStatus()
+      .then((s) => setSetupComplete(s.setup_complete))
+      .catch(() => setSetupComplete(true));
+  }, []);
+
+  if (setupComplete === null) {
+    return (
+      <div className="min-h-screen bg-surface-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-surface-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!setupComplete && pathname !== "/setup") {
+    return <Navigate to="/setup" replace />;
+  }
+
+  if (setupComplete && pathname === "/setup") {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/setup" element={<SetupWireframe />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/" element={<RequireAuth><Library /></RequireAuth>} />
-      <Route path="/player/:id" element={<RequireAuth><Player /></RequireAuth>} />
-      <Route path="/playlists" element={<RequireAuth><Playlists /></RequireAuth>} />
-      <Route path="/playlist/:id" element={<RequireAuth><PlaylistDetail /></RequireAuth>} />
-      <Route path="/admin/*" element={<RequireAuth><AdminDashboard /></RequireAuth>} />
+      <Route path="/setup" element={<SetupGuard><Setup /></SetupGuard>} />
+      <Route path="/login" element={<SetupGuard><Login /></SetupGuard>} />
+      <Route path="/" element={<SetupGuard><RequireAuth><Library /></RequireAuth></SetupGuard>} />
+      <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
+      <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
+      <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
+      <Route path="/admin/*" element={<SetupGuard><RequireAuth><AdminDashboard /></RequireAuth></SetupGuard>} />
     </Routes>
   );
 }

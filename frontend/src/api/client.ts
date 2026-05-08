@@ -143,6 +143,23 @@ export async function fetchStats() {
   }>;
 }
 
+export async function setupStatus() {
+  return apiFetch("/setup/status") as Promise<{ setup_complete: boolean }>;
+}
+
+export async function setup(body: {
+  email: string;
+  password: string;
+  instance_name: string;
+  allow_public_registration: boolean;
+  music_dir: string;
+}) {
+  return apiFetch("/setup", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
+}
+
 // Admin APIs
 
 export async function fetchPermissions() {
