@@ -13,10 +13,21 @@ import {
   fetchUserPermissions,
   setUserPermissions,
   fetchUserEffectivePermissions,
+  updateUserRole,
+  deleteUser,
+  fetchAdminSongs,
+  deleteAdminSong,
+  fetchAdminPlaylists,
+  deleteAdminPlaylist,
+  fetchAdminStats,
+  fetchAdminSettings,
+  updateAdminSetting,
+  artworkUrl,
 } from "../../api/client";
 import PermissionManager from "../../components/admin/PermissionManager";
+import type { Song } from "../../types";
 
-type Tab = "groups" | "users";
+type Tab = "overview" | "users" | "groups" | "library" | "playlists" | "settings";
 
 interface Permission {
   id: string;
@@ -38,9 +49,103 @@ interface User {
   role: string;
 }
 
+interface AdminPlaylist {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  is_public: boolean;
+  created_at: string;
+  owner_email: string;
+  song_count: number;
+}
+
+function formatDuration(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+function formatNumber(n: number) {
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  colorClass,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  colorClass: string;
+}) {
+  return (
+    <div className="bg-surface-900 border border-white/5 rounded-2xl p-5 flex items-center gap-4 hover:border-white/10 transition-colors">
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${colorClass}`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
+        <p className="text-xs text-surface-400 font-medium uppercase tracking-wider">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
+        <p className="text-sm text-surface-400 mb-6">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          >
+            {loading ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const { can } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>("groups");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -51,10 +156,13 @@ export default function AdminDashboard() {
   const [groupMembers, setGroupMembers] = useState<User[]>([]);
   const [groupLoading, setGroupLoading] = useState(false);
 
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [userPerms, setUserPerms] = useState<string[]>([]);
   const [userEffectivePerms, setUserEffectivePerms] = useState<string[]>([]);
   const [userLoading, setUserLoading] = useState(false);
+
+  const [editingUser, setEditingUser] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editingPermissionsFor, setEditingPermissionsFor] = useState<string | null>(null);
 
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
@@ -63,6 +171,34 @@ export default function AdminDashboard() {
   const [addMemberId, setAddMemberId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  /* Overview state */
+  const [stats, setStats] = useState<{ total_users: number; total_songs: number; total_playlists: number; total_storage_bytes: number } | null>(null);
+
+  /* Library state */
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [songQuery, setSongQuery] = useState("");
+  const [songOffset, setSongOffset] = useState(0);
+  const [songLoading, setSongLoading] = useState(false);
+  const SONG_LIMIT = 20;
+
+  /* Playlists state */
+  const [playlists, setPlaylists] = useState<AdminPlaylist[]>([]);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+
+  /* Settings state */
+  const [settings, setSettings] = useState<{ key: string; value: string; updated_at: string }[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [editingSetting, setEditingSetting] = useState<string | null>(null);
+  const [settingEditValue, setSettingEditValue] = useState("");
+
+  /* Confirm delete modal */
+  const [confirmModal, setConfirmModal] = useState<{
+    type: "user" | "song" | "playlist";
+    id: string;
+    name: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -91,11 +227,59 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const loadStats = useCallback(async () => {
+    try {
+      const data = await fetchAdminStats();
+      setStats(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load stats");
+    }
+  }, []);
+
+  const loadSongs = useCallback(async (q?: string, offset = 0) => {
+    setSongLoading(true);
+    try {
+      const data = await fetchAdminSongs({ q, limit: SONG_LIMIT, offset, order_by: "title" });
+      setSongs(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load songs");
+    } finally {
+      setSongLoading(false);
+    }
+  }, []);
+
+  const loadPlaylists = useCallback(async () => {
+    setPlaylistLoading(true);
+    try {
+      const data = await fetchAdminPlaylists();
+      setPlaylists(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load playlists");
+    } finally {
+      setPlaylistLoading(false);
+    }
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const data = await fetchAdminSettings();
+      setSettings(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load settings");
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadPermissions();
     loadGroups();
     loadUsers();
-  }, [loadPermissions, loadGroups, loadUsers]);
+    loadStats();
+    loadPlaylists();
+    loadSettings();
+  }, [loadPermissions, loadGroups, loadUsers, loadStats, loadPlaylists, loadSettings]);
 
   useEffect(() => {
     if (!selectedGroup) return;
@@ -113,11 +297,11 @@ export default function AdminDashboard() {
   }, [selectedGroup]);
 
   useEffect(() => {
-    if (!selectedUser) return;
+    if (!editingPermissionsFor) return;
     setUserLoading(true);
     Promise.all([
-      fetchUserPermissions(selectedUser),
-      fetchUserEffectivePermissions(selectedUser),
+      fetchUserPermissions(editingPermissionsFor),
+      fetchUserEffectivePermissions(editingPermissionsFor),
     ])
       .then(([perms, effective]) => {
         setUserPerms(perms.map((p: Permission) => p.key));
@@ -125,7 +309,13 @@ export default function AdminDashboard() {
       })
       .catch((e: any) => setError(e.message || "Failed to load user details"))
       .finally(() => setUserLoading(false));
-  }, [selectedUser]);
+  }, [editingPermissionsFor]);
+
+  useEffect(() => {
+    if (activeTab === "library") {
+      loadSongs(songQuery || undefined, songOffset);
+    }
+  }, [activeTab, songQuery, songOffset, loadSongs]);
 
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault();
@@ -157,12 +347,13 @@ export default function AdminDashboard() {
   }
 
   async function handleSaveUserPermissions() {
-    if (!selectedUser) return;
+    if (!editingPermissionsFor) return;
     setSaving(true);
     try {
-      await setUserPermissions(selectedUser, userPerms);
-      const effective = await fetchUserEffectivePermissions(selectedUser);
+      await setUserPermissions(editingPermissionsFor, userPerms);
+      const effective = await fetchUserEffectivePermissions(editingPermissionsFor);
       setUserEffectivePerms(effective);
+      setEditingPermissionsFor(null);
     } catch (e: any) {
       setError(e.message || "Failed to save user permissions");
     } finally {
@@ -192,6 +383,49 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleRoleChange(userId: string, newRole: string) {
+    try {
+      await updateUserRole(userId, newRole);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
+    } catch (e: any) {
+      setError(e.message || "Failed to update role");
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirmModal) return;
+    setDeleting(true);
+    try {
+      if (confirmModal.type === "user") {
+        await deleteUser(confirmModal.id);
+        setUsers((prev) => prev.filter((u) => u.id !== confirmModal.id));
+        if (editingUser === confirmModal.id) setEditingUser(null);
+        if (editingPermissionsFor === confirmModal.id) setEditingPermissionsFor(null);
+      } else if (confirmModal.type === "song") {
+        await deleteAdminSong(confirmModal.id);
+        setSongs((prev) => prev.filter((s) => s.id !== confirmModal.id));
+      } else if (confirmModal.type === "playlist") {
+        await deleteAdminPlaylist(confirmModal.id);
+        setPlaylists((prev) => prev.filter((p) => p.id !== confirmModal.id));
+      }
+      setConfirmModal(null);
+    } catch (e: any) {
+      setError(e.message || "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleSaveSetting(key: string) {
+    try {
+      await updateAdminSetting(key, settingEditValue);
+      setSettings((prev) => prev.map((s) => (s.key === key ? { ...s, value: settingEditValue } : s)));
+      setEditingSetting(null);
+    } catch (e: any) {
+      setError(e.message || "Failed to update setting");
+    }
+  }
+
   if (!can("admin.access")) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -203,10 +437,19 @@ export default function AdminDashboard() {
     );
   }
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "users", label: "Users" },
+    { key: "groups", label: "Groups" },
+    { key: "library", label: "Library" },
+    { key: "playlists", label: "Playlists" },
+    { key: "settings", label: "Settings" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Admin</h1>
+        <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
         {error && (
           <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
             {error}
@@ -214,29 +457,304 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <div className="flex gap-4 border-b border-white/5">
-        <button
-          onClick={() => { setActiveTab("groups"); setError(""); }}
-          className={`pb-2 text-sm font-medium transition-colors ${
-            activeTab === "groups"
-              ? "text-aurora-400 border-b-2 border-aurora-500"
-              : "text-surface-400 hover:text-white"
-          }`}
-        >
-          Groups
-        </button>
-        <button
-          onClick={() => { setActiveTab("users"); setError(""); }}
-          className={`pb-2 text-sm font-medium transition-colors ${
-            activeTab === "users"
-              ? "text-aurora-400 border-b-2 border-aurora-500"
-              : "text-surface-400 hover:text-white"
-          }`}
-        >
-          Users
-        </button>
+      <div className="flex gap-4 border-b border-white/5 overflow-x-auto">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => { setActiveTab(t.key); setError(""); }}
+            className={`pb-2 text-sm font-medium transition-colors whitespace-nowrap ${
+              activeTab === t.key
+                ? "text-aurora-400 border-b-2 border-aurora-500"
+                : "text-surface-400 hover:text-white"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
+      {/* ─── Overview Tab ─── */}
+      {activeTab === "overview" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Users"
+              value={stats ? formatNumber(stats.total_users) : "—"}
+              icon={
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                </svg>
+              }
+              colorClass="bg-aurora-600/20 text-aurora-400"
+            />
+            <StatCard
+              label="Songs"
+              value={stats ? formatNumber(stats.total_songs) : "—"}
+              icon={
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              }
+              colorClass="bg-emerald-500/20 text-emerald-400"
+            />
+            <StatCard
+              label="Playlists"
+              value={stats ? formatNumber(stats.total_playlists) : "—"}
+              icon={
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              }
+              colorClass="bg-amber-500/20 text-amber-400"
+            />
+            <StatCard
+              label="Storage Used"
+              value={stats ? formatBytes(stats.total_storage_bytes) : "—"}
+              icon={
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                </svg>
+              }
+              colorClass="bg-rose-500/20 text-rose-400"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
+              <h3 className="text-sm font-semibold text-white mb-4">Quick Actions</h3>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => setActiveTab("users")}
+                  className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors border border-white/5"
+                >
+                  Manage Users
+                </button>
+                <button
+                  onClick={() => setActiveTab("library")}
+                  className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors border border-white/5"
+                >
+                  Browse Library
+                </button>
+                <button
+                  onClick={() => setActiveTab("playlists")}
+                  className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors border border-white/5"
+                >
+                  View Playlists
+                </button>
+                <button
+                  onClick={() => setActiveTab("settings")}
+                  className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors border border-white/5"
+                >
+                  Edit Settings
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
+              <h3 className="text-sm font-semibold text-white mb-4">System Info</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-surface-400">
+                  <span>Total registered users</span>
+                  <span className="text-white font-medium">{stats ? formatNumber(stats.total_users) : "—"}</span>
+                </div>
+                <div className="flex justify-between text-surface-400">
+                  <span>Tracks in library</span>
+                  <span className="text-white font-medium">{stats ? formatNumber(stats.total_songs) : "—"}</span>
+                </div>
+                <div className="flex justify-between text-surface-400">
+                  <span>User playlists</span>
+                  <span className="text-white font-medium">{stats ? formatNumber(stats.total_playlists) : "—"}</span>
+                </div>
+                <div className="flex justify-between text-surface-400">
+                  <span>Library storage</span>
+                  <span className="text-white font-medium">{stats ? formatBytes(stats.total_storage_bytes) : "—"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Users Tab ─── */}
+      {activeTab === "users" && (
+        <div className="space-y-6">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-surface-800 text-surface-400 text-xs uppercase">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {users.map((u) => (
+                  <tr
+                    key={u.id}
+                    className="hover:bg-white/5 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-white">
+                      {u.email}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center px-2 py-1 bg-surface-800 border border-white/10 rounded text-xs text-surface-300 capitalize">
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingUser(u.id);
+                            setEditRole(u.role);
+                          }}
+                          className="text-xs text-aurora-400 hover:text-aurora-300 px-2 py-1 rounded hover:bg-aurora-500/10 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            setConfirmModal({ type: "user", id: u.id, name: u.email })
+                          }
+                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+                          title="Delete user"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Edit User Dialog */}
+          {editingUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-surface-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                <h3 className="text-lg font-semibold text-white mb-4">
+                  Edit User
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-surface-400 mb-1">Email</label>
+                    <p className="text-sm text-white">
+                      {users.find((u) => u.id === editingUser)?.email}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-surface-400 mb-1">Role</label>
+                    <select
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value)}
+                      className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
+                    >
+                      <option value="listener">listener</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-3 justify-end mt-6">
+                  <button
+                    onClick={() => setEditingUser(null)}
+                    className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUserLoading(true);
+                      setEditingPermissionsFor(editingUser);
+                    }}
+                    className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-aurora-300 text-sm font-medium rounded-lg transition-colors border border-aurora-500/20"
+                  >
+                    Edit Permissions
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const user = users.find((u) => u.id === editingUser);
+                      if (user && editRole !== user.role) {
+                        await handleRoleChange(editingUser, editRole);
+                      }
+                      setEditingUser(null);
+                    }}
+                    className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Permissions Dialog */}
+          {editingPermissionsFor && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-surface-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[80vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">
+                    Edit Permissions — {users.find((u) => u.id === editingPermissionsFor)?.email}
+                  </h3>
+                  <button
+                    onClick={() => setEditingPermissionsFor(null)}
+                    className="text-surface-400 hover:text-white transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                {userLoading ? (
+                  <div className="text-surface-400 text-sm">Loading...</div>
+                ) : (
+                  <>
+                    <PermissionManager
+                      permissions={permissions}
+                      assignedKeys={userPerms}
+                      onChange={setUserPerms}
+                    />
+                    <div className="mt-6">
+                      <h4 className="text-sm font-semibold text-white mb-2">Effective Permissions</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {userEffectivePerms.length > 0 ? (
+                          userEffectivePerms.map((key) => (
+                            <span
+                              key={key}
+                              className="px-2 py-1 bg-surface-800 text-surface-300 text-xs rounded-lg border border-white/5"
+                            >
+                              {key}
+                            </span>
+                          ))
+                        ) : (
+                          <div className="text-sm text-surface-500">No effective permissions.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-3 justify-end mt-6">
+                      <button
+                        onClick={() => setEditingPermissionsFor(null)}
+                        className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveUserPermissions}
+                        disabled={saving}
+                        className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {saving ? "Saving..." : "Save Permissions"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Groups Tab ─── */}
       {activeTab === "groups" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">
@@ -364,75 +882,231 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {activeTab === "users" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-1">
-            {users.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => setSelectedUser(u.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                  selectedUser === u.id
-                    ? "bg-aurora-500/10 text-aurora-300"
-                    : "text-surface-300 hover:bg-white/5"
-                }`}
-              >
-                <div className="font-medium">{u.email}</div>
-                <div className="text-xs text-surface-500">{u.role}</div>
-              </button>
-            ))}
+      {/* ─── Library Tab ─── */}
+      {activeTab === "library" && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              placeholder="Search songs..."
+              value={songQuery}
+              onChange={(e) => { setSongQuery(e.target.value); setSongOffset(0); }}
+              className="flex-1 max-w-md px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+            />
+            {songLoading && <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />}
           </div>
 
-          <div className="lg:col-span-2 space-y-6">
-            {selectedUser ? (
-              userLoading ? (
-                <div className="text-surface-400 text-sm">Loading...</div>
-              ) : (
-                <>
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-white">
-                        {users.find((u) => u.id === selectedUser)?.email}
-                      </h3>
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Artwork</th>
+                  <th className="px-4 py-3 font-medium">Title</th>
+                  <th className="px-4 py-3 font-medium">Artist</th>
+                  <th className="px-4 py-3 font-medium">Album</th>
+                  <th className="px-4 py-3 font-medium">Duration</th>
+                  <th className="px-4 py-3 font-medium">Format</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {songs.map((song) => (
+                  <tr key={song.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <img
+                        src={artworkUrl(song.id)}
+                        alt={song.title}
+                        className="w-10 h-10 rounded-lg object-cover bg-surface-950"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-white font-medium">{song.title}</td>
+                    <td className="px-4 py-3 text-surface-300">{song.artist}</td>
+                    <td className="px-4 py-3 text-surface-400">{song.album || "—"}</td>
+                    <td className="px-4 py-3 text-surface-400">{formatDuration(song.duration_seconds)}</td>
+                    <td className="px-4 py-3 text-surface-400 uppercase">{song.file_format}</td>
+                    <td className="px-4 py-3 text-right">
                       <button
-                        onClick={handleSaveUserPermissions}
-                        disabled={saving}
-                        className="px-4 py-1.5 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                        onClick={() => setConfirmModal({ type: "song", id: song.id, name: song.title })}
+                        className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
                       >
-                        {saving ? "Saving..." : "Save Permissions"}
+                        Delete
                       </button>
-                    </div>
-                    <PermissionManager
-                      permissions={permissions}
-                      assignedKeys={userPerms}
-                      onChange={setUserPerms}
-                    />
-                  </div>
+                    </td>
+                  </tr>
+                ))}
+                {songs.length === 0 && !songLoading && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-surface-500">
+                      No songs found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                  <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Effective Permissions</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {userEffectivePerms.length > 0 ? (
-                        userEffectivePerms.map((key) => (
-                          <span
-                            key={key}
-                            className="px-2 py-1 bg-surface-800 text-surface-300 text-xs rounded-lg border border-white/5"
-                          >
-                            {key}
-                          </span>
-                        ))
-                      ) : (
-                        <div className="text-sm text-surface-500">No effective permissions.</div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )
-            ) : (
-              <div className="text-surface-400 text-sm">Select a user to manage their permissions.</div>
-            )}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setSongOffset((o) => Math.max(0, o - SONG_LIMIT))}
+              disabled={songOffset === 0}
+              className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-surface-400">
+              Showing {songs.length > 0 ? songOffset + 1 : 0}–{songOffset + songs.length}
+            </span>
+            <button
+              onClick={() => setSongOffset((o) => o + SONG_LIMIT)}
+              disabled={songs.length < SONG_LIMIT}
+              className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
         </div>
+      )}
+
+      {/* ─── Playlists Tab ─── */}
+      {activeTab === "playlists" && (
+        <div className="space-y-4">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Name</th>
+                  <th className="px-4 py-3 font-medium">Owner</th>
+                  <th className="px-4 py-3 font-medium">Visibility</th>
+                  <th className="px-4 py-3 font-medium">Songs</th>
+                  <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {playlistLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-surface-500">
+                      <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    </td>
+                  </tr>
+                ) : (
+                  playlists.map((p) => (
+                    <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 text-white font-medium">{p.name}</td>
+                      <td className="px-4 py-3 text-surface-300">{p.owner_email}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_public ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10" : "text-surface-400 border-white/5 bg-surface-800"}`}>
+                          {p.is_public ? "Public" : "Private"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-surface-400">{p.song_count}</td>
+                      <td className="px-4 py-3 text-surface-400">{new Date(p.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setConfirmModal({ type: "playlist", id: p.id, name: p.name })}
+                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+                {!playlistLoading && playlists.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-surface-500">
+                      No playlists found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Settings Tab ─── */}
+      {activeTab === "settings" && (
+        <div className="space-y-4">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Key</th>
+                  <th className="px-4 py-3 font-medium">Value</th>
+                  <th className="px-4 py-3 font-medium">Updated</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {settingsLoading ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
+                      <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    </td>
+                  </tr>
+                ) : (
+                  settings.map((s) => (
+                    <tr key={s.key} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 text-white font-mono text-xs">{s.key}</td>
+                      <td className="px-4 py-3 text-surface-300">
+                        {editingSetting === s.key ? (
+                          <input
+                            autoFocus
+                            value={settingEditValue}
+                            onChange={(e) => setSettingEditValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleSaveSetting(s.key); if (e.key === "Escape") setEditingSetting(null); }}
+                            className="w-full px-2 py-1 bg-surface-950 border border-white/10 rounded text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
+                          />
+                        ) : (
+                          s.value
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-surface-400 text-xs">{new Date(s.updated_at).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right">
+                        {editingSetting === s.key ? (
+                          <button
+                            onClick={() => handleSaveSetting(s.key)}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-emerald-500/10 transition-colors"
+                          >
+                            Save
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { setEditingSetting(s.key); setSettingEditValue(s.value); }}
+                            className="text-xs text-aurora-400 hover:text-aurora-300 px-2 py-1 rounded hover:bg-aurora-500/10 transition-colors"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+                {!settingsLoading && settings.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
+                      No settings found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Confirm Modal ─── */}
+      {confirmModal && (
+        <ConfirmModal
+          title={`Delete ${confirmModal.type === "user" ? "User" : confirmModal.type === "song" ? "Song" : "Playlist"}`}
+          message={`Are you sure you want to delete "${confirmModal.name}"? This action cannot be undone.`}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmModal(null)}
+          loading={deleting}
+        />
       )}
     </div>
   );

@@ -12,6 +12,10 @@ pub trait Storage: Send + Sync + Clone + 'static {
     fn exists(
         &self, key: &str
     ) -> impl std::future::Future<Output = anyhow::Result<bool>> + Send;
+
+    fn delete(
+        &self, key: &str
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 }
 
 #[derive(Clone, Debug)]
@@ -38,5 +42,13 @@ impl Storage for LocalStorage {
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
         let path = self.base_dir.join(key);
         Ok(path.exists())
+    }
+
+    async fn delete(&self, key: &str) -> anyhow::Result<()> {
+        let path = self.base_dir.join(key);
+        if path.exists() {
+            tokio::fs::remove_file(&path).await?;
+        }
+        Ok(())
     }
 }
