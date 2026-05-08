@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aurora-postgres
+    environment:
+      POSTGRES_USER: aurora
+      POSTGRES_PASSWORD: aurora
+      POSTGRES_DB: aurora
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurora"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: aurora-meilisearch
+    environment:
+      MEILI_MASTER_KEY: aurora-master-key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aurora-backend
+    environment:
+      DATABASE_URL: postgres://aurora:aurora@postgres:5432/aurora
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: aurora-master-key
+      JWT_SECRET: change-me-in-production-jwt-secret
+      MUSIC_DIR: /music
+      RUST_LOG: debug
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./music:/music:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  meilisearch_data:
