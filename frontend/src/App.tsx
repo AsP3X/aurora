@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { setupStatus } from "./api/client";
 import Login from "./pages/Login";
@@ -94,13 +94,34 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function SetupGuard({ children }: { children: React.ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
+  const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { token } = useAuth();
 
   useEffect(() => {
+    let cancelled = false;
     setupStatus()
-      .then((s) => setSetupComplete(s.setup_complete))
-      .catch(() => setSetupComplete(true));
+      .then((s) => {
+        if (!cancelled) setSetupComplete(s.setup_complete);
+      })
+      .catch(() => {
+        if (!cancelled) setSetupComplete(true);
+      });
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (setupComplete === null) return;
+
+    if (setupComplete && pathname === "/setup") {
+      navigate(token ? "/" : "/login", { replace: true });
+      return;
+    }
+
+    if (!setupComplete && pathname !== "/setup") {
+      navigate("/setup", { replace: true });
+    }
+  }, [setupComplete, pathname, token, navigate]);
 
   if (setupComplete === null) {
     return (
@@ -113,12 +134,12 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!setupComplete && pathname !== "/setup") {
-    return <Navigate to="/setup" replace />;
+  if (setupComplete && pathname === "/setup") {
+    return null;
   }
 
-  if (setupComplete && pathname === "/setup") {
-    return <Navigate to="/login" replace />;
+  if (!setupComplete && pathname !== "/setup") {
+    return null;
   }
 
   return <>{children}</>;
