@@ -144,7 +144,7 @@ export async function fetchStats() {
 }
 
 export async function setupStatus() {
-  return apiFetch("/setup/status") as Promise<{ setup_complete: boolean }>;
+  return apiFetch("/setup/status", { cache: "no-store" }) as Promise<{ setup_complete: boolean }>;
 }
 
 export async function setup(body: {
