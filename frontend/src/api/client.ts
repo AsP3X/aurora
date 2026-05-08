@@ -58,13 +58,19 @@ export async function me() {
   return apiFetch("/me") as Promise<{ id: string; email: string; role: string; permissions: string[] }>;
 }
 
-export async function fetchSongs(params?: { artist?: string; album?: string; limit?: number; offset?: number }) {
+export async function fetchSongs(params?: { artist?: string; album?: string; q?: string; limit?: number; offset?: number; order_by?: string }) {
   const qs = new URLSearchParams();
   if (params?.artist) qs.set("artist", params.artist);
   if (params?.album) qs.set("album", params.album);
+  if (params?.q) qs.set("q", params.q);
   if (params?.limit !== undefined) qs.set("limit", String(params.limit));
   if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+  if (params?.order_by) qs.set("order_by", params.order_by);
   return apiFetch(`/songs?${qs.toString()}`) as Promise<Song[]>;
+}
+
+export async function fetchRecentSongs(limit = 12) {
+  return fetchSongs({ order_by: "created_at", limit });
 }
 
 export async function fetchSong(id: string) {
@@ -110,6 +116,31 @@ export async function logHistory(songId: string, duration?: number, completed = 
     method: "POST",
     body: JSON.stringify({ song_id: songId, duration_listened_seconds: duration, completed }),
   });
+}
+
+export async function fetchHistory() {
+  return apiFetch("/history") as Promise<Array<{
+    id: string;
+    user_id: string;
+    song_id: string;
+    started_at: string;
+    duration_listened_seconds: number | null;
+    completed: boolean;
+    title: string;
+    artist: string;
+    album: string | null;
+    artwork_key: string | null;
+    duration_seconds: number;
+  }>>;
+}
+
+export async function fetchStats() {
+  return apiFetch("/stats") as Promise<{
+    total_songs: number;
+    total_artists: number;
+    total_albums: number;
+    total_duration_seconds: number;
+  }>;
 }
 
 // Admin APIs

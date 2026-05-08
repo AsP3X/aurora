@@ -20,13 +20,26 @@ pub struct ListParams {
     pub artist: Option<String>,
     #[serde(default)]
     pub album: Option<String>,
+    #[serde(default)]
+    pub q: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+    #[serde(default)]
+    pub order_by: Option<String>,
 }
 
 fn default_limit() -> i64 { 50 }
+
+fn sanitize_order_by(order_by: Option<String>) -> &'static str {
+    match order_by.as_deref() {
+        Some("created_at") => "created_at DESC",
+        Some("artist") => "artist, title",
+        Some("album") => "album, track_number, title",
+        Some("title") | _ => "title",
+    }
+}
 
 pub async fn list_songs(
     State(state): State<Arc<AppState>>,
@@ -35,19 +48,25 @@ pub async fn list_songs(
 ) -> Result<Json<Vec<super::model::Song>>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let songs = sqlx::query_as::<_, super::model::Song>(
+    let order_clause = sanitize_order_by(params.order_by);
+    let sql = format!(
         "SELECT * FROM songs
          WHERE ($1 IS NULL OR LOWER(artist) LIKE LOWER($1))
          AND ($2 IS NULL OR LOWER(album) LIKE LOWER($2))
-         ORDER BY title
-         LIMIT $3 OFFSET $4"
-    )
-    .bind(params.artist.map(|a| format!("%{}%", a)))
-    .bind(params.album.map(|a| format!("%{}%", a)))
-    .bind(params.limit)
-    .bind(params.offset)
-    .fetch_all(&state.pool)
-    .await?;
+         AND ($5 IS NULL OR LOWER(title) LIKE LOWER($5) OR LOWER(artist) LIKE LOWER($5) OR LOWER(album) LIKE LOWER($5))
+         ORDER BY {}
+         LIMIT $3 OFFSET $4",
+        order_clause
+    );
+
+    let songs = sqlx::query_as::<_, super::model::Song>(&sql)
+        .bind(params.artist.map(|a| format!("%{}%", a)))
+        .bind(params.album.map(|a| format!("%{}%", a)))
+        .bind(params.limit)
+        .bind(params.offset)
+        .bind(params.q.map(|q| format!("%{}%", q)))
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(songs))
 }
@@ -140,4 +159,46 @@ pub async fn log_history(
     .await?;
 
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+pub async fn list_history(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+) -> Result<Json<Vec<super::model::HistoryEntry>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "history.view").await?;
+
+    let entries = sqlx::query_as::<_, super::model::HistoryEntry>(
+        "SELECT h.id, h.user_id, h.song_id, h.started_at, h.duration_listened_seconds, h.completed,
+                s.title, s.artist, s.album, s.artwork_key, s.duration_seconds
+         FROM playback_history h
+         JOIN songs s ON h.song_id = s.id
+         WHERE h.user_id = $1
+         ORDER BY h.started_at DESC
+         LIMIT 20"
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(entries))
+}
+
+pub async fn get_stats(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+) -> Result<Json<super::model::LibraryStats>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let row = sqlx::query_as::<_, super::model::LibraryStats>(
+        "SELECT
+            COUNT(*) as total_songs,
+            COUNT(DISTINCT artist) as total_artists,
+            COUNT(DISTINCT album) as total_albums,
+            COALESCE(SUM(duration_seconds), 0) as total_duration_seconds
+         FROM songs"
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(row))
 }
