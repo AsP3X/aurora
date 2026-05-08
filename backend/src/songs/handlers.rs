@@ -7,7 +7,12 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{error::AppError, storage::Storage, AppState};
+use crate::{
+    error::AppError,
+    permissions::require_permission,
+    storage::Storage,
+    AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
@@ -25,12 +30,15 @@ fn default_limit() -> i64 { 50 }
 
 pub async fn list_songs(
     State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<Vec<super::model::Song>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
     let songs = sqlx::query_as::<_, super::model::Song>(
         "SELECT * FROM songs
-         WHERE ($1::text IS NULL OR artist ILIKE $1)
-         AND ($2::text IS NULL OR album ILIKE $2)
+         WHERE ($1 IS NULL OR LOWER(artist) LIKE LOWER($1))
+         AND ($2 IS NULL OR LOWER(album) LIKE LOWER($2))
          ORDER BY title
          LIMIT $3 OFFSET $4"
     )
@@ -46,10 +54,13 @@ pub async fn list_songs(
 
 pub async fn get_song(
     State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<super::model::Song>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
     let song = sqlx::query_as::<_, super::model::Song>("SELECT * FROM songs WHERE id = $1")
-        .bind(id)
+        .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
@@ -61,7 +72,7 @@ pub async fn stream_song(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let row = sqlx::query_as::<_, (String,)>("SELECT file_key FROM songs WHERE id = $1")
-        .bind(id)
+        .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
@@ -84,7 +95,7 @@ pub async fn get_artwork(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1")
-        .bind(id)
+        .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
@@ -105,7 +116,7 @@ pub async fn get_artwork(
 
 #[derive(Debug, serde::Deserialize)]
 pub struct LogHistoryBody {
-    pub song_id: Uuid,
+    pub song_id: String,
     pub duration_listened_seconds: Option<i32>,
     #[serde(default)]
     pub completed: bool,
@@ -116,10 +127,12 @@ pub async fn log_history(
     claims: axum::Extension<crate::auth::Claims>,
     Json(body): Json<LogHistoryBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let history_id = Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO playback_history (user_id, song_id, duration_listened_seconds, completed) VALUES ($1, $2, $3, $4)"
+        "INSERT INTO playback_history (id, user_id, song_id, duration_listened_seconds, completed) VALUES ($1, $2, $3, $4, $5)"
     )
-    .bind(claims.sub)
+    .bind(history_id)
+    .bind(claims.sub.clone())
     .bind(body.song_id)
     .bind(body.duration_listened_seconds)
     .bind(body.completed)

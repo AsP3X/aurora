@@ -1,10 +1,11 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
 use std::path::Path;
 use tracing::{info, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-pub async fn scan_directory(pool: &PgPool, base_dir: &str) -> anyhow::Result<()> {
+#[allow(dead_code)]
+pub async fn scan_directory(pool: &AnyPool, base_dir: &str) -> anyhow::Result<()> {
     info!("Starting library scan at {}", base_dir);
 
     for entry in WalkDir::new(base_dir).into_iter().filter_map(|e| e.ok()) {
@@ -28,7 +29,8 @@ pub async fn scan_directory(pool: &PgPool, base_dir: &str) -> anyhow::Result<()>
     Ok(())
 }
 
-async fn process_file(pool: &PgPool, path: &Path, base_dir: &str) -> anyhow::Result<()> {
+#[allow(dead_code)]
+async fn process_file(pool: &AnyPool, path: &Path, base_dir: &str) -> anyhow::Result<()> {
     use lofty::prelude::*;
     use lofty::tag::ItemKey;
 
@@ -78,9 +80,9 @@ async fn process_file(pool: &PgPool, path: &Path, base_dir: &str) -> anyhow::Res
             file_size_bytes = EXCLUDED.file_size_bytes,
             bitrate_kbps = EXCLUDED.bitrate_kbps,
             sample_rate_hz = EXCLUDED.sample_rate_hz,
-            updated_at = now()"
+            updated_at = CURRENT_TIMESTAMP"
     )
-    .bind(id)
+    .bind(id.to_string())
     .bind(&title)
     .bind(&artist)
     .bind(&album)

@@ -4,8 +4,10 @@ use serde::Deserialize;
 pub struct Config {
     #[serde(default = "default_database_url")]
     pub database_url: String,
+    #[allow(dead_code)]
     #[serde(default = "default_meili_url")]
     pub meili_url: String,
+    #[allow(dead_code)]
     #[serde(default = "default_meili_master_key")]
     pub meili_master_key: String,
     #[serde(default = "default_jwt_secret")]
@@ -24,7 +26,7 @@ impl Config {
 }
 
 fn default_database_url() -> String {
-    "postgres://aurora:aurora@localhost:5432/aurora".into()
+    "sqlite://aurora.db".into()
 }
 
 fn default_meili_url() -> String {

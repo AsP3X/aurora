@@ -1,9 +1,10 @@
-use axum::{extract::Query, Json};
+use axum::Json;
 use serde::Deserialize;
 
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SearchQuery {
     pub q: String,
 }

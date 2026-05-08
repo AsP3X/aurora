@@ -19,7 +19,11 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  console.log(`[API] ${options.method || "GET"} ${path}`);
+
   const res = await fetch(url, { ...options, headers });
+
+  console.log(`[API] ${options.method || "GET"} ${path} → ${res.status}`);
 
   if (res.status === 401) {
     localStorage.removeItem("aurora_token");
@@ -40,18 +44,18 @@ export async function login(email: string, password: string) {
   return apiFetch("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
-  }) as Promise<{ token: string; user: { id: string; email: string; role: string } }>;
+  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
 }
 
 export async function register(email: string, password: string) {
   return apiFetch("/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
-  }) as Promise<{ token: string; user: { id: string; email: string; role: string } }>;
+  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
 }
 
 export async function me() {
-  return apiFetch("/me") as Promise<{ id: string; email: string; role: string }>;
+  return apiFetch("/me") as Promise<{ id: string; email: string; role: string; permissions: string[] }>;
 }
 
 export async function fetchSongs(params?: { artist?: string; album?: string; limit?: number; offset?: number }) {
@@ -106,4 +110,66 @@ export async function logHistory(songId: string, duration?: number, completed = 
     method: "POST",
     body: JSON.stringify({ song_id: songId, duration_listened_seconds: duration, completed }),
   });
+}
+
+// Admin APIs
+
+export async function fetchPermissions() {
+  return apiFetch("/admin/permissions") as Promise<Array<{ id: string; key: string; name: string; description: string | null; category: string }>>;
+}
+
+export async function fetchGroups() {
+  return apiFetch("/admin/groups") as Promise<Array<{ id: string; name: string; description: string | null }>>;
+}
+
+export async function createGroup(name: string, description?: string) {
+  return apiFetch("/admin/groups", {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  }) as Promise<{ id: string; name: string; description: string | null }>;
+}
+
+export async function fetchGroupPermissions(groupId: string) {
+  return apiFetch(`/admin/groups/${groupId}/permissions`) as Promise<Array<{ id: string; key: string; name: string; description: string | null; category: string }>>;
+}
+
+export async function setGroupPermissions(groupId: string, permissionKeys: string[]) {
+  return apiFetch(`/admin/groups/${groupId}/permissions`, {
+    method: "PUT",
+    body: JSON.stringify({ permission_keys: permissionKeys }),
+  });
+}
+
+export async function fetchGroupMembers(groupId: string) {
+  return apiFetch(`/admin/groups/${groupId}/members`) as Promise<Array<{ id: string; email: string; role: string }>>;
+}
+
+export async function addGroupMember(groupId: string, userId: string) {
+  return apiFetch(`/admin/groups/${groupId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export async function removeGroupMember(groupId: string, userId: string) {
+  return apiFetch(`/admin/groups/${groupId}/members/${userId}`, { method: "DELETE" });
+}
+
+export async function fetchUsers() {
+  return apiFetch("/admin/users") as Promise<Array<{ id: string; email: string; role: string }>>;
+}
+
+export async function fetchUserPermissions(userId: string) {
+  return apiFetch(`/admin/users/${userId}/permissions`) as Promise<Array<{ id: string; key: string; name: string; description: string | null; category: string }>>;
+}
+
+export async function setUserPermissions(userId: string, permissionKeys: string[]) {
+  return apiFetch(`/admin/users/${userId}/permissions`, {
+    method: "PUT",
+    body: JSON.stringify({ permission_keys: permissionKeys }),
+  });
+}
+
+export async function fetchUserEffectivePermissions(userId: string) {
+  return apiFetch(`/admin/users/${userId}/effective-permissions`) as Promise<string[]>;
 }

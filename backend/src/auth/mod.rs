@@ -1,17 +1,19 @@
 use axum::{
-    extract::Request,
-    http::{header, StatusCode},
+    extract::{Request, State},
+    http::header,
     middleware::Next,
     response::Response,
 };
+use std::sync::Arc;
 
-pub use handlers::{decode_token, Claims, oauth_placeholder};
+pub use handlers::{decode_token, Claims};
 
-use crate::error::AppError;
+use crate::{error::AppError, AppState};
 
 pub mod handlers;
 
 pub async fn auth_middleware(
+    State(state): State<Arc<AppState>>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, AppError> {
@@ -23,9 +25,7 @@ pub async fn auth_middleware(
 
     let token = auth_header.ok_or(AppError::Unauthorized)?;
 
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "change-me".into());
-
-    let claims = decode_token(token, &secret).map_err(|_| AppError::Unauthorized)?;
+    let claims = decode_token(token, &state.jwt_secret).map_err(|_| AppError::Unauthorized)?;
 
     if chrono::Utc::now().timestamp() > claims.exp {
         return Err(AppError::Unauthorized);
