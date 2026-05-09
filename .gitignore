@@ -50,3 +50,4 @@ tmp/
 temp/
 *.tmp
 .claude/
+.worktrees/
