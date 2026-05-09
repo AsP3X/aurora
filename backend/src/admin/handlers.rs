@@ -97,7 +97,7 @@ pub struct AdminPlaylist {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
-    pub is_public: bool,
+    pub is_public: i64,
     pub created_at: String,
     pub owner_email: String,
     pub song_count: i64,
