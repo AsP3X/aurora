@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     middleware,
     routing::{get, post},
     Router,
@@ -113,8 +114,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/users/{id}", axum::routing::delete(admin::handlers::delete_user))
         .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song))
-        .route("/api/v1/admin/songs/stage", post(admin::upload::stage_song))
-        .route("/api/v1/admin/songs/commit", post(admin::upload::commit_song))
         .route("/api/v1/admin/songs/stage/{id}/artwork", get(admin::upload::get_staged_artwork))
         .route("/api/v1/admin/playlists", get(admin::handlers::list_all_playlists))
         .route("/api/v1/admin/playlists/{id}", axum::routing::delete(admin::handlers::delete_playlist))
@@ -122,9 +121,16 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/settings", get(admin::handlers::list_settings).put(admin::handlers::update_setting))
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 
+    let upload_routes = Router::new()
+        .route("/api/v1/admin/songs/stage", post(admin::upload::stage_song))
+        .route("/api/v1/admin/songs/commit", post(admin::upload::commit_song))
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
+
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
+        .merge(upload_routes)
         .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

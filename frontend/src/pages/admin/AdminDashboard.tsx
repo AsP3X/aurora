@@ -22,8 +22,8 @@ import {
   fetchAdminStats,
   fetchAdminSettings,
   updateAdminSetting,
-  artworkUrl,
 } from "../../api/client";
+import ArtworkImage from "../../components/ArtworkImage";
 import PermissionManager from "../../components/admin/PermissionManager";
 import UploadSongDialog from "../../components/admin/UploadSongDialog";
 import type { Song } from "../../types";
@@ -921,12 +921,11 @@ export default function AdminDashboard() {
                 {songs.map((song) => (
                   <tr key={song.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-4 py-3">
-                      <img
-                        src={artworkUrl(song.id)}
-                        alt={song.title}
+                      <ArtworkImage
+                        songId={song.id}
+                        title={song.title}
+                        artist={song.artist}
                         className="w-10 h-10 rounded-lg object-cover bg-surface-950"
-                        loading="lazy"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                       />
                     </td>
                     <td className="px-4 py-3 text-white font-medium">{song.title}</td>

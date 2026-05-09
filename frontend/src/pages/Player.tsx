@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchSong, streamUrl, logHistory } from "../api/client";
+import ArtworkImage from "../components/ArtworkImage";
 import type { Song } from "../types";
 
 export default function Player() {
@@ -108,14 +109,11 @@ export default function Player() {
       <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-start">
         <div className="w-full md:w-80 shrink-0">
           <div className="relative aspect-square rounded-2xl overflow-hidden bg-surface-900 shadow-2xl shadow-black/40">
-            <img
-              src={`http://localhost:3000/api/v1/songs/${song.id}/artwork`}
-              alt={song.title}
+            <ArtworkImage
+              songId={song.id}
+              title={song.title}
+              artist={song.artist}
               className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-                (e.target as HTMLImageElement).parentElement!.classList.add("flex", "items-center", "justify-center");
-              }}
             />
           </div>
         </div>
