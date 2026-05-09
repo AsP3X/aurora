@@ -11,6 +11,7 @@ pub struct Song {
     pub track_number: Option<i32>,
     pub year: Option<i32>,
     pub genre: Option<String>,
+    pub studio: Option<String>,
     pub duration_seconds: i32,
     pub file_key: String,
     pub file_size_bytes: i64,
