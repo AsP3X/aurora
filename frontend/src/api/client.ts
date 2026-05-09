@@ -1,6 +1,13 @@
 import type { Song, Playlist } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
+function getApiBase(): string {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  return `${window.location.protocol}//${window.location.hostname}:3000/api/v1`;
+}
+
+const API_BASE = getApiBase();
 
 function getToken(): string | null {
   return localStorage.getItem("aurora_token");
