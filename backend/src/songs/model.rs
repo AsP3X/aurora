@@ -84,30 +84,30 @@ pub async fn populate_genres(
         return Ok(());
     }
 
+    // SQLite parameter limit is 999; use a safe batch size
+    const BATCH_SIZE: usize = 900;
     let ids: Vec<&str> = songs.iter().map(|s| s.id.as_str()).collect();
-    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("${}", i)).collect();
-
-    let sql = format!(
-        "SELECT song_id, g.name FROM song_genres sg JOIN genres g ON sg.genre_id = g.id WHERE song_id IN ({})",
-        placeholders.join(", ")
-    );
-
-    let mut query = sqlx::query_as::<_, (String, String)>(&sql);
-    for id in &ids {
-        query = query.bind(id);
-    }
-
-    let rows = query.fetch_all(pool).await?;
 
     let mut genre_map: HashMap<String, Vec<String>> = HashMap::new();
-    for (song_id, genre) in rows {
-        genre_map.entry(song_id).or_default().push(genre);
+
+    for chunk in ids.chunks(BATCH_SIZE) {
+        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("${}", i)).collect();
+        let sql = format!(
+            "SELECT song_id, g.name FROM song_genres sg JOIN genres g ON sg.genre_id = g.id WHERE song_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut query = sqlx::query_as::<_, (String, String)>(&sql);
+        for id in chunk {
+            query = query.bind(id);
+        }
+        let rows = query.fetch_all(pool).await?;
+        for (song_id, genre) in rows {
+            genre_map.entry(song_id).or_default().push(genre);
+        }
     }
 
     for song in songs.iter_mut() {
-        if let Some(genres) = genre_map.remove(&song.id) {
-            song.genres = genres;
-        }
+        song.genres = genre_map.remove(&song.id).unwrap_or_default();
     }
 
     Ok(())
