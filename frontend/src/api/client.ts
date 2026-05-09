@@ -282,3 +282,63 @@ export async function updateAdminSetting(key: string, value: string) {
     body: JSON.stringify({ value }),
   });
 }
+
+export async function stageSong(file: File) {
+  const form = new FormData();
+  form.append("audio", file);
+
+  const token = getToken();
+  const url = `${API_BASE}/admin/songs/stage`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("aurora_token");
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+
+  return res.json() as Promise<import("../types").SongDraft>;
+}
+
+export async function commitSong(draft: import("../types").SongDraft, artworkBlob?: Blob) {
+  const form = new FormData();
+  form.append(
+    "metadata",
+    new Blob([JSON.stringify(draft)], { type: "application/json" })
+  );
+  if (artworkBlob) {
+    form.append("artwork", artworkBlob, "artwork.jpg");
+  }
+
+  const token = getToken();
+  const url = `${API_BASE}/admin/songs/commit`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("aurora_token");
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+
+  return res.json() as Promise<import("../types").Song>;
+}
