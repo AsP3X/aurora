@@ -244,7 +244,7 @@ export default function Library() {
   return (
     <div className="h-screen flex flex-col bg-surface-950">
       {/* ─── Topbar ─── */}
-      <div className="h-16 bg-surface-800 border-b border-white/5 shrink-0 flex items-center justify-between px-6">
+      <div className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-6">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-3 group">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center shadow-lg shadow-aurora-500/20 group-hover:shadow-aurora-500/30 transition-shadow">
@@ -344,7 +344,7 @@ export default function Library() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ─── Sidebar ─── */}
-        <div className="w-64 bg-surface-800 border-r border-white/5 shrink-0 flex flex-col">
+        <div className="w-64 bg-white/5 border-r border-white/10 backdrop-blur-xl shrink-0 flex flex-col">
           {/* Main nav */}
           <div className="p-4 space-y-1">
             <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
