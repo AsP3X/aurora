@@ -14,6 +14,7 @@ export interface Song {
   track_number: number | null;
   year: number | null;
   genre: string | null;
+  studio: string | null;
   duration_seconds: number;
   file_key: string;
   file_size_bytes: number;
@@ -24,6 +25,23 @@ export interface Song {
   publisher_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SongDraft {
+  staging_id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  album_artist: string | null;
+  track_number: number | null;
+  year: number | null;
+  genre: string | null;
+  studio: string | null;
+  duration_seconds: number;
+  file_format: string;
+  bitrate_kbps: number | null;
+  sample_rate_hz: number | null;
+  has_artwork: boolean;
 }
 
 export interface Playlist {
