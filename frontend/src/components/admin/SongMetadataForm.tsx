@@ -1,4 +1,7 @@
+import { useState, useEffect } from "react";
 import type { SongDraft } from "../../types";
+import EntityField from "./EntityField";
+import { fetchValues } from "../../api/client";
 
 interface SongMetadataFormProps {
   draft: SongDraft;
@@ -10,7 +13,48 @@ const inputClass =
 
 const labelClass = "mb-1 block text-xs font-medium text-surface-300";
 
+type EntityType = "artist" | "album" | "album_artist" | "genre" | "studio";
+
 export default function SongMetadataForm({ draft, onChange }: SongMetadataFormProps) {
+  const [existingValues, setExistingValues] = useState<Record<EntityType, string[]>>({
+    artist: [],
+    album: [],
+    album_artist: [],
+    genre: [],
+    studio: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      fetchValues("artist"),
+      fetchValues("album"),
+      fetchValues("album_artist"),
+      fetchValues("genre"),
+      fetchValues("studio"),
+    ])
+      .then(([artists, albums, albumArtists, genres, studios]) => {
+        if (cancelled) return;
+        setExistingValues({
+          artist: artists,
+          album: albums,
+          album_artist: albumArtists,
+          genre: genres,
+          studio: studios,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to fetch existing values:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const update = <K extends keyof SongDraft>(field: K, value: SongDraft[K]) => {
     onChange({ ...draft, [field]: value });
   };
@@ -28,32 +72,32 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
       </div>
 
       <div className="sm:col-span-2">
-        <label className={labelClass}>Artist *</label>
-        <input
-          className={inputClass}
+        <EntityField
+          label="Artist *"
           value={draft.artist}
-          onChange={(e) => update("artist", e.target.value)}
-          required
+          onChange={(v) => update("artist", v ?? "")}
+          entityType="artist"
+          existingValues={existingValues.artist}
         />
       </div>
 
       <div>
-        <label className={labelClass}>Album</label>
-        <input
-          className={inputClass}
-          value={draft.album ?? ""}
-          onChange={(e) => update("album", e.target.value || null)}
-          placeholder="Optional"
+        <EntityField
+          label="Album"
+          value={draft.album}
+          onChange={(v) => update("album", v)}
+          entityType="album"
+          existingValues={existingValues.album}
         />
       </div>
 
       <div>
-        <label className={labelClass}>Album Artist</label>
-        <input
-          className={inputClass}
-          value={draft.album_artist ?? ""}
-          onChange={(e) => update("album_artist", e.target.value || null)}
-          placeholder="Optional"
+        <EntityField
+          label="Album Artist"
+          value={draft.album_artist}
+          onChange={(v) => update("album_artist", v)}
+          entityType="album_artist"
+          existingValues={existingValues.album_artist}
         />
       </div>
 
@@ -86,22 +130,22 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
       </div>
 
       <div>
-        <label className={labelClass}>Genre</label>
-        <input
-          className={inputClass}
-          value={draft.genre ?? ""}
-          onChange={(e) => update("genre", e.target.value || null)}
-          placeholder="Optional"
+        <EntityField
+          label="Genre"
+          value={draft.genre}
+          onChange={(v) => update("genre", v)}
+          entityType="genre"
+          existingValues={existingValues.genre}
         />
       </div>
 
       <div>
-        <label className={labelClass}>Studio / Label</label>
-        <input
-          className={inputClass}
-          value={draft.studio ?? ""}
-          onChange={(e) => update("studio", e.target.value || null)}
-          placeholder="Optional"
+        <EntityField
+          label="Studio / Label"
+          value={draft.studio}
+          onChange={(v) => update("studio", v)}
+          entityType="studio"
+          existingValues={existingValues.studio}
         />
       </div>
 

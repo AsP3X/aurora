@@ -15,7 +15,6 @@ export default function EntityField({
   label,
   value,
   onChange,
-  entityType,
   existingValues,
 }: EntityFieldProps) {
   const [open, setOpen] = useState(false);
