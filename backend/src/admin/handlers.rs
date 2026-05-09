@@ -382,3 +382,27 @@ pub async fn update_song(
     let song = query.fetch_one(&state.pool).await?;
     Ok(Json(song))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleEnabledBody {
+    pub enabled: bool,
+}
+
+pub async fn toggle_song_enabled(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<String>,
+    Json(body): Json<ToggleEnabledBody>,
+) -> Result<Json<crate::songs::model::Song>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let song = sqlx::query_as::<_, crate::songs::model::Song>(
+        "UPDATE songs SET enabled = $1 WHERE id = $2 RETURNING *"
+    )
+    .bind(body.enabled)
+    .bind(&id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(song))
+}
