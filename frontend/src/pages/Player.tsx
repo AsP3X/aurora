@@ -13,6 +13,7 @@ export default function Player() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
+  const [prevVolume, setPrevVolume] = useState(1);
   const [loading, setLoading] = useState(true);
   const [buffered, setBuffered] = useState(0);
 
@@ -40,6 +41,20 @@ export default function Player() {
     } else {
       audio.pause();
       setPlaying(false);
+    }
+  }
+
+  function toggleMute() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (volume === 0) {
+      const restored = prevVolume || 1;
+      setVolume(restored);
+      audio.volume = restored;
+    } else {
+      setPrevVolume(volume);
+      setVolume(0);
+      audio.volume = 0;
     }
   }
 
@@ -82,10 +97,22 @@ export default function Player() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-surface-400 text-sm">Loading track...</p>
+      <div className="max-w-5xl mx-auto py-8 md:py-12">
+        <div className="h-6 w-20 bg-surface-800 animate-pulse rounded mb-6 md:mb-8" />
+        <div className="flex flex-col md:flex-row gap-10 md:gap-16 items-start">
+          <div className="w-full md:w-96 shrink-0">
+            <div className="aspect-square rounded-3xl bg-surface-800 animate-pulse" />
+          </div>
+          <div className="flex-1 min-w-0 w-full space-y-4">
+            <div className="h-10 w-3/4 bg-surface-800 animate-pulse rounded" />
+            <div className="h-6 w-1/2 bg-surface-800 animate-pulse rounded" />
+            <div className="h-4 w-1/3 bg-surface-800 animate-pulse rounded" />
+            <div className="pt-6 space-y-4">
+              <div className="h-2 w-full bg-surface-800 animate-pulse rounded-full" />
+              <div className="h-4 w-full bg-surface-800 animate-pulse rounded" />
+              <div className="h-16 w-full bg-surface-800 animate-pulse rounded" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -97,80 +124,137 @@ export default function Player() {
   const bufferedPercent = duration ? (buffered / duration) * 100 : 0;
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-5xl mx-auto py-8 md:py-12">
       <button
         onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-sm text-surface-400 hover:text-white transition-colors mb-8 group"
+        className="flex items-center gap-2 text-sm text-surface-400 hover:text-white transition-colors mb-6 md:mb-8 group"
       >
         <svg className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         Back
       </button>
 
-      <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-start">
-        <div className="w-full md:w-80 shrink-0">
-          <div className="relative aspect-square rounded-2xl overflow-hidden bg-surface-900 shadow-2xl shadow-black/40">
-            <ArtworkImage
-              songId={song.id}
-              title={song.title}
-              artist={song.artist}
-              className="w-full h-full object-cover"
+      <div className="flex flex-col md:flex-row gap-10 md:gap-16 items-start">
+        <div className="w-full md:w-96 shrink-0">
+          <div className="relative">
+            <div
+              className="absolute -inset-4 rounded-[2rem] opacity-60 pointer-events-none"
+              style={{
+                background: "radial-gradient(ellipse at 50% 50%, rgba(139,92,246,0.15) 0%, transparent 70%)",
+              }}
             />
+            <div className="relative aspect-square rounded-3xl overflow-hidden bg-surface-900 shadow-2xl shadow-black/50">
+              <ArtworkImage
+                songId={song.id}
+                title={song.title}
+                artist={song.artist}
+                className="w-full h-full object-cover"
+              />
+            </div>
           </div>
         </div>
 
         <div className="flex-1 min-w-0 w-full">
-          <div className="mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate mb-1">{song.title}</h1>
-            <p className="text-lg text-aurora-400 font-medium truncate">{song.artist}</p>
-            {song.album && <p className="text-sm text-surface-400 mt-1">{song.album}</p>}
-            <div className="flex items-center gap-3 mt-3 text-xs text-surface-500">
-              {song.year && <span className="px-2 py-0.5 bg-surface-900 rounded-md">{song.year}</span>}
-              {song.genre && <span className="px-2 py-0.5 bg-surface-900 rounded-md">{song.genre}</span>}
-              <span className="px-2 py-0.5 bg-surface-900 rounded-md uppercase">{song.file_format}</span>
-              {song.bitrate_kbps && <span className="px-2 py-0.5 bg-surface-900 rounded-md">{song.bitrate_kbps} kbps</span>}
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white truncate mb-2">
+              {song.title}
+            </h1>
+            <p className="text-xl md:text-2xl font-medium text-aurora-400 truncate mb-2">
+              {song.artist}
+            </p>
+            <p className="text-base text-surface-400 truncate">
+              {song.album && song.year
+                ? `${song.album} — ${song.year}`
+                : song.album || (song.year ? String(song.year) : "")}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              {song.genre && (
+                <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full">
+                  {song.genre}
+                </span>
+              )}
+              <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full uppercase">
+                {song.file_format}
+              </span>
+              {song.bitrate_kbps && (
+                <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full">
+                  {song.bitrate_kbps} kbps
+                </span>
+              )}
+              {song.studio && (
+                <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full">
+                  {song.studio}
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="relative h-1.5 bg-surface-800 rounded-full overflow-hidden group">
-              <div className="absolute inset-y-0 left-0 bg-surface-600 rounded-full" style={{ width: `${bufferedPercent}%` }} />
-              <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-500 to-aurora-400 rounded-full" style={{ width: `${progressPercent}%` }} />
-              <input
-                type="range"
-                min={0}
-                max={duration || song.duration_seconds}
-                value={progress}
-                onChange={handleSeek}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
+          <div className="border-t border-white/10 mb-6 md:mb-8" />
+
+          <div className="bg-white/[0.02] backdrop-blur-sm rounded-2xl p-4 md:p-6 space-y-6">
+            <div>
+              <div className="relative h-2 bg-surface-800 rounded-full overflow-hidden group cursor-pointer">
+                <div
+                  className="absolute inset-y-0 left-0 bg-surface-600 rounded-full"
+                  style={{ width: `${bufferedPercent}%` }}
+                />
+                <div
+                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-500 to-aurora-400 rounded-full"
+                  style={{ width: `${progressPercent}%` }}
+                />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{ left: `calc(${progressPercent}% - 6px)` }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || song.duration_seconds}
+                  value={progress}
+                  onChange={handleSeek}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-surface-500 font-mono mt-2">
+                <span>{formatTime(progress)}</span>
+                <span>{formatTime(duration || song.duration_seconds)}</span>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs text-surface-500 font-mono">
-              <span>{formatTime(progress)}</span>
-              <span>{formatTime(duration || song.duration_seconds)}</span>
-            </div>
-
-            <div className="flex items-center justify-center gap-6 pt-2">
-              <button className="p-2 text-surface-400 hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" /></svg>
+            <div className="flex items-center justify-center gap-4 md:gap-6">
+              <button className="w-10 h-10 flex items-center justify-center text-surface-600 hover:text-surface-400 transition-colors" title="Shuffle">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+                </svg>
               </button>
+
+              <button className="w-12 h-12 flex items-center justify-center text-surface-400 hover:text-white transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+              </button>
+
               <button
                 onClick={togglePlay}
-                className="w-14 h-14 rounded-full bg-gradient-to-br from-aurora-500 to-aurora-700 hover:from-aurora-400 hover:to-aurora-600 flex items-center justify-center shadow-lg shadow-aurora-500/25 hover:shadow-aurora-500/40 transition-all hover:scale-105 active:scale-95"
+                className="w-16 h-16 rounded-full bg-gradient-to-br from-aurora-500 to-aurora-700 hover:from-aurora-400 hover:to-aurora-600 flex items-center justify-center shadow-lg shadow-aurora-500/25 hover:shadow-aurora-500/40 transition-all hover:scale-105 active:scale-95"
               >
                 {playing ? (
-                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
+                  <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
                 ) : (
-                  <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                  <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                 )}
               </button>
-              <button className="p-2 text-surface-400 hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" /></svg>
+
+              <button className="w-12 h-12 flex items-center justify-center text-surface-400 hover:text-white transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+              </button>
+
+              <button className="w-10 h-10 flex items-center justify-center text-surface-600 hover:text-surface-400 transition-colors" title="Repeat">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.058M20 20v-5h-.058M4 14a8 8 0 0113.647-5.647M20 10a8 8 0 01-13.647 5.647" />
+                </svg>
               </button>
             </div>
 
-            <div className="flex items-center gap-3 pt-4">
-              <button onClick={() => setVolume(v => v === 0 ? 1 : 0)} className="text-surface-400 hover:text-white transition-colors">
+            <div className="flex items-center gap-3 pt-2">
+              <button onClick={toggleMute} className="text-surface-400 hover:text-white transition-colors">
                 {volume === 0 ? (
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
                 ) : volume < 0.5 ? (
@@ -179,8 +263,15 @@ export default function Player() {
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                 )}
               </button>
-              <div className="relative flex-1 h-1 bg-surface-800 rounded-full overflow-hidden">
-                <div className="absolute inset-y-0 left-0 bg-surface-400 rounded-full" style={{ width: `${volume * 100}%` }} />
+              <div className="relative flex-1 h-1.5 bg-surface-800 rounded-full overflow-hidden group cursor-pointer">
+                <div
+                  className="absolute inset-y-0 left-0 bg-surface-400 rounded-full"
+                  style={{ width: `${volume * 100}%` }}
+                />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{ left: `calc(${volume * 100}% - 5px)` }}
+                />
                 <input
                   type="range"
                   min={0}
@@ -191,6 +282,9 @@ export default function Player() {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
               </div>
+              <span className="text-xs text-surface-500 font-mono w-8 text-right">
+                {Math.round(volume * 100)}%
+              </span>
             </div>
           </div>
         </div>
