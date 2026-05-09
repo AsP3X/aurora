@@ -346,7 +346,7 @@ export default function Library() {
       </div>
 
       {/* ─── Sidebar ─── */}
-      <div className={`fixed left-0 top-16 w-64 z-40 bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col ${hasPlayer ? "h-[calc(100vh-9.25rem)]" : "h-[calc(100vh-4rem)]"}`}>
+      <div className={`fixed left-0 top-16 w-64 z-[60] bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col ${hasPlayer ? "h-[calc(100vh-9.25rem)]" : "h-[calc(100vh-4rem)]"}`}>
           {/* Main nav */}
           <div className="p-4 space-y-1">
             <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
