@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { PlayerProvider, usePlayer } from "./context/PlayerContext";
+import PlayerBar from "./components/PlayerBar";
 import { setupStatus } from "./api/client";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
@@ -32,8 +34,10 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, can } = useAuth();
+  const { currentSong } = usePlayer();
   const { pathname } = useLocation();
   const isHome = pathname === "/";
+  const hasPlayer = !!currentSong;
 
   return (
     <div className="min-h-screen bg-surface-950 text-white relative">
@@ -71,7 +75,8 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
       )}
-      <main className={isHome ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"}>{children}</main>
+      <main className={`${isHome ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer ? "pb-24" : ""}`}>{children}</main>
+      <PlayerBar />
     </div>
   );
 }
@@ -183,7 +188,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <PlayerProvider>
+          <AppRoutes />
+        </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>
   );
