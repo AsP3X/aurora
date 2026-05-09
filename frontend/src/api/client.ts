@@ -315,6 +315,18 @@ export async function updateAdminSetting(key: string, value: string) {
   });
 }
 
+export async function fetchValues(
+  field: "artist" | "album" | "album_artist" | "genre" | "studio",
+  q?: string,
+  limit?: number
+) {
+  const qs = new URLSearchParams();
+  qs.set("field", field);
+  if (q) qs.set("q", q);
+  if (limit !== undefined) qs.set("limit", String(limit));
+  return apiFetch(`/songs/values?${qs.toString()}`) as Promise<string[]>;
+}
+
 export async function stageSong(file: File) {
   const form = new FormData();
   form.append("audio", file);
