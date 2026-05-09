@@ -233,7 +233,7 @@ export default function Library() {
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col bg-surface-950">
+      <div className={`flex flex-col bg-surface-950 ${hasPlayer ? "h-[calc(100vh-5.25rem)]" : "h-screen"}`}>
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
@@ -245,7 +245,7 @@ export default function Library() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-surface-950">
+    <div className={`flex flex-col bg-surface-950 ${hasPlayer ? "h-[calc(100vh-5.25rem)]" : "h-screen"}`}>
       {/* ─── Topbar ─── */}
       <div className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-6">
         {/* Logo */}
@@ -428,7 +428,7 @@ export default function Library() {
         </div>
 
         {/* ─── Main content ─── */}
-        <div className={`flex-1 bg-surface-950 p-8 overflow-auto ${hasPlayer ? "pb-24" : ""}`}>
+        <div className="flex-1 bg-surface-950 p-8 overflow-auto">
           {/* Stats row */}
           {stats && !isSearching && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
