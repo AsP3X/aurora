@@ -315,10 +315,23 @@ export async function stageSong(file: File) {
   const token = getToken();
   const url = `${API_BASE}/admin/songs/stage`;
 
+  console.log("[stageSong] sending file:", {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    formDataEntries: Array.from(form.keys()),
+  });
+
   const res = await fetch(url, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
+  });
+
+  console.log("[stageSong] response:", {
+    status: res.status,
+    statusText: res.statusText,
+    headers: Object.fromEntries(res.headers.entries()),
   });
 
   if (res.status === 401) {
@@ -329,6 +342,7 @@ export async function stageSong(file: File) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    console.error("[stageSong] error body:", body);
     throw new Error(body.error || `HTTP ${res.status}`);
   }
 

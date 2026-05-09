@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchPlaylist } from "../api/client";
+import ArtworkImage from "../components/ArtworkImage";
 import type { Song, Playlist } from "../types";
 
 function formatDuration(seconds: number) {
@@ -89,12 +90,11 @@ export default function PlaylistDetail() {
                   <td className="px-4 py-3">
                     <Link to={`/player/${song.id}`} className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-surface-800 overflow-hidden shrink-0 flex items-center justify-center">
-                        <img
-                          src={`http://localhost:3000/api/v1/songs/${song.id}/artwork`}
-                          alt=""
+                        <ArtworkImage
+                          songId={song.id}
+                          title={song.title}
+                          artist={song.artist}
                           className="w-full h-full object-cover"
-                          loading="lazy"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                         />
                       </div>
                       <span className="font-medium text-white truncate">{song.title}</span>

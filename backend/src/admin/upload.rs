@@ -178,28 +178,59 @@ pub async fn stage_song(
         .map_err(|e| AppError::BadRequest(e.to_string()))?
     {
         let name = field.name().unwrap_or("").to_string();
-        if name == "audio" {
-            let filename = field.file_name().unwrap_or("unknown").to_string();
+        let filename = field.file_name().unwrap_or("unknown").to_string();
+        let content_type = field.content_type().map(|ct| ct.to_string());
+        tracing::info!(field_name = %name, field_filename = %filename, field_content_type = ?content_type, "multipart field received");
+        if name == "audio" && audio_bytes.is_none() {
             // Validate extension BEFORE buffering bytes
             ext = Path::new(&filename)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_lowercase();
+
+            // Fallback to MIME type mapping if filename has no extension
+            if ext.is_empty() {
+                if let Some(ref ct) = content_type {
+                    ext = match ct.as_str() {
+                        "audio/mpeg" => "mp3".to_string(),
+                        "audio/flac" | "audio/x-flac" => "flac".to_string(),
+                        "audio/ogg" => "ogg".to_string(),
+                        "audio/opus" => "opus".to_string(),
+                        "audio/mp4" | "audio/x-m4a" => "m4a".to_string(),
+                        "audio/aac" => "aac".to_string(),
+                        "audio/x-ms-wma" => "wma".to_string(),
+                        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav".to_string(),
+                        _ => {
+                            tracing::warn!(content_type = %ct, "unrecognized audio MIME type");
+                            String::new()
+                        }
+                    };
+                }
+            }
+
+            tracing::info!(extracted_ext = %ext, "extension extracted");
             let allowed = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wma", "wav"];
             if !allowed.contains(&ext.as_str()) {
+                tracing::warn!(ext = %ext, filename = %filename, content_type = ?content_type, "unsupported audio format");
                 return Err(AppError::BadRequest(format!(
-                    "Unsupported audio format: {}. Allowed: {:?}",
-                    ext, allowed
+                    "Unsupported audio format: {} (filename: {}). Allowed: {:?}",
+                    ext, filename, allowed
                 )));
             }
-            let bytes = field
-                .bytes()
-                .await
-                .map_err(|e| AppError::BadRequest(e.to_string()))?
+            tracing::info!("about to read field bytes");
+            let bytes_result = field.bytes().await;
+            tracing::info!(?bytes_result, "field.bytes() result");
+            let bytes = bytes_result
+                .map_err(|e| {
+                    tracing::warn!(error = %e, "field.bytes() failed");
+                    AppError::BadRequest(e.to_string())
+                })?
                 .to_vec();
+            tracing::info!(byte_count = bytes.len(), "audio bytes buffered");
             audio_bytes = Some(bytes);
-            break;
+            // Continue consuming remaining fields instead of break
+            continue;
         }
     }
 
@@ -209,7 +240,13 @@ pub async fn stage_song(
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
-    let audio_bytes = audio_bytes.ok_or_else(|| AppError::BadRequest("No audio file provided".into()))?;
+    let audio_bytes = match audio_bytes {
+        Some(b) => b,
+        None => {
+            tracing::warn!("no audio field found in multipart request");
+            return Err(AppError::BadRequest("No audio file provided".into()));
+        }
+    };
 
     let audio_path = staging_dir.join(format!("audio.{}", ext));
     tokio::fs::write(&audio_path, &audio_bytes)

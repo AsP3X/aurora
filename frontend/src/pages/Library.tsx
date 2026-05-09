@@ -6,9 +6,9 @@ import {
   fetchHistory,
   fetchStats,
   fetchPlaylists,
-  artworkUrl,
   createPlaylist,
 } from "../api/client";
+import ArtworkImage from "../components/ArtworkImage";
 import { useAuth } from "../context/AuthContext";
 import type { Song, Playlist } from "../types";
 
@@ -32,15 +32,11 @@ function SongCard({ song }: { song: Song }) {
       className="group block space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200"
     >
       <div className="relative aspect-square bg-surface-900 border border-white/5 rounded-xl overflow-hidden shadow-sm">
-        <img
-          src={artworkUrl(song.id)}
-          alt={song.title}
+        <ArtworkImage
+          songId={song.id}
+          title={song.title}
+          artist={song.artist}
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-            (e.target as HTMLImageElement).parentElement!.classList.add("flex", "items-center", "justify-center");
-          }}
         />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
           <div className="w-10 h-10 rounded-full bg-aurora-600/90 backdrop-blur-sm flex items-center justify-center shadow-lg">
@@ -115,13 +111,11 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
     <div className="p-4 border-t border-white/5">
       <div className="bg-surface-900/60 border border-white/5 rounded-xl p-3 flex items-center gap-3">
         <div className="w-10 h-10 rounded-lg bg-surface-950 overflow-hidden shrink-0">
-          <img
-            src={artworkUrl(lastPlayed.id)}
-            alt={lastPlayed.title}
+          <ArtworkImage
+            songId={lastPlayed.id}
+            title={lastPlayed.title}
+            artist={lastPlayed.artist}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -510,15 +504,11 @@ export default function Library() {
                       className="group block space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200"
                     >
                       <div className="relative aspect-square bg-surface-900 border border-white/5 rounded-xl overflow-hidden shadow-sm">
-                        <img
-                          src={artworkUrl(entry.song_id)}
-                          alt={entry.title}
+                        <ArtworkImage
+                          songId={entry.song_id}
+                          title={entry.title}
+                          artist={entry.artist || undefined}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                            (e.target as HTMLImageElement).parentElement!.classList.add("flex", "items-center", "justify-center");
-                          }}
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                           <div className="w-10 h-10 rounded-full bg-aurora-600/90 backdrop-blur-sm flex items-center justify-center shadow-lg">
