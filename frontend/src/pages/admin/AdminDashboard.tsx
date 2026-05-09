@@ -25,6 +25,7 @@ import {
   artworkUrl,
 } from "../../api/client";
 import PermissionManager from "../../components/admin/PermissionManager";
+import UploadSongDialog from "../../components/admin/UploadSongDialog";
 import type { Song } from "../../types";
 
 type Tab = "overview" | "users" | "groups" | "library" | "playlists" | "settings";
@@ -146,6 +147,7 @@ function ConfirmModal({
 export default function AdminDashboard() {
   const { can } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -893,6 +895,12 @@ export default function AdminDashboard() {
               onChange={(e) => { setSongQuery(e.target.value); setSongOffset(0); }}
               className="flex-1 max-w-md px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
             />
+            <button
+              onClick={() => setShowUploadDialog(true)}
+              className="rounded-md bg-aurora-600 px-3 py-2 text-sm font-medium text-white hover:bg-aurora-500"
+            >
+              + Upload Song
+            </button>
             {songLoading && <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />}
           </div>
 
@@ -1106,6 +1114,17 @@ export default function AdminDashboard() {
           onConfirm={handleDelete}
           onCancel={() => setConfirmModal(null)}
           loading={deleting}
+        />
+      )}
+
+      {showUploadDialog && (
+        <UploadSongDialog
+          onClose={() => setShowUploadDialog(false)}
+          onSuccess={() => {
+            if (activeTab === "library") {
+              loadSongs(songQuery || undefined, 0);
+            }
+          }}
         />
       )}
     </div>
