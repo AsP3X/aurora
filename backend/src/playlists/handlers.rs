@@ -74,7 +74,7 @@ pub async fn get_playlist(
         ));
     }
 
-    let songs = sqlx::query_as::<_, crate::songs::model::Song>(
+    let songs_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
         "SELECT s.* FROM songs s
          JOIN playlist_songs ps ON s.id = ps.song_id
          WHERE ps.playlist_id = $1
@@ -83,6 +83,9 @@ pub async fn get_playlist(
     .bind(&id_str)
     .fetch_all(&state.pool)
     .await?;
+
+    let mut songs: Vec<crate::songs::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
+    crate::songs::model::populate_genres(&state.pool, &mut songs).await?;
 
     Ok(Json(serde_json::json!({
         "playlist": playlist,
