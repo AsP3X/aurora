@@ -345,9 +345,8 @@ export default function Library() {
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* ─── Sidebar ─── */}
-        <div className="w-64 bg-white/5 border-r border-white/10 backdrop-blur-xl shrink-0 flex flex-col">
+      {/* ─── Sidebar ─── */}
+      <div className={`fixed left-0 top-16 w-64 z-40 bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col ${hasPlayer ? "h-[calc(100vh-9.25rem)]" : "h-[calc(100vh-4rem)]"}`}>
           {/* Main nav */}
           <div className="p-4 space-y-1">
             <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
@@ -428,7 +427,7 @@ export default function Library() {
         </div>
 
         {/* ─── Main content ─── */}
-        <div className="flex-1 bg-surface-950 p-8 overflow-auto">
+        <div className="ml-64 flex-1 bg-surface-950 p-8 overflow-auto">
           {/* Stats row */}
           {stats && !isSearching && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -540,7 +539,6 @@ export default function Library() {
             )}
           </div>
         </div>
-      </div>
     </div>
   );
 }
