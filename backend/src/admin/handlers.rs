@@ -52,12 +52,15 @@ pub async fn list_admin_songs(
         order_clause
     );
 
-    let songs = sqlx::query_as::<_, crate::songs::model::Song>(&sql)
+    let songs_db = sqlx::query_as::<_, crate::songs::model::SongDb>(&sql)
         .bind(params.q.map(|q| format!("%{}%", q)))
         .bind(params.limit)
         .bind(params.offset)
         .fetch_all(&state.pool)
         .await?;
+
+    let mut songs: Vec<crate::songs::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
+    crate::songs::model::populate_genres(&state.pool, &mut songs).await?;
 
     Ok(Json(songs))
 }
@@ -317,7 +320,7 @@ pub struct UpdateSongBody {
     pub album_artist: Option<String>,
     pub track_number: Option<i32>,
     pub year: Option<i32>,
-    pub genre: Option<String>,
+    pub genres: Option<Vec<String>>,
     pub studio: Option<String>,
 }
 
@@ -328,6 +331,8 @@ pub async fn update_song(
     Json(body): Json<UpdateSongBody>,
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let mut tx = state.pool.begin().await?;
 
     let mut sets: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
@@ -356,30 +361,65 @@ pub async fn update_song(
         sets.push(format!("year = ${}", sets.len() + 2));
         binds.push(v.to_string());
     }
-    if let Some(v) = body.genre {
-        sets.push(format!("genre = ${}", sets.len() + 2));
-        binds.push(v);
-    }
     if let Some(v) = body.studio {
         sets.push(format!("studio = ${}", sets.len() + 2));
         binds.push(v);
     }
 
-    if sets.is_empty() {
-        return Err(AppError::BadRequest("no fields to update".into()));
+    let song_db = if !sets.is_empty() {
+        let sql = format!(
+            "UPDATE songs SET {} WHERE id = $1 RETURNING *",
+            sets.join(", ")
+        );
+        let mut query = sqlx::query_as::<_, crate::songs::model::SongDb>(&sql).bind(&id);
+        for b in &binds {
+            query = query.bind(b);
+        }
+        query.fetch_one(&mut *tx).await?
+    } else {
+        sqlx::query_as::<_, crate::songs::model::SongDb>("SELECT * FROM songs WHERE id = $1")
+            .bind(&id)
+            .fetch_one(&mut *tx)
+            .await?
+    };
+
+    if let Some(genres) = body.genres {
+        sqlx::query("DELETE FROM song_genres WHERE song_id = $1")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+
+        for genre in genres {
+            let genre_lower = genre.trim().to_lowercase();
+            if genre_lower.is_empty() { continue; }
+
+            let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM genres WHERE name = $1")
+                .bind(&genre_lower)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+            if existing.is_none() {
+                sqlx::query("INSERT INTO genres (name) VALUES ($1)")
+                    .bind(&genre_lower)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+
+            sqlx::query(
+                "INSERT INTO song_genres (song_id, genre_id)
+                 SELECT $1, id FROM genres WHERE name = $2"
+            )
+            .bind(&id)
+            .bind(&genre_lower)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
 
-    let sql = format!(
-        "UPDATE songs SET {} WHERE id = $1 RETURNING *",
-        sets.join(", ")
-    );
+    tx.commit().await?;
 
-    let mut query = sqlx::query_as::<_, crate::songs::model::Song>(&sql).bind(&id);
-    for b in &binds {
-        query = query.bind(b);
-    }
-
-    let song = query.fetch_one(&state.pool).await?;
+    let mut song: crate::songs::model::Song = song_db.into();
+    crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
     Ok(Json(song))
 }
 
@@ -396,7 +436,7 @@ pub async fn toggle_song_enabled(
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
-    let song = sqlx::query_as::<_, crate::songs::model::Song>(
+    let song_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
         "UPDATE songs SET enabled = $1 WHERE id = $2 RETURNING *"
     )
     .bind(body.enabled)
@@ -404,5 +444,7 @@ pub async fn toggle_song_enabled(
     .fetch_one(&state.pool)
     .await?;
 
+    let mut song: crate::songs::model::Song = song_db.into();
+    crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
     Ok(Json(song))
 }
