@@ -125,7 +125,7 @@ export default function PlayerBar() {
                   style={{ width: `${bufferedPercent}%` }}
                 />
                 <div
-                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-400 to-aurora-500 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.4)]"
+                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-400 to-aurora-500 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.4)] transition-[width] duration-300 ease-linear"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
@@ -133,20 +133,20 @@ export default function PlayerBar() {
               {/* Ghost dot at cursor position */}
               {hoverPercent !== null && (
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white/40 rounded-full pointer-events-none z-10"
+                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white/40 rounded-full pointer-events-none z-10 transition-[left] duration-300 ease-linear"
                   style={{ left: `calc(${hoverPercent}% - 5px)` }}
                 />
               )}
 
               {/* Always-visible dot at the tip of progress */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow pointer-events-none z-10"
+                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow pointer-events-none z-10 transition-[left] duration-300 ease-linear"
                 style={{ left: `calc(${progressPercent}% - 5px)` }}
               />
 
               {/* Hover thumb above the bar */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex items-center justify-center z-10"
+                className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-[left,opacity] duration-300 ease-linear pointer-events-none flex items-center justify-center z-10"
                 style={{ left: `calc(${progressPercent}% - 10px)` }}
               >
                 <div className="w-2 h-2 bg-aurora-500 rounded-full" />
