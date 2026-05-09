@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { stageSong, commitSong } from "../../api/client";
+import { stageSong, commitSong, stagedArtworkUrl } from "../../api/client";
 import type { SongDraft, Song } from "../../types";
 import SongMetadataForm from "./SongMetadataForm";
 import ArtworkCropper from "./ArtworkCropper";
@@ -28,7 +28,11 @@ export default function UploadSongDialog({ onClose, onSuccess }: UploadSongDialo
       try {
         const result = await stageSong(file);
         setDraft(result);
-        setImageSrc(null);
+        if (result.has_artwork) {
+          setImageSrc(stagedArtworkUrl(result.staging_id));
+        } else {
+          setImageSrc(null);
+        }
         setState("editing");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");

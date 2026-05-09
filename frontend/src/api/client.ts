@@ -342,3 +342,7 @@ export async function commitSong(draft: import("../types").SongDraft, artworkBlo
 
   return res.json() as Promise<import("../types").Song>;
 }
+
+export function stagedArtworkUrl(stagingId: string) {
+  return `${API_BASE}/admin/songs/stage/${stagingId}/artwork`;
+}
