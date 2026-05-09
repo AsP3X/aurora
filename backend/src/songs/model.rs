@@ -20,7 +20,7 @@ pub struct Song {
     pub sample_rate_hz: Option<i32>,
     pub artwork_key: Option<String>,
     pub publisher_id: Option<String>,
-    pub enabled: bool,
+    pub enabled: i64,
     pub created_at: String,
     pub updated_at: String,
 }
