@@ -278,6 +278,20 @@ export async function deleteAdminSong(id: string) {
   return apiFetch(`/admin/songs/${id}`, { method: "DELETE" });
 }
 
+export async function updateAdminSong(id: string, body: Partial<Pick<Song, "title" | "artist" | "album" | "album_artist" | "track_number" | "year" | "genre" | "studio">>) {
+  return apiFetch(`/admin/songs/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }) as Promise<Song>;
+}
+
+export async function toggleAdminSongEnabled(id: string, enabled: boolean) {
+  return apiFetch(`/admin/songs/${id}/enabled`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  }) as Promise<Song>;
+}
+
 export async function fetchAdminPlaylists() {
   return apiFetch("/admin/playlists") as Promise<Array<{
     id: string;
