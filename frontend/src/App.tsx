@@ -75,7 +75,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
       )}
-      <main className={`${isHome ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer ? "pb-24" : ""}`}>{children}</main>
+      <main className={`${isHome ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !pathname.startsWith("/player/") ? "pb-24" : ""}`}>{children}</main>
       <PlayerBar />
     </div>
   );

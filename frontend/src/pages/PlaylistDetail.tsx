@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { fetchPlaylist } from "../api/client";
 import { usePlayer } from "../context/PlayerContext";
 import ArtworkImage from "../components/ArtworkImage";
@@ -12,14 +12,12 @@ function formatDuration(seconds: number) {
 }
 
 function PlayButton({ song }: { song: Song }) {
-  const navigate = useNavigate();
   const { playSong } = usePlayer();
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     playSong(song);
-    navigate(`/player/${song.id}`);
   }
 
   return (
