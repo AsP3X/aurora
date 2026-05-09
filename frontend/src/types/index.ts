@@ -23,7 +23,7 @@ export interface Song {
   sample_rate_hz: number | null;
   artwork_key: string | null;
   publisher_id: string | null;
-  enabled: boolean;
+  enabled: number;
   created_at: string;
   updated_at: string;
 }
