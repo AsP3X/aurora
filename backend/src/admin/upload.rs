@@ -30,7 +30,7 @@ pub struct SongDraft {
     pub album_artist: Option<String>,
     pub track_number: Option<i32>,
     pub year: Option<i32>,
-    pub genre: Option<String>,
+    pub genres: Vec<String>,
     pub studio: Option<String>,
     pub duration_seconds: i32,
     pub file_format: String,
@@ -48,7 +48,7 @@ pub struct CommitSongRequest {
     pub album_artist: Option<String>,
     pub track_number: Option<i32>,
     pub year: Option<i32>,
-    pub genre: Option<String>,
+    pub genres: Vec<String>,
     pub studio: Option<String>,
     pub duration_seconds: i32,
     pub file_format: String,
@@ -63,7 +63,7 @@ struct ExtractedMetadata {
     album_artist: Option<String>,
     track_number: Option<i32>,
     year: Option<i32>,
-    genre: Option<String>,
+    genres: Vec<String>,
     duration_seconds: i32,
     file_format: String,
     bitrate_kbps: Option<i32>,
@@ -77,24 +77,35 @@ fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
     let tagged_file = lofty::read_from_path(path)?;
     let properties = tagged_file.properties();
 
-    let (title, artist, album, album_artist, track_number, year, genre) =
+    let (title, artist, album, album_artist, track_number, year, genres) =
         match tagged_file.primary_tag() {
-            Some(tag) => (
-                tag.title()
-                    .as_deref()
-                    .unwrap_or_else(|| {
-                        path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("Unknown")
+            Some(tag) => {
+                let genre_str = tag.genre().map(|v| v.to_string());
+                let genres = genre_str
+                    .map(|s| {
+                        s.split(|c: char| c == '/' || c == ';' || c == ',')
+                            .map(|g| g.trim().to_lowercase())
+                            .filter(|g| !g.is_empty())
+                            .collect::<Vec<String>>()
                     })
-                    .to_string(),
-                tag.artist().as_deref().unwrap_or("Unknown Artist").to_string(),
-                tag.album().map(|v| v.to_string()),
-                tag.get_string(&ItemKey::AlbumArtist).map(|v| v.to_string()),
-                tag.track().map(|v| v as i32),
-                tag.year().map(|v| v as i32),
-                tag.genre().map(|v| v.to_string()),
-            ),
+                    .unwrap_or_default();
+                (
+                    tag.title()
+                        .as_deref()
+                        .unwrap_or_else(|| {
+                            path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("Unknown")
+                        })
+                        .to_string(),
+                    tag.artist().as_deref().unwrap_or("Unknown Artist").to_string(),
+                    tag.album().map(|v| v.to_string()),
+                    tag.get_string(&ItemKey::AlbumArtist).map(|v| v.to_string()),
+                    tag.track().map(|v| v as i32),
+                    tag.year().map(|v| v as i32),
+                    genres,
+                )
+            }
             None => (
                 path.file_stem()
                     .and_then(|s| s.to_str())
@@ -105,7 +116,7 @@ fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
                 None,
                 None,
                 None,
-                None,
+                Vec::new(),
             ),
         };
 
@@ -125,7 +136,7 @@ fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
         album_artist,
         track_number,
         year,
-        genre,
+        genres,
         duration_seconds: duration,
         file_format,
         bitrate_kbps: bitrate,
@@ -269,7 +280,7 @@ pub async fn stage_song(
                 album_artist: None,
                 track_number: None,
                 year: None,
-                genre: None,
+                genres: Vec::new(),
                 duration_seconds: 0,
                 file_format: audio_path_fallback.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_string(),
                 bitrate_kbps: None,
@@ -307,7 +318,7 @@ pub async fn stage_song(
         album_artist: meta.album_artist.clone(),
         track_number: meta.track_number,
         year: meta.year,
-        genre: meta.genre.clone(),
+        genres: meta.genres.clone(),
         studio: None,
         duration_seconds: meta.duration_seconds,
         file_format: meta.file_format.clone(),
@@ -474,34 +485,69 @@ pub async fn commit_song(
         }
     }
 
-    let song_result = sqlx::query_as::<_, crate::songs::model::Song>(
-        "INSERT INTO songs (
-            id, title, artist, album, album_artist, track_number, year, genre, studio,
-            duration_seconds, file_key, file_size_bytes, file_format, bitrate_kbps, sample_rate_hz, artwork_key, publisher_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-        RETURNING *"
-    )
-    .bind(&song_id)
-    .bind(&req.title)
-    .bind(&req.artist)
-    .bind(&req.album)
-    .bind(&req.album_artist)
-    .bind(req.track_number)
-    .bind(req.year)
-    .bind(&req.genre)
-    .bind(&req.studio)
-    .bind(req.duration_seconds)
-    .bind(&file_key)
-    .bind(file_size)
-    .bind(&req.file_format)
-    .bind(req.bitrate_kbps)
-    .bind(req.sample_rate_hz)
-    .bind(&artwork_key)
-    .bind(&claims.sub)
-    .fetch_one(&state.pool)
-    .await;
+    let result: Result<crate::songs::model::Song, AppError> = async {
+        let mut tx = state.pool.begin().await?;
 
-    match song_result {
+        let song_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
+            "INSERT INTO songs (
+                id, title, artist, album, album_artist, track_number, year, studio,
+                duration_seconds, file_key, file_size_bytes, file_format, bitrate_kbps, sample_rate_hz, artwork_key, publisher_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            RETURNING *"
+        )
+        .bind(&song_id)
+        .bind(&req.title)
+        .bind(&req.artist)
+        .bind(&req.album)
+        .bind(&req.album_artist)
+        .bind(req.track_number)
+        .bind(req.year)
+        .bind(&req.studio)
+        .bind(req.duration_seconds)
+        .bind(&file_key)
+        .bind(file_size)
+        .bind(&req.file_format)
+        .bind(req.bitrate_kbps)
+        .bind(req.sample_rate_hz)
+        .bind(&artwork_key)
+        .bind(&claims.sub)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        for genre in &req.genres {
+            let genre_lower = genre.trim().to_lowercase();
+            if genre_lower.is_empty() { continue; }
+
+            let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM genres WHERE name = $1")
+                .bind(&genre_lower)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+            if existing.is_none() {
+                sqlx::query("INSERT INTO genres (name) VALUES ($1)")
+                    .bind(&genre_lower)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+
+            sqlx::query(
+                "INSERT INTO song_genres (song_id, genre_id)
+                 SELECT $1, id FROM genres WHERE name = $2"
+            )
+            .bind(&song_id)
+            .bind(&genre_lower)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        let mut song: crate::songs::model::Song = song_db.into();
+        crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
+        Ok(song)
+    }.await;
+
+    match result {
         Ok(song) => {
             if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
                 tracing::warn!("Failed to remove staging directory: {}", e);
@@ -529,7 +575,7 @@ pub async fn commit_song(
             if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
                 tracing::warn!("Failed to remove staging directory after DB error: {}", e);
             }
-            Err(e.into())
+            Err(e)
         }
     }
 }
