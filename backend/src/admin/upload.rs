@@ -164,6 +164,9 @@ pub async fn stage_song(
     claims: axum::Extension<crate::auth::Claims>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<SongDraft>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(user_id = %claims.sub, email = %claims.email, "stage_song started");
+
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
     let mut audio_bytes: Option<Vec<u8>> = None;
@@ -260,21 +263,31 @@ pub async fn stage_song(
     };
 
     let draft = SongDraft {
-        staging_id,
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album,
-        album_artist: meta.album_artist,
+        staging_id: staging_id.clone(),
+        title: meta.title.clone(),
+        artist: meta.artist.clone(),
+        album: meta.album.clone(),
+        album_artist: meta.album_artist.clone(),
         track_number: meta.track_number,
         year: meta.year,
-        genre: meta.genre,
+        genre: meta.genre.clone(),
         studio: None,
         duration_seconds: meta.duration_seconds,
-        file_format: meta.file_format,
+        file_format: meta.file_format.clone(),
         bitrate_kbps: meta.bitrate_kbps,
         sample_rate_hz: meta.sample_rate_hz,
         has_artwork,
     };
+
+    tracing::info!(
+        staging_id = %staging_id,
+        title = %meta.title,
+        artist = %meta.artist,
+        duration = meta.duration_seconds,
+        has_artwork,
+        elapsed_ms = start.elapsed().as_millis(),
+        "stage_song completed"
+    );
 
     Ok(axum::Json(draft))
 }
@@ -284,6 +297,9 @@ pub async fn commit_song(
     claims: axum::Extension<crate::auth::Claims>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<crate::songs::model::Song>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(user_id = %claims.sub, email = %claims.email, "commit_song started");
+
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
     let mut metadata_json = String::new();
@@ -453,9 +469,17 @@ pub async fn commit_song(
             if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
                 tracing::warn!("Failed to remove staging directory: {}", e);
             }
+            tracing::info!(
+                song_id = %song.id,
+                title = %req.title,
+                artist = %req.artist,
+                elapsed_ms = start.elapsed().as_millis(),
+                "commit_song completed"
+            );
             Ok(axum::Json(song))
         }
         Err(e) => {
+            tracing::warn!(error = %e, "commit_song failed");
             if let Err(e) = tokio::fs::remove_file(&dest_path).await {
                 tracing::warn!("Failed to clean up audio file after DB error: {}", e);
             }
@@ -478,6 +502,7 @@ pub async fn get_staged_artwork(
     claims: axum::Extension<crate::auth::Claims>,
     axum::extract::Path(staging_id): axum::extract::Path<String>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
+    tracing::info!(user_id = %claims.sub, staging_id = %staging_id, "get_staged_artwork");
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
     let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&staging_id);

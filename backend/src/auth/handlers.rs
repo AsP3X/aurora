@@ -7,6 +7,7 @@ use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{error::AppError, permissions::get_user_permission_keys, AppState};
@@ -90,6 +91,8 @@ pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    info!(email = %body.email, "register attempt");
+
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
     let user_id = Uuid::new_v4().to_string();
 
@@ -123,6 +126,8 @@ pub async fn register(
 
             tx.commit().await?;
 
+            info!(user_id = %id, email = %body.email, "user registered");
+
             let token = create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
                 .map_err(|e| AppError::Internal(e.into()))?;
 
@@ -139,9 +144,13 @@ pub async fn register(
             }))
         }
         Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+            warn!(email = %body.email, "registration failed: email already exists");
             Err(AppError::Conflict("email already exists".into()))
         }
-        Err(e) => Err(AppError::Database(e)),
+        Err(e) => {
+            warn!(email = %body.email, error = %e, "registration failed");
+            Err(AppError::Database(e))
+        }
     }
 }
 
@@ -149,6 +158,8 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    info!(email = %body.email, "login attempt");
+
     let row = sqlx::query_as::<_, (String, String, String, String)>(
         "SELECT id, email, password_hash, role FROM users WHERE email = $1"
     )
@@ -161,8 +172,11 @@ pub async fn login(
         .map_err(|_| AppError::Unauthorized)?;
 
     if !valid {
+        warn!(email = %body.email, "login failed: invalid password");
         return Err(AppError::Unauthorized);
     }
+
+    info!(user_id = %id, email = %email, role = %role, "login success");
 
     let token = create_token(id.clone(), email.clone(), role.clone(), &state.jwt_secret)
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -194,6 +208,8 @@ pub async fn me(
     let (id, email, role) = row.ok_or(AppError::NotFound)?;
 
     let permissions = get_user_permission_keys(&state.pool, &id).await;
+
+    info!(user_id = %id, email = %email, "me request");
 
     Ok(Json(UserDto {
         id,

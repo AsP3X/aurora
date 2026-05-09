@@ -9,6 +9,7 @@ function getToken(): string | null {
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`;
   const token = getToken();
+  const method = options.method || "GET";
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -19,13 +20,32 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  console.log(`[API] ${options.method || "GET"} ${path}`);
+  const start = performance.now();
+  const reqBody = options.body
+    ? typeof options.body === "string"
+      ? options.body.slice(0, 200)
+      : "[Blob/FormData]"
+    : undefined;
 
-  const res = await fetch(url, { ...options, headers });
+  console.group(`[API] ${method} ${path}`);
+  console.log("Request:", { method, url, headers: Object.keys(headers), body: reqBody });
 
-  console.log(`[API] ${options.method || "GET"} ${path} → ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err) {
+    const elapsed = (performance.now() - start).toFixed(1);
+    console.error("Network error:", err);
+    console.groupEnd();
+    throw new Error(`Network error after ${elapsed}ms: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const elapsed = (performance.now() - start).toFixed(1);
+  const ok = res.ok ? "OK" : "ERR";
 
   if (res.status === 401) {
+    console.warn(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) — Unauthorized, redirecting to login`);
+    console.groupEnd();
     localStorage.removeItem("aurora_token");
     window.location.href = "/login";
     throw new Error("Unauthorized");
@@ -33,8 +53,13 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, body);
+    console.groupEnd();
     throw new Error(body.error || `HTTP ${res.status}`);
   }
+
+  console.log(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`);
+  console.groupEnd();
 
   if (res.status === 204) return null;
   return res.json();

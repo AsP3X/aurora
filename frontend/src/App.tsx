@@ -145,17 +145,37 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function NavigationLogger() {
+  const location = useLocation();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const timestamp = new Date().toISOString();
+    const page = location.pathname + location.search;
+    const userInfo = user ? `${user.email} (${user.role})` : "anonymous";
+    console.group(`[NAV] ${timestamp}`);
+    console.log("Page:", page);
+    console.log("User:", userInfo);
+    console.groupEnd();
+  }, [location.pathname, location.search, user]);
+
+  return null;
+}
+
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/setup" element={<SetupGuard><Setup /></SetupGuard>} />
-      <Route path="/login" element={<SetupGuard><Login /></SetupGuard>} />
-      <Route path="/" element={<SetupGuard><RequireAuth><Library /></RequireAuth></SetupGuard>} />
-      <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
-      <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
-      <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
-      <Route path="/admin/*" element={<SetupGuard><RequireAuth><AdminDashboard /></RequireAuth></SetupGuard>} />
-    </Routes>
+    <>
+      <NavigationLogger />
+      <Routes>
+        <Route path="/setup" element={<SetupGuard><Setup /></SetupGuard>} />
+        <Route path="/login" element={<SetupGuard><Login /></SetupGuard>} />
+        <Route path="/" element={<SetupGuard><RequireAuth><Library /></RequireAuth></SetupGuard>} />
+        <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
+        <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
+        <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
+        <Route path="/admin/*" element={<SetupGuard><RequireAuth><AdminDashboard /></RequireAuth></SetupGuard>} />
+      </Routes>
+    </>
   );
 }
 
