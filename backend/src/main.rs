@@ -83,6 +83,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let protected_routes = Router::new()
         .route("/api/v1/me", get(auth::handlers::me))
         .route("/api/v1/songs", get(songs::handlers::list_songs))
+        .route("/api/v1/songs/values", get(songs::handlers::list_values))
         .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
         .route("/api/v1/search", get(search::handlers::search))
         .route("/api/v1/playlists", get(playlists::handlers::list_playlists).post(playlists::handlers::create_playlist))
