@@ -109,7 +109,7 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
     return (
       <div className="p-4 border-t border-white/5">
         <div className="h-20 bg-surface-900/60 border border-white/5 rounded-xl flex items-center justify-center">
-          <span className="text-xs text-surface-500">Nothing played recently</span>
+          <span className="text-xs text-surface-500">Start listening</span>
         </div>
       </div>
     );
