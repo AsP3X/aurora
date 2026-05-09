@@ -15,7 +15,7 @@ pub async fn scan_directory(pool: &AnyPool, base_dir: &str) -> anyhow::Result<()
         }
 
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        if !matches!(ext.as_str(), "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wma") {
+        if !matches!(ext.as_str(), "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wma" | "wav") {
             continue;
         }
 
