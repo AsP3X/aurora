@@ -50,11 +50,25 @@ pub async fn list_values(
 ) -> Result<Json<Vec<String>>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
+    if params.field == "genre" {
+        let sql = format!(
+            "SELECT name FROM genres
+             WHERE ($1 IS NULL OR LOWER(name) LIKE LOWER('%' || $1 || '%'))
+             ORDER BY name ASC
+             LIMIT $2"
+        );
+        let values: Vec<(String,)> = sqlx::query_as(&sql)
+            .bind(params.q)
+            .bind(params.limit)
+            .fetch_all(&state.pool)
+            .await?;
+        return Ok(Json(values.into_iter().map(|v| v.0).collect()));
+    }
+
     let column = match params.field.as_str() {
         "artist" => "artist",
         "album" => "album",
         "album_artist" => "album_artist",
-        "genre" => "genre",
         "studio" => "studio",
         _ => return Err(AppError::BadRequest(format!("invalid field: {}", params.field))),
     };
@@ -105,7 +119,7 @@ pub async fn list_songs(
         order_clause
     );
 
-    let songs = sqlx::query_as::<_, super::model::Song>(&sql)
+    let songs_db = sqlx::query_as::<_, super::model::SongDb>(&sql)
         .bind(params.artist.map(|a| format!("%{}%", a)))
         .bind(params.album.map(|a| format!("%{}%", a)))
         .bind(params.limit)
@@ -113,6 +127,9 @@ pub async fn list_songs(
         .bind(params.q.map(|q| format!("%{}%", q)))
         .fetch_all(&state.pool)
         .await?;
+
+    let mut songs: Vec<super::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
+    super::model::populate_genres(&state.pool, &mut songs).await?;
 
     Ok(Json(songs))
 }
@@ -124,12 +141,18 @@ pub async fn get_song(
 ) -> Result<Json<super::model::Song>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let song = sqlx::query_as::<_, super::model::Song>("SELECT * FROM songs WHERE id = $1 AND enabled = 1")
+    let song_db = sqlx::query_as::<_, super::model::SongDb>("SELECT * FROM songs WHERE id = $1 AND enabled = 1")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
-    song.map(Json).ok_or(AppError::NotFound)
+    if let Some(db) = song_db {
+        let mut song: super::model::Song = db.into();
+        super::model::populate_genres_for_one(&state.pool, &mut song).await?;
+        Ok(Json(song))
+    } else {
+        Err(AppError::NotFound)
+    }
 }
 
 pub async fn stream_song(
