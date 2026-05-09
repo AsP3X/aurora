@@ -167,7 +167,7 @@ pub async fn stage_song(
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
     let mut audio_bytes: Option<Vec<u8>> = None;
-    let mut filename = String::new();
+    let mut ext = String::new();
 
     while let Some(field) = multipart
         .next_field()
@@ -176,7 +176,20 @@ pub async fn stage_song(
     {
         let name = field.name().unwrap_or("").to_string();
         if name == "audio" {
-            filename = field.file_name().unwrap_or("unknown").to_string();
+            let filename = field.file_name().unwrap_or("unknown").to_string();
+            // Validate extension BEFORE buffering bytes
+            ext = Path::new(&filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            let allowed = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wma", "wav"];
+            if !allowed.contains(&ext.as_str()) {
+                return Err(AppError::BadRequest(format!(
+                    "Unsupported audio format: {}. Allowed: {:?}",
+                    ext, allowed
+                )));
+            }
             let bytes = field
                 .bytes()
                 .await
@@ -187,26 +200,13 @@ pub async fn stage_song(
         }
     }
 
-    let audio_bytes = audio_bytes.ok_or_else(|| AppError::BadRequest("No audio file provided".into()))?;
-
-    let ext = Path::new(&filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let allowed = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wma"];
-    if !allowed.contains(&ext.as_str()) {
-        return Err(AppError::BadRequest(format!(
-            "Unsupported audio format: {}. Allowed: {:?}",
-            ext, allowed
-        )));
-    }
-
     let staging_id = Uuid::new_v4().to_string();
     let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&staging_id);
     tokio::fs::create_dir_all(&staging_dir)
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    let audio_bytes = audio_bytes.ok_or_else(|| AppError::BadRequest("No audio file provided".into()))?;
 
     let audio_path = staging_dir.join(format!("audio.{}", ext));
     tokio::fs::write(&audio_path, &audio_bytes)
@@ -214,47 +214,49 @@ pub async fn stage_song(
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
     let audio_path_clone = audio_path.clone();
-    let meta_result = tokio::task::spawn_blocking(move || extract_metadata(&audio_path_clone))
+    let audio_path_fallback = audio_path.clone();
+    let meta = tokio::task::spawn_blocking(move || extract_metadata(&audio_path_clone))
         .await
-        .map_err(|e| AppError::Storage(format!("Metadata task failed: {}", e)))?;
-
-    let meta = match meta_result {
-        Ok(m) => m,
-        Err(e) => {
-            if let Err(cleanup_err) = tokio::fs::remove_dir_all(&staging_dir).await {
-                tracing::warn!("Failed to clean up staging dir after metadata error: {}", cleanup_err);
+        .map_err(|e| AppError::Storage(format!("Metadata task failed: {}", e)))?
+        .unwrap_or_else(|_| {
+            // lofty failed to read metadata (e.g. unsupported format like wav).
+            // Use filename-derived defaults.
+            let file_stem = audio_path_fallback.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown");
+            ExtractedMetadata {
+                title: file_stem.to_string(),
+                artist: "Unknown Artist".to_string(),
+                album: None,
+                album_artist: None,
+                track_number: None,
+                year: None,
+                genre: None,
+                duration_seconds: 0,
+                file_format: audio_path_fallback.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_string(),
+                bitrate_kbps: None,
+                sample_rate_hz: None,
             }
-            return Err(AppError::BadRequest(format!("Failed to read metadata: {}", e)));
-        }
-    };
+        });
 
     let audio_path_clone = audio_path.clone();
-    let artwork_result = tokio::task::spawn_blocking(move || extract_artwork(&audio_path_clone))
+    let artwork_data = tokio::task::spawn_blocking(move || extract_artwork(&audio_path_clone))
         .await
-        .map_err(|e| AppError::Storage(format!("Artwork task failed: {}", e)))?;
-
-    let has_artwork = match artwork_result {
-        Ok(Some((ext, data))) => {
-            let art_path = staging_dir.join(format!("artwork.{}", ext));
-            match tokio::fs::write(&art_path, &data).await {
-                Ok(()) => true,
-                Err(e) => {
-                    tracing::warn!("Failed to write extracted artwork: {}", e);
-                    if let Err(cleanup_err) = tokio::fs::remove_dir_all(&staging_dir).await {
-                        tracing::warn!("Failed to clean up staging dir after artwork write error: {}", cleanup_err);
-                    }
-                    return Err(AppError::Storage(format!("Failed to write artwork: {}", e)));
-                }
-            }
-        }
-        Ok(None) => false,
-        Err(e) => {
+        .map_err(|e| AppError::Storage(format!("Artwork task failed: {}", e)))?
+        .unwrap_or_else(|e| {
             tracing::warn!("Failed to extract artwork: {}", e);
-            if let Err(cleanup_err) = tokio::fs::remove_dir_all(&staging_dir).await {
-                tracing::warn!("Failed to clean up staging dir after artwork error: {}", cleanup_err);
+            None
+        });
+
+    let has_artwork = if let Some((ext, data)) = artwork_data {
+        let art_path = staging_dir.join(format!("artwork.{}", ext));
+        match tokio::fs::write(&art_path, &data).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("Failed to write extracted artwork: {}", e);
+                false
             }
-            return Err(AppError::BadRequest(format!("Failed to extract artwork: {}", e)));
         }
+    } else {
+        false
     };
 
     let draft = SongDraft {
