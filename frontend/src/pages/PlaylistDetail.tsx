@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { fetchPlaylist } from "../api/client";
+import { usePlayer } from "../context/PlayerContext";
 import ArtworkImage from "../components/ArtworkImage";
 import type { Song, Playlist } from "../types";
 
@@ -8,6 +9,24 @@ function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function PlayButton({ song }: { song: Song }) {
+  const navigate = useNavigate();
+  const { playSong } = usePlayer();
+
+  function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    playSong(song);
+    navigate(`/player/${song.id}`);
+  }
+
+  return (
+    <button onClick={handleClick} className="text-aurora-400 hover:text-aurora-300 transition-colors">
+      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+    </button>
+  );
 }
 
 export default function PlaylistDetail() {
@@ -83,12 +102,12 @@ export default function PlaylistDetail() {
                 <tr key={song.id} className="group hover:bg-white/5 transition-colors">
                   <td className="px-4 py-3 text-surface-500">
                     <span className="group-hover:hidden">{i + 1}</span>
-                    <Link to={`/player/${song.id}`} className="hidden group-hover:block">
-                      <svg className="w-4 h-4 text-aurora-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                    </Link>
+                    <div className="hidden group-hover:block">
+                      <PlayButton song={song} />
+                    </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Link to={`/player/${song.id}`} className="flex items-center gap-3">
+                    <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-surface-800 overflow-hidden shrink-0 flex items-center justify-center">
                         <ArtworkImage
                           songId={song.id}
@@ -98,7 +117,7 @@ export default function PlaylistDetail() {
                         />
                       </div>
                       <span className="font-medium text-white truncate">{song.title}</span>
-                    </Link>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-surface-300 hidden sm:table-cell">{song.artist}</td>
                   <td className="px-4 py-3 text-surface-400 hidden md:table-cell">{song.album || "—"}</td>

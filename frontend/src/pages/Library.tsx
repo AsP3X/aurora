@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 import { useAuth } from "../context/AuthContext";
+import { usePlayer } from "../context/PlayerContext";
 import type { Song, Playlist } from "../types";
 
 /* ─── Helpers ─── */
@@ -26,10 +27,18 @@ function formatNumber(n: number) {
 
 /* ─── Sub-components ─── */
 function SongCard({ song }: { song: Song }) {
+  const navigate = useNavigate();
+  const { playSong } = usePlayer();
+
+  function handleClick() {
+    playSong(song);
+    navigate(`/player/${song.id}`);
+  }
+
   return (
-    <Link
-      to={`/player/${song.id}`}
-      className="group block space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200"
+    <button
+      onClick={handleClick}
+      className="group block w-full text-left space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200"
     >
       <div className="relative aspect-square bg-surface-900 border border-white/5 rounded-xl overflow-hidden shadow-sm">
         <ArtworkImage
@@ -52,7 +61,7 @@ function SongCard({ song }: { song: Song }) {
         </p>
         <p className="text-xs text-surface-400 truncate">{song.artist}</p>
       </div>
-    </Link>
+    </button>
   );
 }
 
