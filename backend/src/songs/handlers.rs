@@ -99,6 +99,7 @@ pub async fn list_songs(
          WHERE ($1 IS NULL OR LOWER(artist) LIKE LOWER($1))
          AND ($2 IS NULL OR LOWER(album) LIKE LOWER($2))
          AND ($5 IS NULL OR LOWER(title) LIKE LOWER($5) OR LOWER(artist) LIKE LOWER($5) OR LOWER(album) LIKE LOWER($5))
+         AND enabled = 1
          ORDER BY {}
          LIMIT $3 OFFSET $4",
         order_clause
@@ -123,7 +124,7 @@ pub async fn get_song(
 ) -> Result<Json<super::model::Song>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let song = sqlx::query_as::<_, super::model::Song>("SELECT * FROM songs WHERE id = $1")
+    let song = sqlx::query_as::<_, super::model::Song>("SELECT * FROM songs WHERE id = $1 AND enabled = 1")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
