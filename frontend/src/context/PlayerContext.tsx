@@ -40,7 +40,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setProgress(0);
     setDuration(song.duration_seconds || 0);
     setBuffered(0);
-    // Audio src update is handled by PlayerBar via effect on currentSong
+
+    // Allow React to update <audio> src, then force restart from beginning
+    requestAnimationFrame(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.currentTime = 0;
+      audio.load();
+      audio.play().catch(() => {});
+    });
   }, []);
 
   const togglePlay = useCallback(() => {
