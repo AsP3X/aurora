@@ -32,6 +32,51 @@ pub struct ListParams {
 
 fn default_limit() -> i64 { 50 }
 
+#[derive(Debug, Deserialize)]
+pub struct ValuesParams {
+    pub field: String,
+    #[serde(default)]
+    pub q: Option<String>,
+    #[serde(default = "default_values_limit")]
+    pub limit: i64,
+}
+
+fn default_values_limit() -> i64 { 50 }
+
+pub async fn list_values(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ValuesParams>,
+) -> Result<Json<Vec<String>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let column = match params.field.as_str() {
+        "artist" => "artist",
+        "album" => "album",
+        "album_artist" => "album_artist",
+        "genre" => "genre",
+        "studio" => "studio",
+        _ => return Err(AppError::BadRequest(format!("invalid field: {}", params.field))),
+    };
+
+    let sql = format!(
+        "SELECT DISTINCT {} FROM songs
+         WHERE ($1 IS NULL OR LOWER({}) LIKE LOWER('%' || $1 || '%'))
+         AND {} IS NOT NULL
+         ORDER BY {} ASC
+         LIMIT $2",
+        column, column, column, column
+    );
+
+    let values: Vec<(String,)> = sqlx::query_as(&sql)
+        .bind(params.q)
+        .bind(params.limit)
+        .fetch_all(&state.pool)
+        .await?;
+
+    Ok(Json(values.into_iter().map(|v| v.0).collect()))
+}
+
 fn sanitize_order_by(order_by: Option<String>) -> &'static str {
     match order_by.as_deref() {
         Some("created_at") => "created_at DESC",
