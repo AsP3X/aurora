@@ -308,3 +308,77 @@ pub async fn delete_user(
 
     Ok(Json(serde_json::json!({"ok": true})))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSongBody {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<i32>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+    pub studio: Option<String>,
+}
+
+pub async fn update_song(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSongBody>,
+) -> Result<Json<crate::songs::model::Song>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let mut sets: Vec<String> = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+
+    if let Some(v) = body.title {
+        sets.push(format!("title = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+    if let Some(v) = body.artist {
+        sets.push(format!("artist = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+    if let Some(v) = body.album {
+        sets.push(format!("album = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+    if let Some(v) = body.album_artist {
+        sets.push(format!("album_artist = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+    if let Some(v) = body.track_number {
+        sets.push(format!("track_number = ${}", sets.len() + 2));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = body.year {
+        sets.push(format!("year = ${}", sets.len() + 2));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = body.genre {
+        sets.push(format!("genre = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+    if let Some(v) = body.studio {
+        sets.push(format!("studio = ${}", sets.len() + 2));
+        binds.push(v);
+    }
+
+    if sets.is_empty() {
+        return Err(AppError::BadRequest("no fields to update".into()));
+    }
+
+    let sql = format!(
+        "UPDATE songs SET {} WHERE id = $1 RETURNING *",
+        sets.join(", ")
+    );
+
+    let mut query = sqlx::query_as::<_, crate::songs::model::Song>(&sql).bind(&id);
+    for b in &binds {
+        query = query.bind(b);
+    }
+
+    let song = query.fetch_one(&state.pool).await?;
+    Ok(Json(song))
+}
