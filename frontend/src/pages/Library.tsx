@@ -145,10 +145,8 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
 /* ─── Main page ─── */
 export default function Library() {
   const { user, logout, can } = useAuth();
-  const { currentSong } = usePlayer();
   const { pathname } = useLocation();
   const searchRef = useRef<HTMLInputElement>(null);
-  const hasPlayer = !!currentSong;
 
   /* Data states */
   const [stats, setStats] = useState<{ total_songs: number; total_artists: number; total_albums: number; total_duration_seconds: number } | null>(null);
@@ -233,7 +231,7 @@ export default function Library() {
 
   if (loading) {
     return (
-      <div className={`flex flex-col bg-surface-950 ${hasPlayer ? "h-[calc(100vh-5.25rem)]" : "h-screen"}`}>
+      <div className="flex flex-col bg-surface-950 h-screen">
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
@@ -245,7 +243,7 @@ export default function Library() {
   }
 
   return (
-    <div className={`flex flex-col bg-surface-950 ${hasPlayer ? "h-[calc(100vh-5.25rem)]" : "h-screen"}`}>
+    <div className="flex flex-col bg-surface-950 h-screen">
       {/* ─── Topbar ─── */}
       <div className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-6">
         {/* Logo */}
@@ -346,7 +344,7 @@ export default function Library() {
       </div>
 
       {/* ─── Sidebar ─── */}
-      <div className={`fixed left-0 top-16 w-64 z-[60] bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col ${hasPlayer ? "h-[calc(100vh-9.25rem)]" : "h-[calc(100vh-4rem)]"}`}>
+      <div className="fixed left-0 top-16 w-64 z-30 bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col h-[calc(100vh-4rem)]">
           {/* Main nav */}
           <div className="p-4 space-y-1">
             <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
