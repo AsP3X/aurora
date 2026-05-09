@@ -77,7 +77,7 @@ export default function PlayerBar() {
   return (
     <>
       {/* Progress bar overlay at top of player bar */}
-      <div className={`fixed bottom-[80px] z-50 h-1 bg-surface-800 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
+      <div className={`fixed bottom-[80px] z-40 h-1 bg-surface-800 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
         <div className="relative w-full h-full group cursor-pointer">
           <div
             className="absolute inset-y-0 left-0 bg-surface-600"
@@ -100,7 +100,7 @@ export default function PlayerBar() {
       </div>
 
       {/* Player bar */}
-      <div className={`fixed bottom-0 z-50 h-20 bg-surface-950/95 backdrop-blur-xl border-t border-white/10 px-4 sm:px-6 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
+      <div className={`fixed bottom-0 z-40 h-20 bg-surface-950/95 backdrop-blur-xl border-t border-white/10 px-4 sm:px-6 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between gap-4">
           {/* Left: Artwork + Info */}
           <button
