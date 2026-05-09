@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { streamUrl, logHistory } from "../api/client";
@@ -68,6 +68,21 @@ export default function PlayerBar() {
     [setVolume]
   );
 
+  const [hoverPercent, setHoverPercent] = useState<number | null>(null);
+
+  const handleProgressMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+      setHoverPercent(pct);
+    },
+    []
+  );
+
+  const handleProgressMouseLeave = useCallback(() => {
+    setHoverPercent(null);
+  }, []);
 
   if (!currentSong || isPlayerPage) return null;
 
@@ -76,141 +91,189 @@ export default function PlayerBar() {
 
   return (
     <>
-      {/* Progress bar overlay at top of player bar */}
-      <div className={`fixed bottom-[80px] z-40 h-1 bg-surface-800 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
-        <div className="relative w-full h-full group cursor-pointer">
-          <div
-            className="absolute inset-y-0 left-0 bg-surface-600"
-            style={{ width: `${bufferedPercent}%` }}
-          />
-          <div
-            className="absolute inset-y-0 left-0 bg-aurora-500"
-            style={{ width: `${progressPercent}%` }}
-          />
-          <input
-            type="range"
-            min={0}
-            max={duration || currentSong.duration_seconds}
-            value={progress}
-            onChange={handleSeekInput}
-            aria-label="Seek"
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-        </div>
-      </div>
+      {/* Floating Pill Player */}
+      <div
+        className={`fixed bottom-4 z-40 ${
+          isLibrary ? "md:left-72 left-4" : "md:left-8 left-4"
+        } right-4 md:right-8`}
+      >
+        {/* Liquid Glass Container */}
+        <div className="relative rounded-[32px] overflow-hidden">
+          {/* Base glass layers */}
+          <div className="absolute inset-0 backdrop-blur-2xl bg-surface-950/35" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.12] to-white/[0.02]" />
+          <div className="absolute inset-0 shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]" />
 
-      {/* Player bar */}
-      <div className={`fixed bottom-0 z-40 h-20 bg-surface-950/95 backdrop-blur-xl border-t border-white/10 px-4 sm:px-6 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
-        <div className="max-w-7xl mx-auto h-full flex items-center justify-between gap-4">
-          {/* Left: Artwork + Info */}
-          <button
-            onClick={() => navigate(`/player/${currentSong.id}`)}
-            className="flex items-center gap-3 min-w-0 flex-1 group text-left"
-          >
-            <div className="w-14 h-14 rounded-lg overflow-hidden bg-surface-900 shrink-0">
-              <ArtworkImage
-                songId={currentSong.id}
-                title={currentSong.title}
-                artist={currentSong.artist}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-white truncate group-hover:text-aurora-300 transition-colors">
-                {currentSong.title}
-              </p>
-              <p className="text-xs text-surface-400 truncate">
-                {currentSong.artist}
-              </p>
-            </div>
-          </button>
+          {/* Border */}
+          <div className="absolute inset-0 rounded-[32px] border border-white/20" />
 
-          {/* Center: Controls */}
-          <div className="flex items-center justify-center gap-2 sm:gap-4">
-            <button
-              className="w-8 h-8 flex items-center justify-center text-surface-600 cursor-default"
-              title="Shuffle"
-              tabIndex={-1}
-              aria-disabled="true"
+          {/* Outer floating shadow */}
+          <div className="absolute -inset-1 rounded-[36px] bg-black/20 blur-xl -z-10" />
+
+          {/* Content */}
+          <div className="relative px-4 sm:px-5 py-3 space-y-2">
+            {/* Progress bar */}
+            <div
+              className="relative w-full h-2.5 group cursor-pointer"
+              onMouseMove={handleProgressMouseMove}
+              onMouseLeave={handleProgressMouseLeave}
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
-              </svg>
-            </button>
+              {/* Bar track (clipped) */}
+              <div className="relative w-full h-full bg-surface-800/60 rounded-full overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 bg-surface-500/40 rounded-full"
+                  style={{ width: `${bufferedPercent}%` }}
+                />
+                <div
+                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-400 to-aurora-500 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.4)]"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
 
-            <button
-              className="w-9 h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors"
-              aria-label="Previous"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
-            </button>
-
-            <button
-              onClick={togglePlay}
-              aria-label={isPlaying ? "Pause" : "Play"}
-              className="w-11 h-11 rounded-full bg-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
-            >
-              {isPlaying ? (
-                <svg className="w-5 h-5 text-surface-950" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
-              ) : (
-                <svg className="w-5 h-5 text-surface-950 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              {/* Ghost dot at cursor position */}
+              {hoverPercent !== null && (
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white/40 rounded-full pointer-events-none z-10"
+                  style={{ left: `calc(${hoverPercent}% - 5px)` }}
+                />
               )}
-            </button>
 
-            <button
-              className="w-9 h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors"
-              aria-label="Next"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
-            </button>
-
-            <button
-              className="w-8 h-8 flex items-center justify-center text-surface-600 cursor-default"
-              title="Repeat"
-              tabIndex={-1}
-              aria-disabled="true"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.058M20 20v-5h-.058M4 14a8 8 0 0113.647-5.647M20 10a8 8 0 01-13.647 5.647" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Right: Volume + Time */}
-          <div className="flex items-center justify-end gap-3 w-32 sm:w-40">
-            <span className="text-xs text-surface-500 font-mono hidden sm:block">
-              {formatTime(progress)} / {formatTime(duration || currentSong.duration_seconds)}
-            </span>
-
-            <button
-              onClick={toggleMute}
-              aria-label={volume === 0 ? "Unmute" : "Mute"}
-              className="text-surface-400 hover:text-white transition-colors shrink-0"
-            >
-              {volume === 0 ? (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-              ) : volume < 0.5 ? (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-              )}
-            </button>
-
-            <div className="relative flex-1 h-1 bg-surface-800 rounded-full overflow-hidden group cursor-pointer">
+              {/* Always-visible dot at the tip of progress */}
               <div
-                className="absolute inset-y-0 left-0 bg-surface-400 rounded-full"
-                style={{ width: `${volume * 100}%` }}
+                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow pointer-events-none z-10"
+                style={{ left: `calc(${progressPercent}% - 5px)` }}
               />
+
+              {/* Hover thumb above the bar */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex items-center justify-center z-10"
+                style={{ left: `calc(${progressPercent}% - 10px)` }}
+              >
+                <div className="w-2 h-2 bg-aurora-500 rounded-full" />
+              </div>
+
+              {/* Invisible hit target */}
               <input
                 type="range"
                 min={0}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={handleVolumeInput}
-                aria-label="Volume"
+                max={duration || currentSong.duration_seconds}
+                value={progress}
+                onChange={handleSeekInput}
+                aria-label="Seek"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
+            </div>
+
+            {/* Main row */}
+            <div className="flex items-center justify-between gap-3 sm:gap-4">
+              {/* Left: Artwork + Info */}
+              <button
+                onClick={() => navigate(`/player/${currentSong.id}`)}
+                className="flex items-center gap-3 min-w-0 group text-left shrink-0"
+              >
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden bg-surface-900/80 ring-1 ring-white/10 shrink-0">
+                  <ArtworkImage
+                    songId={currentSong.id}
+                    title={currentSong.title}
+                    artist={currentSong.artist}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0 hidden sm:block">
+                  <p className="text-sm font-semibold text-white truncate group-hover:text-aurora-300 transition-colors">
+                    {currentSong.title}
+                  </p>
+                  <p className="text-xs text-surface-400 truncate">
+                    {currentSong.artist}
+                  </p>
+                </div>
+              </button>
+
+              {/* Center: Controls */}
+              <div className="flex items-center justify-center gap-1 sm:gap-2">
+                <button
+                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
+                  aria-label="Previous"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={togglePlay}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-white/10"
+                >
+                  {isPlaying ? (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-surface-950" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-surface-950 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  )}
+                </button>
+
+                <button
+                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
+                  aria-label="Next"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Right: Volume + Time */}
+              <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0">
+                <span className="text-[11px] text-surface-500 font-mono hidden lg:block">
+                  {formatTime(progress)} / {formatTime(duration || currentSong.duration_seconds)}
+                </span>
+
+                <button
+                  onClick={toggleMute}
+                  aria-label={volume === 0 ? "Unmute" : "Mute"}
+                  className="text-surface-400 hover:text-white transition-colors"
+                >
+                  {volume === 0 ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  ) : volume < 0.5 ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  )}
+                </button>
+
+                <div className="relative w-16 sm:w-20 h-1 bg-surface-800/60 rounded-full overflow-hidden group cursor-pointer">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-surface-400 rounded-full"
+                    style={{ width: `${volume * 100}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                    style={{ left: `calc(${volume * 100}% - 4px)` }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={volume}
+                    onChange={handleVolumeInput}
+                    aria-label="Volume"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
