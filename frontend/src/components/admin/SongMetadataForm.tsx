@@ -53,7 +53,7 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [draft.staging_id]);
 
   const update = <K extends keyof SongDraft>(field: K, value: SongDraft[K]) => {
     onChange({ ...draft, [field]: value });
