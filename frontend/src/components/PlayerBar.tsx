@@ -68,13 +68,6 @@ export default function PlayerBar() {
     [setVolume]
   );
 
-  // Auto-play when song changes
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !currentSong) return;
-    audio.play().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSong?.id]);
 
   if (!currentSong || isPlayerPage) return null;
 
