@@ -514,9 +514,10 @@ pub async fn commit_song(
         .fetch_one(&mut *tx)
         .await?;
 
+        let mut seen = std::collections::HashSet::new();
         for genre in &req.genres {
             let genre_lower = genre.trim().to_lowercase();
-            if genre_lower.is_empty() { continue; }
+            if genre_lower.is_empty() || !seen.insert(genre_lower.clone()) { continue; }
 
             let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM genres WHERE name = $1")
                 .bind(&genre_lower)
