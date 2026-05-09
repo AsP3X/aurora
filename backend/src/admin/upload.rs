@@ -470,3 +470,43 @@ pub async fn commit_song(
         }
     }
 }
+
+pub async fn get_staged_artwork(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    axum::extract::Path(staging_id): axum::extract::Path<String>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&staging_id);
+    if !staging_dir.is_dir() {
+        return Err(AppError::NotFound);
+    }
+
+    let mut entries = tokio::fs::read_dir(&staging_dir)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+    {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("artwork.") {
+            let path = entry.path();
+            let mime = mime_guess::from_path(&path)
+                .first_or_octet_stream()
+                .to_string();
+            let bytes = tokio::fs::read(&path)
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            return Ok((
+                [(axum::http::header::CONTENT_TYPE, mime)],
+                bytes,
+            ));
+        }
+    }
+
+    Err(AppError::NotFound)
+}

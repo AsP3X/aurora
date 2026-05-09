@@ -115,6 +115,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song))
         .route("/api/v1/admin/songs/stage", post(admin::upload::stage_song))
         .route("/api/v1/admin/songs/commit", post(admin::upload::commit_song))
+        .route("/api/v1/admin/songs/stage/{id}/artwork", get(admin::upload::get_staged_artwork))
         .route("/api/v1/admin/playlists", get(admin::handlers::list_all_playlists))
         .route("/api/v1/admin/playlists/{id}", axum::routing::delete(admin::handlers::delete_playlist))
         .route("/api/v1/admin/stats", get(admin::handlers::get_admin_stats))
