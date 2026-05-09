@@ -27,12 +27,10 @@ function formatNumber(n: number) {
 
 /* ─── Sub-components ─── */
 function SongCard({ song }: { song: Song }) {
-  const navigate = useNavigate();
   const { playSong } = usePlayer();
 
   function handleClick() {
     playSong(song);
-    navigate(`/player/${song.id}`);
   }
 
   return (
@@ -147,8 +145,10 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
 /* ─── Main page ─── */
 export default function Library() {
   const { user, logout, can } = useAuth();
+  const { currentSong } = usePlayer();
   const { pathname } = useLocation();
   const searchRef = useRef<HTMLInputElement>(null);
+  const hasPlayer = !!currentSong;
 
   /* Data states */
   const [stats, setStats] = useState<{ total_songs: number; total_artists: number; total_albums: number; total_duration_seconds: number } | null>(null);
@@ -428,7 +428,7 @@ export default function Library() {
         </div>
 
         {/* ─── Main content ─── */}
-        <div className="flex-1 bg-surface-950 p-8 overflow-auto">
+        <div className={`flex-1 bg-surface-950 p-8 overflow-auto ${hasPlayer ? "pb-24" : ""}`}>
           {/* Stats row */}
           {stats && !isSearching && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

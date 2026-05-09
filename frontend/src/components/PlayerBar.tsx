@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { streamUrl, logHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
@@ -13,6 +13,9 @@ function formatTime(t: number) {
 
 export default function PlayerBar() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const isLibrary = pathname === "/";
+  const isPlayerPage = pathname.startsWith("/player/");
   const {
     currentSong,
     isPlaying,
@@ -73,7 +76,7 @@ export default function PlayerBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong?.id]);
 
-  if (!currentSong) return null;
+  if (!currentSong || isPlayerPage) return null;
 
   const progressPercent = duration ? (progress / duration) * 100 : 0;
   const bufferedPercent = duration ? (buffered / duration) * 100 : 0;
@@ -81,7 +84,7 @@ export default function PlayerBar() {
   return (
     <>
       {/* Progress bar overlay at top of player bar */}
-      <div className="fixed bottom-[80px] left-0 right-0 z-50 h-1 bg-surface-800">
+      <div className={`fixed bottom-[80px] z-50 h-1 bg-surface-800 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
         <div className="relative w-full h-full group cursor-pointer">
           <div
             className="absolute inset-y-0 left-0 bg-surface-600"
@@ -104,7 +107,7 @@ export default function PlayerBar() {
       </div>
 
       {/* Player bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 h-20 bg-surface-950/95 backdrop-blur-xl border-t border-white/10 px-4 sm:px-6">
+      <div className={`fixed bottom-0 z-50 h-20 bg-surface-950/95 backdrop-blur-xl border-t border-white/10 px-4 sm:px-6 ${isLibrary ? "md:left-64 left-0" : "left-0"} right-0`}>
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between gap-4">
           {/* Left: Artwork + Info */}
           <button
