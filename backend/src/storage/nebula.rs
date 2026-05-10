@@ -44,15 +44,6 @@ impl NebulaStorage {
         reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.jwt_token))
             .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static(""))
     }
-
-    pub fn presigned_url(&self, key: &str, expires: u64) -> anyhow::Result<String> {
-        let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
-        let url = format!(
-            "{}/{}/{}?signature={}&expires={}",
-            self.base_url, self.bucket, key, signature, expires
-        );
-        Ok(url)
-    }
 }
 
 fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
@@ -178,5 +169,18 @@ impl Storage for NebulaStorage {
             );
         }
         Ok(())
+    }
+
+    fn presigned_url(&self, key: &str, expiry_seconds: u64) -> anyhow::Result<String> {
+        let expires = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_secs() + expiry_seconds;
+
+        let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
+
+        Ok(format!(
+            "{}/{}/{}?signature={}&expires={}",
+            self.base_url, self.bucket, key, signature, expires
+        ))
     }
 }

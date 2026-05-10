@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { artworkUrl } from "../api/client";
+import { useEffect, useState } from "react";
+import { fetchArtworkUrl, artworkUrl } from "../api/client";
 import { stringToHslColor } from "../utils/color";
 
 interface ArtworkImageProps {
@@ -11,8 +11,25 @@ interface ArtworkImageProps {
 
 export default function ArtworkImage({ songId, title, artist = "", className = "" }: ArtworkImageProps) {
   const [hasError, setHasError] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
 
-  if (hasError) {
+  useEffect(() => {
+    let cancelled = false;
+    setHasError(false);
+    setUrl(null);
+
+    fetchArtworkUrl(songId)
+      .then((u) => {
+        if (!cancelled) setUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(artworkUrl(songId));
+      });
+
+    return () => { cancelled = true; };
+  }, [songId]);
+
+  if (hasError || !url) {
     const initial = title.charAt(0).toUpperCase();
     const color = stringToHslColor(title + artist);
     return (
@@ -30,7 +47,7 @@ export default function ArtworkImage({ songId, title, artist = "", className = "
 
   return (
     <img
-      src={artworkUrl(songId)}
+      src={url}
       alt={title}
       className={className}
       loading="lazy"

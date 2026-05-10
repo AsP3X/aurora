@@ -154,6 +154,45 @@ pub async fn get_song(
     }
 }
 
+pub async fn get_stream_url(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let row = sqlx::query_as::<_, (String,)>("SELECT file_key FROM songs WHERE id = $1 AND enabled = 1")
+        .bind(id.to_string())
+        .fetch_optional(&state.pool)
+        .await?;
+
+    let (file_key,) = row.ok_or(AppError::NotFound)?;
+    let url = state.storage.presigned_url(&file_key, state.url_expiry_seconds)
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "url": url })))
+}
+
+pub async fn get_artwork_url(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1 AND enabled = 1")
+        .bind(id.to_string())
+        .fetch_optional(&state.pool)
+        .await?;
+
+    let (key,) = row.ok_or(AppError::NotFound)?;
+    let key = key.ok_or(AppError::NotFound)?;
+    let url = state.storage.presigned_url(&key, state.url_expiry_seconds)
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "url": url })))
+}
+
 pub async fn stream_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,

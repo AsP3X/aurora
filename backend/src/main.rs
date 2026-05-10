@@ -31,6 +31,7 @@ pub struct AppState {
     pub storage: Arc<dyn Storage>,
     pub staging_dir: PathBuf,
     pub jwt_secret: String,
+    pub url_expiry_seconds: u64,
 }
 
 fn install_sqlx_drivers() {
@@ -60,6 +61,11 @@ async fn main() -> anyhow::Result<()> {
             config.jwt_secret
         );
     }
+    if config.signing_secret == "change-me-in-production" {
+        anyhow::bail!(
+            "SIGNING_SECRET is set to a known weak default. Please set a strong, random SIGNING_SECRET environment variable."
+        );
+    }
 
     let pool = db::init_pool(&config.database_url).await?;
     info!("Database connected and migrations applied");
@@ -71,8 +77,30 @@ async fn main() -> anyhow::Result<()> {
                 config.object_storage_url.clone(),
                 config.object_storage_bucket.clone(),
                 &config.jwt_secret,
-                &config.jwt_secret,
+                &config.signing_secret,
             )?;
+
+            let health_url = format!("{}/health", config.object_storage_url.trim_end_matches('/'));
+            match reqwest::get(&health_url).await {
+                Ok(resp) if resp.status().is_success() => {
+                    info!("Nebula OS health check passed");
+                }
+                Ok(resp) => {
+                    anyhow::bail!(
+                        "Nebula OS health check failed with status {} at {}",
+                        resp.status(),
+                        health_url
+                    );
+                }
+                Err(e) => {
+                    anyhow::bail!(
+                        "Nebula OS health check failed: {} at {}",
+                        e,
+                        health_url
+                    );
+                }
+            }
+
             Arc::new(nebula)
         }
         _ => {
@@ -91,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         storage,
         staging_dir,
         jwt_secret: config.jwt_secret.clone(),
+        url_expiry_seconds: config.url_expiry_seconds,
     });
 
     let app = create_router(state);
@@ -117,6 +146,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/songs", get(songs::handlers::list_songs))
         .route("/api/v1/songs/values", get(songs::handlers::list_values))
         .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
+        .route("/api/v1/songs/{id}/stream-url", get(songs::handlers::get_stream_url))
+        .route("/api/v1/songs/{id}/artwork-url", get(songs::handlers::get_artwork_url))
         .route("/api/v1/search", get(search::handlers::search))
         .route("/api/v1/playlists", get(playlists::handlers::list_playlists).post(playlists::handlers::create_playlist))
         .route("/api/v1/playlists/{id}", get(playlists::handlers::get_playlist))
