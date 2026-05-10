@@ -78,10 +78,10 @@ fn default_signing_secret() -> String {
     "change-me-in-production".into()
 }
 
-fn default_url_expiry_seconds() -> u64 {
-    3600
-}
-
 fn default_master_secret() -> String {
     "change-me-in-production".into()
+}
+
+fn default_url_expiry_seconds() -> u64 {
+    3600
 }
