@@ -147,7 +147,7 @@ impl StorageEngine {
         bucket: &str,
         key: &str,
         range: Option<(u64, u64)>,
-    ) -> Result<(ReaderStream<fs::File>, u64, Option<String>)> {
+    ) -> Result<(ReaderStream<tokio::io::Take<fs::File>>, u64, Option<String>)> {
         let bucket = sanitize_bucket(bucket)?;
         let safe_key = sanitize_key(key)?;
         let meta: ObjectMetadata = sqlx::query_as(
@@ -163,8 +163,8 @@ impl StorageEngine {
         let path = blob_path(&self.data_dir, &bucket, &safe_key);
         let file = fs::File::open(&path).await?;
 
-        let (start, end, content_length) = match range {
-            Some((s, e)) if meta.size == 0 => {
+        let (start, _end, content_length) = match range {
+            Some((_s, _e)) if meta.size == 0 => {
                 anyhow::bail!("range not satisfiable: empty object");
             }
             Some((s, e)) => {
@@ -185,7 +185,8 @@ impl StorageEngine {
             }
         };
 
-        let file = AsyncSeekExt::seek(file, std::io::SeekFrom::Start(start)).await?;
+        let mut file = file;
+        file.seek(std::io::SeekFrom::Start(start)).await?;
         let limited = file.take(content_length);
         let stream = ReaderStream::new(limited);
 

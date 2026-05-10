@@ -234,6 +234,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1228,6 +1229,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "futures-util",
  "jsonwebtoken",
  "md5",
  "reqwest",
