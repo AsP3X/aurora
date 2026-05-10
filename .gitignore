@@ -51,3 +51,4 @@ temp/
 *.tmp
 .claude/
 .worktrees/
+nebula-os/data/blobs/media/
