@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { logHistory } from "../api/client";
@@ -34,6 +34,31 @@ export default function PlayerBar() {
     audioRef,
   } = usePlayer();
 
+  const prevStreamUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (currentStreamUrl && currentStreamUrl !== prevStreamUrl.current) {
+      audio.currentTime = 0;
+      prevStreamUrl.current = currentStreamUrl;
+    }
+
+    if (!currentStreamUrl) return;
+
+    if (isPlaying) {
+      const promise = audio.play();
+      if (promise !== undefined) {
+        promise.catch((err: Error) => {
+          console.error("Audio play failed:", err);
+        });
+      }
+    } else {
+      audio.pause();
+    }
+  }, [currentStreamUrl, isPlaying, audioRef]);
+
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -54,6 +79,11 @@ export default function PlayerBar() {
       logHistory(currentSong.id, undefined, true).catch(() => {});
     }
   }, [currentSong]);
+
+  const handleAudioError = useCallback(() => {
+    const audio = audioRef.current;
+    console.error("Audio element error:", audio?.error);
+  }, [audioRef]);
 
   const handleSeekInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,19 +115,19 @@ export default function PlayerBar() {
     setHoverPercent(null);
   }, []);
 
-  if (!currentSong || isPlayerPage) return null;
+  if (!currentSong) return null;
 
   const progressPercent = duration ? (progress / duration) * 100 : 0;
   const bufferedPercent = duration ? (buffered / duration) * 100 : 0;
 
   return (
     <>
-      {/* Floating Pill Player */}
-      <div
-        className={`fixed bottom-4 z-40 ${
-          isDashboard ? "md:left-72 left-4" : "md:left-8 left-4"
-        } right-4 md:right-8`}
-      >
+      {!isPlayerPage && (
+        <div
+          className={`fixed bottom-4 z-40 ${
+            isDashboard ? "md:left-72 left-4" : "md:left-8 left-4"
+          } right-4 md:right-8`}
+        >
         {/* Liquid Glass Container */}
         <div className="relative rounded-[32px] overflow-hidden">
           {/* Base glass layers */}
@@ -279,6 +309,7 @@ export default function PlayerBar() {
           </div>
         </div>
       </div>
+      )}
 
       <audio
         ref={audioRef}
@@ -286,6 +317,7 @@ export default function PlayerBar() {
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
+        onError={handleAudioError}
         preload="metadata"
       />
     </>

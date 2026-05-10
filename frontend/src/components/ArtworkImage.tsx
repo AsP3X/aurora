@@ -23,7 +23,7 @@ export default function ArtworkImage({ songId, title, artist = "", className = "
         if (!cancelled) setUrl(u);
       })
       .catch(() => {
-        if (!cancelled) setUrl(artworkUrl(songId));
+        if (!cancelled) setHasError(true);
       });
 
     return () => { cancelled = true; };

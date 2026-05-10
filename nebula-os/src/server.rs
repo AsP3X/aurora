@@ -3,6 +3,7 @@ use axum::{
     routing::{get, put},
     Router,
 };
+use tower_http::cors::CorsLayer;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::normalize_path::NormalizePathLayer;
@@ -56,6 +57,7 @@ pub async fn create_app(
     let app = public_routes
         .merge(protected_routes)
         .layer(NormalizePathLayer::trim_trailing_slash())
+        .layer(CorsLayer::permissive())
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
         .with_state(state);
 

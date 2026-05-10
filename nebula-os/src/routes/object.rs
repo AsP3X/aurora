@@ -52,6 +52,8 @@ pub async fn put_object(
     Path(params): Path<ObjectParams>,
     req: Request,
 ) -> Response {
+    tracing::info!(bucket = %params.bucket, key = %params.key, "put_object started");
+
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -96,6 +98,7 @@ pub async fn put_object(
         .await
     {
         Ok(meta) => {
+            tracing::info!(bucket = %meta.bucket, key = %meta.key, size = meta.size, etag = ?meta.etag, "put_object completed");
             let mut resp = (StatusCode::CREATED, Json(json!({ "etag": meta.etag }))).into_response();
             if let Some(etag) = meta.etag {
                 if let Ok(etag_header) = etag.parse() {
@@ -105,7 +108,7 @@ pub async fn put_object(
             resp
         }
         Err(e) => {
-            tracing::error!("put_object error: {}", e);
+            tracing::error!(bucket = %params.bucket, key = %params.key, error = %e, "put_object failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
@@ -126,8 +129,11 @@ pub async fn get_object(
         .and_then(|v| v.to_str().ok())
         .and_then(parse_range);
 
+    tracing::info!(bucket = %params.bucket, key = %params.key, ?range, "get_object started");
+
     match state.storage.get_object(&params.bucket, &params.key, range).await {
-        Ok((stream, content_length, mime_type)) => {
+        Ok((stream, content_length, total_size, mime_type)) => {
+            tracing::info!(bucket = %params.bucket, key = %params.key, content_length, total_size, mime_type = ?mime_type, "get_object completed");
             let body = Body::from_stream(stream);
             let mut resp = Response::new(body);
             if let Ok(cl) = content_length.to_string().parse() {
@@ -138,12 +144,21 @@ pub async fn get_object(
                     resp.headers_mut().insert(header::CONTENT_TYPE, ct);
                 }
             }
-            if range.is_some() {
+            if let Ok(ar) = "bytes".parse() {
+                resp.headers_mut().insert(header::ACCEPT_RANGES, ar);
+            }
+            if let Some((start, _)) = range {
+                let end = start + content_length.saturating_sub(1);
+                let value = format!("bytes {}-{}/{}", start, end, total_size);
+                if let Ok(cr) = value.parse() {
+                    resp.headers_mut().insert(header::CONTENT_RANGE, cr);
+                }
                 *resp.status_mut() = StatusCode::PARTIAL_CONTENT;
             }
             resp
         }
         Err(e) if e.to_string().contains("not found") => {
+            tracing::warn!(bucket = %params.bucket, key = %params.key, "get_object not found");
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "not found" })),
@@ -151,6 +166,7 @@ pub async fn get_object(
                 .into_response()
         }
         Err(e) if e.to_string().contains("range not satisfiable") => {
+            tracing::warn!(bucket = %params.bucket, key = %params.key, ?range, "get_object range not satisfiable");
             (
                 StatusCode::RANGE_NOT_SATISFIABLE,
                 Json(json!({ "error": "range not satisfiable" })),
@@ -158,7 +174,7 @@ pub async fn get_object(
                 .into_response()
         }
         Err(e) => {
-            tracing::error!("get_object error: {}", e);
+            tracing::error!(bucket = %params.bucket, key = %params.key, error = %e, "get_object failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
@@ -172,8 +188,11 @@ pub async fn head_object(
     State(state): State<Arc<AppState>>,
     Path(params): Path<ObjectParams>,
 ) -> Response {
+    tracing::info!(bucket = %params.bucket, key = %params.key, "head_object started");
+
     match state.storage.head_object(&params.bucket, &params.key).await {
         Ok(meta) => {
+            tracing::info!(bucket = %meta.bucket, key = %meta.key, size = meta.size, mime_type = ?meta.mime_type, "head_object completed");
             let mut resp = Response::new(Body::empty());
             if let Ok(cl) = meta.size.to_string().parse() {
                 resp.headers_mut().insert(header::CONTENT_LENGTH, cl);
@@ -191,6 +210,7 @@ pub async fn head_object(
             resp
         }
         Err(e) if e.to_string().contains("not found") => {
+            tracing::warn!(bucket = %params.bucket, key = %params.key, "head_object not found");
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "not found" })),
@@ -198,7 +218,7 @@ pub async fn head_object(
                 .into_response()
         }
         Err(e) => {
-            tracing::error!("head_object error: {}", e);
+            tracing::error!(bucket = %params.bucket, key = %params.key, error = %e, "head_object failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
@@ -212,10 +232,15 @@ pub async fn delete_object(
     State(state): State<Arc<AppState>>,
     Path(params): Path<ObjectParams>,
 ) -> Response {
+    tracing::info!(bucket = %params.bucket, key = %params.key, "delete_object started");
+
     match state.storage.delete_object(&params.bucket, &params.key).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            tracing::info!(bucket = %params.bucket, key = %params.key, "delete_object completed");
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => {
-            tracing::error!("delete_object error: {}", e);
+            tracing::error!(bucket = %params.bucket, key = %params.key, error = %e, "delete_object failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),

@@ -79,6 +79,9 @@ pub async fn presigned_or_jwt_middleware(
     mut req: Request,
     next: Next,
 ) -> Response {
+    let path = req.uri().path().to_string();
+    let method = req.method().to_string();
+
     // Try JWT first
     let auth_header = req
         .headers()
@@ -97,14 +100,18 @@ pub async fn presigned_or_jwt_middleware(
                 &DecodingKey::from_secret(jwt_secret.0.as_bytes()),
                 &validation,
             ) {
+                tracing::info!(sub = %token_data.claims.sub, role = %token_data.claims.role, %path, %method, "jwt auth accepted");
                 req.extensions_mut().insert(token_data.claims);
                 return next.run(req).await;
+            } else {
+                tracing::warn!(%path, %method, "jwt auth rejected: invalid token");
             }
         }
     }
 
     // Fallback to presigned URL
     let Some(secret) = signing_secret else {
+        tracing::warn!(%path, %method, "auth failed: no signing_secret configured and no valid JWT");
         return unauthorized();
     };
 
@@ -121,11 +128,12 @@ pub async fn presigned_or_jwt_middleware(
     }
 
     let (Some(signature), Some(expires)) = (signature, expires) else {
+        tracing::warn!(%path, %method, "presigned auth rejected: missing signature or expires");
         return unauthorized();
     };
 
-    let path = req.uri().path();
-    let segments: Vec<&str> = path.trim_start_matches('/').splitn(2, '/').collect();
+    let path_segments = req.uri().path();
+    let segments: Vec<&str> = path_segments.trim_start_matches('/').splitn(2, '/').collect();
     let bucket = segments.get(0).copied().unwrap_or("");
     let key = segments.get(1).copied().unwrap_or("");
 
@@ -133,11 +141,12 @@ pub async fn presigned_or_jwt_middleware(
     let key = urlencoding::decode(key).unwrap_or_else(|_| key.into());
 
     if bucket.is_empty() {
+        tracing::warn!(%path, %method, "presigned auth rejected: empty bucket");
         return unauthorized();
     }
 
-    let method = req.method().as_str();
-    if verify_signature(method, &secret, &bucket, &key, expires, &signature) {
+    let method_str = req.method().as_str();
+    if verify_signature(method_str, &secret, &bucket, &key, expires, &signature) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -150,9 +159,11 @@ pub async fn presigned_or_jwt_middleware(
             exp: i64::try_from(expires).unwrap_or(i64::MAX),
             iat: now,
         };
+        tracing::info!(%bucket, %key, %method, expires, "presigned auth accepted");
         req.extensions_mut().insert(claims);
         next.run(req).await
     } else {
+        tracing::warn!(%bucket, %key, %method, expires, "presigned auth rejected: invalid signature");
         unauthorized()
     }
 }

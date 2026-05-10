@@ -122,8 +122,8 @@ export async function fetchStreamUrl(id: string) {
   return res.url;
 }
 
-export async function fetchArtworkUrl(id: string) {
-  const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string };
+export async function fetchArtworkUrl(id: string): Promise<string | null> {
+  const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string | null };
   return res.url;
 }
 
