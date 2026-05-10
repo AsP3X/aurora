@@ -1,9 +1,12 @@
 mod auth;
 mod config;
-mod storage;
 mod routes;
+mod server;
+mod storage;
 
 use anyhow::Result;
+use axum::serve;
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,5 +16,21 @@ async fn main() -> Result<()> {
 
     let cfg = config::NosConfig::from_env()?;
     tracing::info!(?cfg, "Configuration loaded");
+
+    let storage = storage::engine::StorageEngine::new(&cfg.meta_path, &cfg.data_dir).await?;
+    tracing::info!("Storage engine initialized");
+
+    let app = server::create_app(
+        storage,
+        cfg.jwt_secret,
+        cfg.max_body_size,
+        cfg.allow_public_read,
+    )
+    .await?;
+
+    let listener = TcpListener::bind(&cfg.bind_addr).await?;
+    tracing::info!("Listening on {}", cfg.bind_addr);
+
+    serve(listener, app).await?;
     Ok(())
 }
