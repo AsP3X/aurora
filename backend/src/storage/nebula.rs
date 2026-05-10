@@ -27,9 +27,11 @@ pub struct NebulaStorage {
 impl NebulaStorage {
     pub fn new(base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
         let token = generate_service_token(jwt_secret)?;
+        let base_url = base_url.trim_end_matches('/').to_string();
+        tracing::info!(%base_url, %bucket, "NebulaStorage client initialized");
         Ok(Self {
             client: reqwest::Client::new(),
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url,
             bucket,
             jwt_token: token,
             signing_secret: signing_secret.to_string(),
@@ -89,6 +91,7 @@ impl Storage for NebulaStorage {
         key: &str,
     ) -> anyhow::Result<(StorageStream, u64, String)> {
         let url = self.url(key);
+        tracing::info!(%url, key, "NebulaStorage GET request");
         let response = self
             .client
             .get(&url)
@@ -98,6 +101,7 @@ impl Storage for NebulaStorage {
 
         let status = response.status();
         if !status.is_success() {
+            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage GET failed");
             anyhow::bail!("Nebula OS GET failed: {} {}", status.as_u16(), url);
         }
 
@@ -111,6 +115,7 @@ impl Storage for NebulaStorage {
             .unwrap_or("application/octet-stream")
             .to_string();
 
+        tracing::info!(%url, key, content_length, %content_type, "NebulaStorage GET success");
         let stream = response.bytes_stream().map(|res| {
             res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         });
@@ -120,6 +125,7 @@ impl Storage for NebulaStorage {
 
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
         let url = self.url(key);
+        tracing::debug!(%url, key, "NebulaStorage HEAD request");
         let response = self
             .client
             .head(&url)
@@ -127,11 +133,14 @@ impl Storage for NebulaStorage {
             .send()
             .await?;
 
-        Ok(response.status().is_success())
+        let exists = response.status().is_success();
+        tracing::debug!(%url, key, exists, "NebulaStorage HEAD result");
+        Ok(exists)
     }
 
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         let url = self.url(key);
+        tracing::info!(%url, key, "NebulaStorage DELETE request");
         let response = self
             .client
             .delete(&url)
@@ -139,19 +148,24 @@ impl Storage for NebulaStorage {
             .send()
             .await?;
 
-        if !response.status().is_success() && response.status().as_u16() != 404 {
+        let status = response.status();
+        if !status.is_success() && status.as_u16() != 404 {
+            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage DELETE failed");
             anyhow::bail!(
                 "Nebula OS DELETE failed: {} {}",
-                response.status().as_u16(),
+                status.as_u16(),
                 url
             );
         }
+        tracing::info!(%url, key, "NebulaStorage DELETE success");
         Ok(())
     }
 
     async fn put(
         &self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()> {
         let url = self.url(key);
+        let len = data.len();
+        tracing::info!(%url, key, %content_type, len, "NebulaStorage PUT request");
         let response = self
             .client
             .put(&url)
@@ -161,13 +175,16 @@ impl Storage for NebulaStorage {
             .send()
             .await?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
+            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage PUT failed");
             anyhow::bail!(
                 "Nebula OS PUT failed: {} {}",
-                response.status().as_u16(),
+                status.as_u16(),
                 url
             );
         }
+        tracing::info!(%url, key, "NebulaStorage PUT success");
         Ok(())
     }
 
@@ -177,10 +194,11 @@ impl Storage for NebulaStorage {
             .as_secs() + expiry_seconds;
 
         let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
-
-        Ok(format!(
+        let url = format!(
             "{}/{}/{}?signature={}&expires={}",
             self.base_url, self.bucket, key, signature, expires
-        ))
+        );
+        tracing::debug!(key, %url, expires, "NebulaStorage presigned_url generated");
+        Ok(url)
     }
 }

@@ -51,31 +51,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/stream`;
     }
     setCurrentStreamUrl(url);
-
-    requestAnimationFrame(() => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      audio.src = url;
-      audio.currentTime = 0;
-      audio.load();
-      audio.play().catch(() => {});
-    });
   }, []);
 
   const togglePlay = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio || !currentSong) return;
-    if (audio.paused) {
-      audio.play().then(() => setIsPlaying(true)).catch(() => {});
-    } else {
-      audio.pause();
-      setIsPlaying(false);
-    }
+    if (!currentSong) return;
+    setIsPlaying((prev) => !prev);
   }, [currentSong]);
 
   const pause = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) audio.pause();
     setIsPlaying(false);
   }, []);
 

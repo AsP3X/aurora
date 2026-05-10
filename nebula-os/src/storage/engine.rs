@@ -97,6 +97,8 @@ impl StorageEngine {
     ) -> Result<ObjectMetadata> {
         let bucket = sanitize_bucket(bucket)?;
         let safe_key = sanitize_key(key)?;
+        tracing::debug!(%bucket, key = %safe_key, content_type, "storage::put_object start");
+
         let tmp_path = format!("{}/.tmp/{}.tmp", self.data_dir, uuid::Uuid::new_v4());
         let final_path = blob_path(&self.data_dir, &bucket, &safe_key);
 
@@ -155,6 +157,8 @@ impl StorageEngine {
         .execute(&self.pool)
         .await?;
 
+        tracing::info!(%bucket, key = %safe_key, size, etag = %etag, "storage::put_object stored");
+
         Ok(ObjectMetadata {
             bucket: bucket.to_string(),
             key: safe_key,
@@ -172,7 +176,7 @@ impl StorageEngine {
         bucket: &str,
         key: &str,
         range: Option<(u64, u64)>,
-    ) -> Result<(ReaderStream<tokio::io::Take<fs::File>>, u64, Option<String>)> {
+    ) -> Result<(ReaderStream<tokio::io::Take<fs::File>>, u64, u64, Option<String>)> {
         let bucket = sanitize_bucket(bucket)?;
         let safe_key = sanitize_key(key)?;
         let meta: ObjectMetadata = sqlx::query_as(
@@ -188,24 +192,23 @@ impl StorageEngine {
         let path = blob_path(&self.data_dir, &bucket, &safe_key);
         let file = fs::File::open(&path).await?;
 
+        let total_size = meta.size as u64;
         let (start, _end, content_length) = match range {
-            Some((_s, _e)) if meta.size == 0 => {
+            Some((_s, _e)) if total_size == 0 => {
                 anyhow::bail!("range not satisfiable: empty object");
             }
             Some((s, e)) => {
-                let size = meta.size as u64;
-                if s >= size {
+                if s >= total_size {
                     anyhow::bail!("range not satisfiable: start >= size");
                 }
-                let end = e.min(size - 1);
+                let end = e.min(total_size - 1);
                 (s, end, end - s + 1)
             }
             None => {
-                let size = meta.size as u64;
-                if size == 0 {
+                if total_size == 0 {
                     (0, 0, 0)
                 } else {
-                    (0, size - 1, size)
+                    (0, total_size - 1, total_size)
                 }
             }
         };
@@ -215,7 +218,9 @@ impl StorageEngine {
         let limited = file.take(content_length);
         let stream = ReaderStream::new(limited);
 
-        Ok((stream, content_length, meta.mime_type))
+        tracing::info!(%bucket, key = %safe_key, content_length, total_size, ?range, mime_type = ?meta.mime_type, "storage::get_object streaming");
+
+        Ok((stream, content_length, total_size, meta.mime_type))
     }
 
     pub async fn head_object(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
@@ -230,6 +235,8 @@ impl StorageEngine {
         .fetch_optional(&self.pool)
         .await?
         .with_context(|| format!("object not found: {}/{}", bucket, safe_key))?;
+
+        tracing::info!(%bucket, key = %safe_key, size = meta.size, "storage::head_object found");
         Ok(meta)
     }
 
@@ -245,10 +252,16 @@ impl StorageEngine {
         if result.rows_affected() > 0 {
             let path = blob_path(&self.data_dir, &bucket, &safe_key);
             match fs::remove_file(&path).await {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Ok(()) => {
+                    tracing::info!(%bucket, key = %safe_key, "storage::delete_object removed");
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::warn!(%bucket, key = %safe_key, "storage::delete_object blob already missing");
+                }
                 Err(e) => return Err(e.into()),
             }
+        } else {
+            tracing::warn!(%bucket, key = %safe_key, "storage::delete_object not found in meta");
         }
         Ok(())
     }
@@ -282,6 +295,7 @@ impl StorageEngine {
         .fetch_all(&self.pool)
         .await?;
 
+        let item_count = rows.len();
         let items = rows
             .into_iter()
             .map(|r| ListItem {
@@ -292,6 +306,8 @@ impl StorageEngine {
                 last_modified: r.updated_at,
             })
             .collect();
+
+        tracing::debug!(%bucket, %prefix, item_count, "storage::list_objects returned");
 
         Ok(ListResult {
             items,

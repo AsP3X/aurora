@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -186,7 +187,9 @@ pub async fn get_artwork_url(
         .await?;
 
     let (key,) = row.ok_or(AppError::NotFound)?;
-    let key = key.ok_or(AppError::NotFound)?;
+    let Some(key) = key else {
+        return Ok(Json(serde_json::json!({ "url": null })));
+    };
     let url = state.storage.presigned_url(&key, state.url_expiry_seconds)
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
@@ -219,14 +222,16 @@ pub async fn stream_song(
 pub async fn get_artwork(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
     let (key,) = row.ok_or(AppError::NotFound)?;
-    let key = key.ok_or(AppError::NotFound)?;
+    let Some(key) = key else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
 
     let (stream, size, mime) = state.storage.get_stream(&key).await.map_err(|e| AppError::Storage(e.to_string()))?;
 
@@ -237,7 +242,7 @@ pub async fn get_artwork(
     .into_iter()
     .collect();
 
-    Ok((headers, axum::body::Body::from_stream(stream)))
+    Ok((headers, axum::body::Body::from_stream(stream)).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
