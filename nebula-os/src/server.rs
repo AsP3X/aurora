@@ -8,7 +8,7 @@ use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::{auth_middleware, JwtSecret};
-use crate::routes::{bucket, object, AppState};
+use crate::routes::{bucket, metrics, object, AppState};
 use crate::storage::engine::StorageEngine;
 
 pub async fn create_app(
@@ -34,6 +34,7 @@ pub async fn create_app(
     );
 
     let app = Router::new()
+        .route("/metrics", get(metrics::metrics))
         .route(
             "/{bucket}/{*key}",
             put(object::put_object)
