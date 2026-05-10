@@ -147,6 +147,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))
         .route("/api/v1/auth/oauth/{provider}", get(auth::handlers::oauth_placeholder))
+        // Fallback direct stream for songs not yet transcoded to HLS
         .route("/api/v1/songs/{id}/stream", get(songs::handlers::stream_song))
         .route("/api/v1/songs/{id}/artwork", get(songs::handlers::get_artwork));
 
