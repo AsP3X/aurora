@@ -543,10 +543,137 @@ pub async fn commit_song(
 
     match result {
         Ok(song_db) => {
-            if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
-                tracing::warn!("Failed to remove staging directory: {}", e);
-            }
+            // Spawn HLS encoding in the background
+            let song_id_clone = song_id.clone();
+            let audio_path_clone = audio_path.clone();
+            let staging_dir_clone = staging_dir.clone();
+            let hls_key_store = state.hls_key_store.clone();
+            let pool_clone = state.pool.clone();
+            let storage_clone = state.storage.clone();
 
+            tokio::spawn(async move {
+                use crate::hls::encoder::HlsEncoder;
+
+                let song_uuid = match Uuid::parse_str(&song_id_clone) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        tracing::error!(song_id = %song_id_clone, error = %e, "Invalid song_id UUID for HLS encoding");
+                        return;
+                    }
+                };
+
+                let output_dir = staging_dir_clone.parent().unwrap_or(&staging_dir_clone)
+                    .join("hls_output")
+                    .join(&song_id_clone);
+
+                match hls_key_store.create_key_for_song(song_uuid).await {
+                    Ok((key_id, key)) => {
+                        match HlsEncoder::transcode(&audio_path_clone, &output_dir, &key).await {
+                            Ok(output) => {
+                                // Upload HLS output to storage
+                                let prefix = format!("songs/{}/", song_id_clone);
+
+                                // Upload playlist
+                                let playlist_data = match tokio::fs::read(&output.playlist_path).await {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS playlist");
+                                        return;
+                                    }
+                                };
+                                if let Err(e) = storage_clone.put(
+                                    &format!("{}stream.m3u8", prefix),
+                                    "application/vnd.apple.mpegurl",
+                                    playlist_data
+                                ).await {
+                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS playlist");
+                                    return;
+                                }
+
+                                // Upload key file
+                                let key_data = match tokio::fs::read(&output.key_path).await {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS key file");
+                                        return;
+                                    }
+                                };
+                                if let Err(e) = storage_clone.put(
+                                    &format!("{}key.bin", prefix),
+                                    "application/octet-stream",
+                                    key_data
+                                ).await {
+                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS key");
+                                    return;
+                                }
+
+                                // Upload segments
+                                let mut segment_entries = match tokio::fs::read_dir(&output.segments_dir).await {
+                                    Ok(entries) => entries,
+                                    Err(e) => {
+                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read segments directory");
+                                        return;
+                                    }
+                                };
+                                while let Ok(Some(entry)) = segment_entries.next_entry().await {
+                                    let path = entry.path();
+                                    if path.extension().and_then(|e| e.to_str()) != Some("ts") {
+                                        continue;
+                                    }
+                                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                    let data = match tokio::fs::read(&path).await {
+                                        Ok(d) => d,
+                                        Err(e) => {
+                                            tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to read segment");
+                                            continue;
+                                        }
+                                    };
+                                    if let Err(e) = storage_clone.put(
+                                        &format!("{}segments/{}", prefix, name),
+                                        "video/mp2t",
+                                        data
+                                    ).await {
+                                        tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to upload segment");
+                                    }
+                                }
+
+                                // Update database
+                                if let Err(e) = sqlx::query(
+                                    "UPDATE songs SET hls_ready = true, hls_key_id = $1, segment_count = $2 WHERE id = $3"
+                                )
+                                .bind(key_id.to_string())
+                                .bind(output.segment_count as i32)
+                                .bind(&song_id_clone)
+                                .execute(&pool_clone)
+                                .await {
+                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to update song HLS status");
+                                    return;
+                                }
+
+                                tracing::info!(song_id = %song_id_clone, segment_count = output.segment_count, "HLS encoding completed successfully");
+                            }
+                            Err(e) => {
+                                tracing::error!(song_id = %song_id_clone, error = %e, "HLS encoding failed");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to create encryption key for HLS");
+                    }
+                }
+
+                // Clean up staging directory AFTER HLS encoding is done
+                if let Err(e) = tokio::fs::remove_dir_all(&staging_dir_clone).await {
+                    tracing::warn!(staging_dir = %staging_dir_clone.display(), error = %e, "Failed to remove staging directory after HLS encoding");
+                }
+
+                // Clean up HLS output directory
+                if let Err(e) = tokio::fs::remove_dir_all(&output_dir).await {
+                    tracing::warn!(output_dir = %output_dir.display(), error = %e, "Failed to remove HLS output directory");
+                }
+            });
+
+            // Continue with the rest (don't clean up staging_dir here - background task handles it)
             let mut song: crate::songs::model::Song = song_db.into();
             if let Err(e) = crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await {
                 tracing::warn!("Failed to populate genres after commit: {}", e);
