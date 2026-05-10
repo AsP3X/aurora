@@ -278,7 +278,7 @@ export async function deleteAdminSong(id: string) {
   return apiFetch(`/admin/songs/${id}`, { method: "DELETE" });
 }
 
-export async function updateAdminSong(id: string, body: Partial<Pick<Song, "title" | "artist" | "album" | "album_artist" | "track_number" | "year" | "genre" | "studio">>) {
+export async function updateAdminSong(id: string, body: Partial<Pick<Song, "title" | "artist" | "album" | "album_artist" | "track_number" | "year" | "genres" | "studio">>) {
   return apiFetch(`/admin/songs/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
