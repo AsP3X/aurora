@@ -6,7 +6,7 @@
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\" --names \"API,WEB\" --prefix-colors \"cyan,magenta\"",
-    "dev:backend": "cd backend && cargo run",
+    "dev:backend": "cd backend && MUSIC_DIR=./data cargo run",
     "dev:frontend": "cd frontend && pnpm dev",
     "build": "cd frontend && pnpm run build",
     "lint": "cd frontend && pnpm run lint",

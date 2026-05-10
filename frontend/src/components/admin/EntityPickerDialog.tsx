@@ -31,12 +31,14 @@ export default function EntityPickerDialog({
   const [localSelected, setLocalSelected] = useState<string[]>(selectedValues);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       setQuery("");
       setLocalSelected(selectedValues);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
+    wasOpenRef.current = open;
   }, [open, selectedValues]);
 
   const fuse = useMemo(
