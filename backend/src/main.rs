@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
                 config.object_storage_url.clone(),
                 config.object_storage_bucket.clone(),
                 &config.jwt_secret,
+                &config.jwt_secret,
             )?;
             Arc::new(nebula)
         }
