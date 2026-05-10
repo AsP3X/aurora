@@ -49,6 +49,7 @@ walkdir = "2"
 mime_guess = "2"
 bytes = "1"
 futures-util = "0.3"
+aes-gcm = "0.10"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
