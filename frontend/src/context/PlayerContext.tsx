@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import type { Song } from "../types";
-import { fetchStreamUrl } from "../api/client";
+import { fetchStreamUrl, fetchSong } from "../api/client";
 
 interface PlayerState {
   currentSong: Song | null;
@@ -46,7 +46,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     let url: string;
     try {
-      url = await fetchStreamUrl(song.id);
+      const songData = await fetchSong(song.id);
+      if (songData.hls_ready) {
+        url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/playlist`;
+      } else {
+        url = await fetchStreamUrl(song.id);
+      }
     } catch {
       url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/stream`;
     }

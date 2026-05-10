@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import Hls from "hls.js";
 import { usePlayer } from "../context/PlayerContext";
 import { logHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
@@ -35,6 +36,39 @@ export default function PlayerBar() {
   } = usePlayer();
 
   const prevStreamUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentStreamUrl) return;
+
+    let hls: Hls | null = null;
+
+    if (currentStreamUrl.endsWith("/playlist")) {
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: true,
+          xhrSetup: (xhr) => {
+            const token = localStorage.getItem("aurora_token");
+            if (token) {
+              xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+            }
+          },
+        });
+        hls.loadSource(currentStreamUrl);
+        hls.attachMedia(audio);
+      } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+        audio.src = currentStreamUrl;
+      }
+    } else {
+      audio.src = currentStreamUrl;
+    }
+
+    return () => {
+      if (hls) {
+        hls.destroy();
+      }
+    };
+  }, [currentStreamUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -313,7 +347,6 @@ export default function PlayerBar() {
 
       <audio
         ref={audioRef}
-        src={currentStreamUrl || undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
