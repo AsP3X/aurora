@@ -7,7 +7,7 @@ edition = "2024"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "compression-full"] }
+tower-http = { version = "0.6", features = ["trace", "compression-full", "normalize-path"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
