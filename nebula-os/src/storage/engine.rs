@@ -312,4 +312,18 @@ impl StorageEngine {
         .await?;
         Ok(count > 0)
     }
+
+    pub async fn object_count(&self) -> Result<i64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count)
+    }
+
+    pub async fn total_bytes(&self) -> Result<i64> {
+        let total: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size), 0) FROM objects")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(total)
+    }
 }

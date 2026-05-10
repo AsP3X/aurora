@@ -37,6 +37,10 @@ chrono = { version = "0.4", features = ["serde"] }
 envy = "0.4"
 dotenvy = "0.15"
 
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 meilisearch-sdk = "0.27"
