@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
+import MultiGenreField from "./MultiGenreField";
 import { fetchValues } from "../../api/client";
 
 interface SongMetadataFormProps {
@@ -130,11 +131,10 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
       </div>
 
       <div>
-        <EntityField
+        <MultiGenreField
           label="Genre"
-          value={draft.genre}
-          onChange={(v) => update("genre", v)}
-          entityType="genre"
+          values={draft.genres}
+          onChange={(v) => update("genres", v)}
           existingValues={existingValues.genre}
         />
       </div>

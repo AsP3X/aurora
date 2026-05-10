@@ -5,9 +5,12 @@ interface EntityPickerDialogProps {
   open: boolean;
   onClose: () => void;
   onSelect: (value: string) => void;
+  onMultiSelect?: (values: string[]) => void;
   title: string;
   existingValues: string[];
   currentValue: string | null;
+  selectedValues?: string[];
+  multiSelect?: boolean;
 }
 
 const inputClass =
@@ -17,19 +20,24 @@ export default function EntityPickerDialog({
   open,
   onClose,
   onSelect,
+  onMultiSelect,
   title,
   existingValues,
   currentValue,
+  selectedValues = [],
+  multiSelect = false,
 }: EntityPickerDialogProps) {
   const [query, setQuery] = useState("");
+  const [localSelected, setLocalSelected] = useState<string[]>(selectedValues);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setQuery("");
+      setLocalSelected(selectedValues);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [open]);
+  }, [open, selectedValues]);
 
   const fuse = useMemo(
     () =>
@@ -45,18 +53,39 @@ export default function EntityPickerDialog({
     return fuse.search(query).map((r) => r.item);
   }, [query, existingValues, fuse]);
 
+  const isSelected = (value: string) => localSelected.includes(value);
+
+  const toggleSelection = (value: string) => {
+    setLocalSelected((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
+
   const handleSelect = (value: string) => {
     onSelect(value);
+    onClose();
+  };
+
+  const handleDone = () => {
+    onMultiSelect?.(localSelected);
     onClose();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && query.trim()) {
       e.preventDefault();
-      if (results.length > 0) {
-        handleSelect(results[0]);
+      if (multiSelect) {
+        const trimmed = query.trim();
+        if (!localSelected.includes(trimmed)) {
+          setLocalSelected((prev) => [...prev, trimmed]);
+        }
+        setQuery("");
       } else {
-        handleSelect(query.trim());
+        if (results.length > 0) {
+          handleSelect(results[0]);
+        } else {
+          handleSelect(query.trim());
+        }
       }
     }
     if (e.key === "Escape") {
@@ -94,31 +123,84 @@ export default function EntityPickerDialog({
           )}
 
           <ul className="space-y-1">
-            {results.map((value) => (
-              <li key={value}>
-                <button
-                  onClick={() => handleSelect(value)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                    value === currentValue
-                      ? "bg-aurora-600/20 text-aurora-400"
-                      : "text-white hover:bg-surface-800"
-                  }`}
-                >
-                  {value}
-                </button>
-              </li>
-            ))}
+            {results.map((value) => {
+              const selected = isSelected(value);
+              return (
+                <li key={value}>
+                  <button
+                    onClick={() => {
+                      if (multiSelect) {
+                        toggleSelection(value);
+                      } else {
+                        handleSelect(value);
+                      }
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                      !multiSelect && value === currentValue
+                        ? "bg-aurora-600/20 text-aurora-400"
+                        : selected
+                        ? "bg-aurora-600/20 text-aurora-400"
+                        : "text-white hover:bg-surface-800"
+                    }`}
+                  >
+                    {multiSelect && (
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          selected
+                            ? "border-aurora-500 bg-aurora-500"
+                            : "border-surface-600"
+                        }`}
+                      >
+                        {selected && (
+                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </span>
+                    )}
+                    {value}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
 
           {query.trim() && !results.includes(query.trim()) && (
             <button
-              onClick={() => handleSelect(query.trim())}
+              onClick={() => {
+                if (multiSelect) {
+                  const trimmed = query.trim();
+                  if (!localSelected.includes(trimmed)) {
+                    setLocalSelected((prev) => [...prev, trimmed]);
+                  }
+                  setQuery("");
+                } else {
+                  handleSelect(query.trim());
+                }
+              }}
               className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm text-aurora-400 hover:bg-surface-800 hover:text-aurora-300"
             >
               Create &quot;{query.trim()}&quot;
             </button>
           )}
         </div>
+
+        {multiSelect && (
+          <div className="mt-3 flex justify-end gap-2 border-t border-surface-800 pt-3">
+            <button
+              onClick={onClose}
+              className="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDone}
+              className="rounded-md bg-aurora-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-aurora-500"
+            >
+              Done ({localSelected.length})
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
