@@ -122,6 +122,16 @@ export async function fetchStreamUrl(id: string) {
   return res.url;
 }
 
+export async function fetchPlaylistUrl(id: string): Promise<string> {
+  const token = getToken();
+  const url = `${API_BASE}/songs/${id}/playlist`;
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
 export async function fetchArtworkUrl(id: string): Promise<string | null> {
   const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string | null };
   return res.url;
