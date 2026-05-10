@@ -485,7 +485,7 @@ pub async fn commit_song(
         }
     }
 
-    let result: Result<crate::songs::model::Song, AppError> = async {
+    let result: Result<crate::songs::model::SongDb, AppError> = async {
         let mut tx = state.pool.begin().await?;
 
         let song_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
@@ -542,17 +542,20 @@ pub async fn commit_song(
         }
 
         tx.commit().await?;
-
-        let mut song: crate::songs::model::Song = song_db.into();
-        crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
-        Ok(song)
+        Ok(song_db)
     }.await;
 
     match result {
-        Ok(song) => {
+        Ok(song_db) => {
             if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
                 tracing::warn!("Failed to remove staging directory: {}", e);
             }
+
+            let mut song: crate::songs::model::Song = song_db.into();
+            if let Err(e) = crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await {
+                tracing::warn!("Failed to populate genres after commit: {}", e);
+            }
+
             tracing::info!(
                 song_id = %song.id,
                 title = %req.title,
