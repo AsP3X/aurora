@@ -162,12 +162,20 @@ pub async fn get_stream_url(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let row = sqlx::query_as::<_, (String,)>("SELECT file_key FROM songs WHERE id = $1 AND enabled = 1")
+    let row = sqlx::query_as::<_, (String, Option<bool>)>(
+        "SELECT file_key, hls_ready FROM songs WHERE id = $1 AND enabled = 1"
+    )
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
 
-    let (file_key,) = row.ok_or(AppError::NotFound)?;
+    let (file_key, hls_ready) = row.ok_or(AppError::NotFound)?;
+
+    if hls_ready.unwrap_or(false) {
+        let playlist_url = format!("/api/v1/songs/{}/playlist", id);
+        return Ok(Json(serde_json::json!({ "url": playlist_url })));
+    }
+
     let url = state.storage.presigned_url(&file_key, state.url_expiry_seconds)
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
