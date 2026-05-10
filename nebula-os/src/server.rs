@@ -7,20 +7,23 @@ use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
-use crate::auth::{auth_middleware, JwtSecret};
-use crate::routes::{bucket, metrics, object, AppState};
+use crate::auth::{presigned_or_jwt_middleware, JwtSecret};
+use crate::routes::{bucket, health, metrics, object, AppState};
 use crate::storage::engine::StorageEngine;
 
 pub async fn create_app(
     storage: StorageEngine,
     jwt_secret: String,
+    signing_secret: Option<String>,
     max_body_size: usize,
     allow_public_read: bool, // TODO: implement public read mode (post-MVP)
 ) -> anyhow::Result<Router> {
     let secret = Arc::new(JwtSecret(jwt_secret));
+    let signing_secret = signing_secret.map(Arc::new);
     let state = Arc::new(AppState {
         storage,
         jwt_secret: secret.clone(),
+        signing_secret: signing_secret.clone(),
         max_body_size,
         allow_public_read,
     });
@@ -28,13 +31,17 @@ pub async fn create_app(
     let auth_layer = middleware::from_fn_with_state(
         state.clone(),
         |state: axum::extract::State<Arc<AppState>>, req, next| {
-            let secret = state.jwt_secret.clone();
-            auth_middleware(secret, req, next)
+            let jwt_secret = state.jwt_secret.clone();
+            let signing_secret = state.signing_secret.clone();
+            presigned_or_jwt_middleware(jwt_secret, signing_secret, req, next)
         },
     );
 
-    let app = Router::new()
-        .route("/metrics", get(metrics::metrics))
+    let public_routes = Router::new()
+        .route("/health", get(health::health))
+        .route("/metrics", get(metrics::metrics));
+
+    let protected_routes = Router::new()
         .route(
             "/{bucket}/{*key}",
             put(object::put_object)
@@ -43,8 +50,11 @@ pub async fn create_app(
                 .head(object::head_object),
         )
         .route("/{bucket}", get(bucket::list_objects))
+        .layer(auth_layer);
+
+    let app = public_routes
+        .merge(protected_routes)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
-        .layer(auth_layer)
         .with_state(state);
 
     Ok(app)
