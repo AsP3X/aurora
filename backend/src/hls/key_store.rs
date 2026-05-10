@@ -6,6 +6,7 @@ use uuid::Uuid;
 /// 16-byte AES-128 key
 pub type AesKey = [u8; 16];
 
+#[derive(Clone)]
 pub struct KeyStore {
     pool: AnyPool,
     master_secret: [u8; 32],
