@@ -12,15 +12,6 @@ use crate::{
 
 const STAGING_DIR_NAME: &str = ".staging";
 
-async fn ensure_parent_dir(path: &Path) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Serialize)]
 pub struct SongDraft {
     pub staging_id: String,
@@ -246,7 +237,7 @@ pub async fn stage_song(
     }
 
     let staging_id = Uuid::new_v4().to_string();
-    let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&staging_id);
+    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&staging_id);
     tokio::fs::create_dir_all(&staging_dir)
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
@@ -404,7 +395,7 @@ pub async fn commit_song(
         }
     }
 
-    let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&req.staging_id);
+    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&req.staging_id);
     if !staging_dir.is_dir() {
         return Err(AppError::NotFound);
     }
@@ -432,16 +423,19 @@ pub async fn commit_song(
         &song_id,
         audio_path.file_name().ok_or_else(|| AppError::Storage("Invalid audio path".into()))?.to_string_lossy()
     );
-    let dest_path = state.storage.base_dir.join(&file_key);
-    ensure_parent_dir(&dest_path).await?;
-    tokio::fs::rename(&audio_path, &dest_path)
+
+    let audio_meta = tokio::fs::metadata(&audio_path)
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
-
-    let file_size = tokio::fs::metadata(&dest_path)
+    let file_size = audio_meta.len() as i64;
+    let audio_data = tokio::fs::read(&audio_path)
         .await
-        .map_err(|e| AppError::Storage(e.to_string()))?
-        .len() as i64;
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let audio_mime = mime_guess::from_path(&audio_path)
+        .first_or_octet_stream()
+        .to_string();
+    state.storage.put(&file_key, &audio_mime, audio_data).await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
 
     let mut artwork_key: Option<String> = None;
 
@@ -452,10 +446,8 @@ pub async fn commit_song(
             "jpg".to_string()
         };
         let art_key = format!("artwork/{}.{}", song_id, art_ext);
-        let art_path = state.storage.base_dir.join(&art_key);
-        ensure_parent_dir(&art_path).await?;
-        tokio::fs::write(&art_path, bytes)
-            .await
+        let art_mime = format!("image/{}", art_ext);
+        state.storage.put(&art_key, &art_mime, bytes).await
             .map_err(|e| AppError::Storage(e.to_string()))?;
         artwork_key = Some(art_key);
     } else {
@@ -474,10 +466,14 @@ pub async fn commit_song(
                     .and_then(|e| e.to_str())
                     .unwrap_or("jpg");
                 let art_key = format!("artwork/{}.{}", song_id, ext);
-                let art_path = state.storage.base_dir.join(&art_key);
-                ensure_parent_dir(&art_path).await?;
-                tokio::fs::rename(entry.path(), &art_path)
+                let art_path = entry.path();
+                let art_data = tokio::fs::read(&art_path)
                     .await
+                    .map_err(|e| AppError::Storage(e.to_string()))?;
+                let art_mime = mime_guess::from_path(&art_path)
+                    .first_or_octet_stream()
+                    .to_string();
+                state.storage.put(&art_key, &art_mime, art_data).await
                     .map_err(|e| AppError::Storage(e.to_string()))?;
                 artwork_key = Some(art_key);
                 break;
@@ -567,13 +563,12 @@ pub async fn commit_song(
         }
         Err(e) => {
             tracing::warn!(error = %e, "commit_song failed");
-            if let Err(e) = tokio::fs::remove_file(&dest_path).await {
-                tracing::warn!("Failed to clean up audio file after DB error: {}", e);
+            if let Err(e) = state.storage.delete(&file_key).await {
+                tracing::warn!("Failed to clean up audio object after DB error: {}", e);
             }
             if let Some(ref key) = artwork_key {
-                let art_path = state.storage.base_dir.join(key);
-                if let Err(e) = tokio::fs::remove_file(&art_path).await {
-                    tracing::warn!("Failed to clean up artwork file after DB error: {}", e);
+                if let Err(e) = state.storage.delete(key).await {
+                    tracing::warn!("Failed to clean up artwork object after DB error: {}", e);
                 }
             }
             if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
@@ -592,7 +587,7 @@ pub async fn get_staged_artwork(
     tracing::info!(user_id = %claims.sub, staging_id = %staging_id, "get_staged_artwork");
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
-    let staging_dir = state.storage.base_dir.join(STAGING_DIR_NAME).join(&staging_id);
+    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&staging_id);
     if !staging_dir.is_dir() {
         return Err(AppError::NotFound);
     }

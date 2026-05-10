@@ -34,7 +34,26 @@ impl Drop for TempFileGuard {
 
 impl StorageEngine {
     pub async fn new(meta_path: &str, data_dir: &str) -> Result<Self> {
-        let pool = SqlitePool::connect(meta_path).await?;
+        let conn_str = if meta_path.starts_with("file:") {
+            meta_path.to_string()
+        } else {
+            let meta_path = meta_path.strip_prefix("./").unwrap_or(meta_path);
+            let meta_path_buf = PathBuf::from(meta_path);
+            let meta_path_buf = if meta_path_buf.is_absolute() {
+                meta_path_buf
+            } else {
+                std::env::current_dir()?.join(meta_path_buf)
+            };
+            if let Some(parent) = meta_path_buf.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            // Ensure the database file exists before connecting (Windows compat)
+            if !meta_path_buf.exists() {
+                fs::File::create(&meta_path_buf).await?;
+            }
+            meta_path_buf.to_string_lossy().replace('/', "\\")
+        };
+        let pool = SqlitePool::connect(&conn_str).await?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS objects (

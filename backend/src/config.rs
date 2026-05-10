@@ -16,6 +16,12 @@ pub struct Config {
     pub music_dir: String,
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
+    #[serde(default = "default_storage_mode")]
+    pub storage_mode: String,
+    #[serde(default = "default_object_storage_url")]
+    pub object_storage_url: String,
+    #[serde(default = "default_object_storage_bucket")]
+    pub object_storage_bucket: String,
 }
 
 impl Config {
@@ -44,6 +50,18 @@ fn default_jwt_secret() -> String {
 
 fn default_music_dir() -> String {
     "/music".into()
+}
+
+fn default_storage_mode() -> String {
+    "direct".into()
+}
+
+fn default_object_storage_url() -> String {
+    "http://localhost:9000".into()
+}
+
+fn default_object_storage_bucket() -> String {
+    "music".into()
 }
 
 fn default_bind_addr() -> String {

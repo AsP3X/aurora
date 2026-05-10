@@ -4,6 +4,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
@@ -21,13 +22,14 @@ mod songs;
 mod storage;
 
 use config::Config;
-use storage::LocalStorage;
+use storage::{LocalStorage, Storage, nebula::NebulaStorage};
 use sqlx::AnyPool;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: AnyPool,
-    pub storage: LocalStorage,
+    pub storage: Arc<dyn Storage>,
+    pub staging_dir: PathBuf,
     pub jwt_secret: String,
 }
 
@@ -62,13 +64,31 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::init_pool(&config.database_url).await?;
     info!("Database connected and migrations applied");
 
-    let storage = LocalStorage {
-        base_dir: std::path::PathBuf::from(&config.music_dir),
+    let storage: Arc<dyn Storage> = match config.storage_mode.as_str() {
+        "proxy" => {
+            info!("Using Nebula OS object storage at {}", config.object_storage_url);
+            let nebula = NebulaStorage::new(
+                config.object_storage_url.clone(),
+                config.object_storage_bucket.clone(),
+                &config.jwt_secret,
+            )?;
+            Arc::new(nebula)
+        }
+        _ => {
+            info!("Using local filesystem storage at {}", config.music_dir);
+            let local = LocalStorage {
+                base_dir: std::path::PathBuf::from(&config.music_dir),
+            };
+            Arc::new(local)
+        }
     };
+
+    let staging_dir = PathBuf::from(&config.music_dir);
 
     let state = Arc::new(AppState {
         pool,
         storage,
+        staging_dir,
         jwt_secret: config.jwt_secret.clone(),
     });
 

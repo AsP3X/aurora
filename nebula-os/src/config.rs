@@ -27,6 +27,7 @@ impl fmt::Debug for NosConfig {
 
 impl NosConfig {
     pub fn from_env() -> Result<Self> {
+        let _ = dotenvy::dotenv();
         Ok(Self {
             bind_addr: env::var("NOS_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:9000".into()),
             data_dir: env::var("NOS_DATA_DIR").unwrap_or_else(|_| "./data/blobs".into()),
