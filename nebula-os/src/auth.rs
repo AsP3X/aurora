@@ -102,3 +102,84 @@ pub fn verify_signature(secret: &str, bucket: &str, key: &str, expires: u64, sig
     };
     constant_time_eq(signature, &expected)
 }
+
+pub async fn presigned_or_jwt_middleware(
+    jwt_secret: Arc<JwtSecret>,
+    signing_secret: Option<Arc<String>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    // Try JWT first
+    let auth_header = req
+        .headers()
+        .get("authorization")
+        .and_then(|h| h.to_str().ok());
+
+    if let Some(header) = auth_header {
+        if header.starts_with("Bearer ") {
+            let token = &header[7..];
+            let mut validation = Validation::new(Algorithm::HS256);
+            validation.validate_exp = true;
+            validation.validate_nbf = false;
+
+            if let Ok(token_data) = decode::<Claims>(
+                token,
+                &DecodingKey::from_secret(jwt_secret.0.as_bytes()),
+                &validation,
+            ) {
+                req.extensions_mut().insert(token_data.claims);
+                return next.run(req).await;
+            }
+        }
+    }
+
+    // Fallback to presigned URL
+    let Some(secret) = signing_secret else {
+        return unauthorized();
+    };
+
+    let query = req.uri().query().unwrap_or("");
+    let mut signature = None;
+    let mut expires = None;
+
+    for (k, v) in url::form_urlencoded::parse(query.as_bytes()) {
+        match k.as_ref() {
+            "signature" => signature = Some(v.into_owned()),
+            "expires" => expires = v.parse::<u64>().ok(),
+            _ => {}
+        }
+    }
+
+    let (Some(signature), Some(expires)) = (signature, expires) else {
+        return unauthorized();
+    };
+
+    let path = req.uri().path();
+    let mut parts = path.splitn(3, '/');
+    let _ = parts.next(); // skip leading empty segment
+    let bucket = parts.next();
+    let key = parts.next();
+
+    let (Some(bucket), Some(key)) = (bucket, key) else {
+        return unauthorized();
+    };
+
+    if verify_signature(&secret, bucket, key, expires, &signature) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let claims = Claims {
+            sub: "presigned".to_string(),
+            email: "presigned".to_string(),
+            role: "listener".to_string(),
+            exp: expires as i64,
+            iat: now,
+        };
+        req.extensions_mut().insert(claims);
+        next.run(req).await
+    } else {
+        unauthorized()
+    }
+}
