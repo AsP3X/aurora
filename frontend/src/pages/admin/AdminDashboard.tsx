@@ -480,8 +480,8 @@ export default function AdminDashboard() {
         artist: editForm.artist,
         album: editForm.album || undefined,
         album_artist: editForm.album_artist || undefined,
-        track_number: editForm.track_number ? parseInt(editForm.track_number) : undefined,
-        year: editForm.year ? parseInt(editForm.year) : undefined,
+        track_number: editForm.track_number ? parseInt(editForm.track_number, 10) : undefined,
+        year: editForm.year ? parseInt(editForm.year, 10) : undefined,
         genres: editForm.genres,
         studio: editForm.studio || undefined,
       });
