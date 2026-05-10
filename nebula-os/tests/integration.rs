@@ -250,28 +250,133 @@ async fn test_invalid_auth() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
-async fn test_custom_metadata() {
-    let (app, token, _tmp) = setup_app().await;
+async fn setup_app_with_signing_secret() -> (axum::Router, String, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("blobs");
 
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let meta_path_str = format!("file:{}?mode=memory&cache=shared", id);
+    let data_dir_str = data_dir.to_string_lossy().replace('\\', "/");
+
+    let storage = StorageEngine::new(
+        &meta_path_str,
+        &data_dir_str,
+    )
+    .await
+    .unwrap();
+
+    let app = create_app(
+        storage,
+        TEST_SECRET.into(),
+        Some("test-signing-secret".into()),
+        10_000_000,
+        false,
+    )
+    .await
+    .unwrap();
+
+    (app, make_token(), tmp)
+}
+
+fn make_presigned_url(method: &str, base: &str, bucket: &str, key: &str, secret: &str, expires: u64) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+
+    let payload = format!("{}\n{}\n{}\n{}", method.to_uppercase(), bucket, key, expires);
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(payload.as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+    format!("{}/{}/{}?signature={}&expires={}", base, bucket, key, sig, expires)
+}
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let (app, _token, _tmp) = setup_app().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    let (app, _token, _tmp) = setup_app().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("total_objects").is_some());
+    assert!(json.get("total_bytes").is_some());
+}
+
+#[tokio::test]
+async fn test_presigned_url_access() {
+    let (app, token, _tmp) = setup_app_with_signing_secret().await;
+    let secret = "test-signing-secret";
+
+    // PUT with JWT
     let req = Request::builder()
         .method("PUT")
-        .uri("/music/tracks/mysong.mp3")
+        .uri("/music/song.mp3")
         .header("authorization", format!("Bearer {}", token))
         .header("content-type", "audio/mpeg")
-        .header("x-nd-custom-meta-title", "My Song")
-        .header("x-nd-custom-meta-artist", "Test Artist")
-        .body(Body::from("fake audio data"))
+        .body(Body::from("audio data"))
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
 
+    // GET with presigned URL (no JWT)
+    let expires = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() + 3600;
+    let url = make_presigned_url("GET", "", "music", "song.mp3", secret, expires);
     let req = Request::builder()
         .method("GET")
-        .uri("/music/tracks/mysong.mp3")
-        .header("authorization", format!("Bearer {}", token))
+        .uri(&url)
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_expired_presigned_url_rejected() {
+    let (app, token, _tmp) = setup_app_with_signing_secret().await;
+    let secret = "test-signing-secret";
+
+    // PUT with JWT
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/music/song.mp3")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "audio/mpeg")
+        .body(Body::from("audio data"))
+        .unwrap();
+    let _ = app.clone().oneshot(req).await.unwrap();
+
+    // GET with expired presigned URL
+    let expires = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() - 100;
+    let url = make_presigned_url("GET", "", "music", "song.mp3", secret, expires);
+    let req = Request::builder()
+        .method("GET")
+        .uri(&url)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
