@@ -31,7 +31,7 @@ fn make_token() -> String {
     .unwrap()
 }
 
-async fn setup_app() -> (axum::Router, String, TempDir) {
+async fn setup_app(signing_secret: Option<String>) -> (axum::Router, String, TempDir) {
     let tmp = TempDir::new().unwrap();
     let data_dir = tmp.path().join("blobs");
 
@@ -51,7 +51,7 @@ async fn setup_app() -> (axum::Router, String, TempDir) {
     let app = create_app(
         storage,
         TEST_SECRET.into(),
-        None,
+        signing_secret,
         10_000_000,
         false,
     )
@@ -63,7 +63,7 @@ async fn setup_app() -> (axum::Router, String, TempDir) {
 
 #[tokio::test]
 async fn test_put_get_delete() {
-    let (app, token, _tmp) = setup_app().await;
+    let (app, token, _tmp) = setup_app(None).await;
 
     // PUT
     let req = Request::builder()
@@ -111,7 +111,7 @@ async fn test_put_get_delete() {
 
 #[tokio::test]
 async fn test_unauthorized() {
-    let (app, _token, _tmp) = setup_app().await;
+    let (app, _token, _tmp) = setup_app(None).await;
 
     let req = Request::builder()
         .method("GET")
@@ -124,7 +124,7 @@ async fn test_unauthorized() {
 
 #[tokio::test]
 async fn test_list_objects() {
-    let (app, token, _tmp) = setup_app().await;
+    let (app, token, _tmp) = setup_app(None).await;
 
     for key in &["a.mp3", "b.mp3"] {
         let req = Request::builder()
@@ -160,7 +160,7 @@ async fn test_list_objects() {
 
 #[tokio::test]
 async fn test_range_request() {
-    let (app, token, _tmp) = setup_app().await;
+    let (app, token, _tmp) = setup_app(None).await;
 
     let content = b"abcdefghijklmnopqrstuvwxyz";
 
@@ -189,7 +189,7 @@ async fn test_range_request() {
 
 #[tokio::test]
 async fn test_head_object() {
-    let (app, token, _tmp) = setup_app().await;
+    let (app, token, _tmp) = setup_app(None).await;
 
     let req = Request::builder()
         .method("PUT")
@@ -215,7 +215,7 @@ async fn test_head_object() {
 
 #[tokio::test]
 async fn test_not_found() {
-    let (app, token, _tmp) = setup_app().await;
+    let (app, token, _tmp) = setup_app(None).await;
 
     let req = Request::builder()
         .method("GET")
@@ -238,7 +238,7 @@ async fn test_not_found() {
 
 #[tokio::test]
 async fn test_invalid_auth() {
-    let (app, _token, _tmp) = setup_app().await;
+    let (app, _token, _tmp) = setup_app(None).await;
 
     let req = Request::builder()
         .method("GET")
@@ -248,36 +248,6 @@ async fn test_invalid_auth() {
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-}
-
-async fn setup_app_with_signing_secret() -> (axum::Router, String, TempDir) {
-    let tmp = TempDir::new().unwrap();
-    let data_dir = tmp.path().join("blobs");
-
-    std::fs::create_dir_all(&data_dir).unwrap();
-
-    let id = uuid::Uuid::new_v4().to_string();
-    let meta_path_str = format!("file:{}?mode=memory&cache=shared", id);
-    let data_dir_str = data_dir.to_string_lossy().replace('\\', "/");
-
-    let storage = StorageEngine::new(
-        &meta_path_str,
-        &data_dir_str,
-    )
-    .await
-    .unwrap();
-
-    let app = create_app(
-        storage,
-        TEST_SECRET.into(),
-        Some("test-signing-secret".into()),
-        10_000_000,
-        false,
-    )
-    .await
-    .unwrap();
-
-    (app, make_token(), tmp)
 }
 
 fn make_presigned_url(method: &str, base: &str, bucket: &str, key: &str, secret: &str, expires: u64) -> String {
@@ -294,7 +264,7 @@ fn make_presigned_url(method: &str, base: &str, bucket: &str, key: &str, secret:
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let (app, _token, _tmp) = setup_app().await;
+    let (app, _token, _tmp) = setup_app(None).await;
     let req = Request::builder()
         .method("GET")
         .uri("/health")
@@ -306,7 +276,7 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_metrics_endpoint() {
-    let (app, _token, _tmp) = setup_app().await;
+    let (app, _token, _tmp) = setup_app(None).await;
     let req = Request::builder()
         .method("GET")
         .uri("/metrics")
@@ -322,7 +292,7 @@ async fn test_metrics_endpoint() {
 
 #[tokio::test]
 async fn test_presigned_url_access() {
-    let (app, token, _tmp) = setup_app_with_signing_secret().await;
+    let (app, token, _tmp) = setup_app(Some("test-signing-secret".into())).await;
     let secret = "test-signing-secret";
 
     // PUT with JWT
@@ -353,7 +323,7 @@ async fn test_presigned_url_access() {
 
 #[tokio::test]
 async fn test_expired_presigned_url_rejected() {
-    let (app, token, _tmp) = setup_app_with_signing_secret().await;
+    let (app, token, _tmp) = setup_app(Some("test-signing-secret".into())).await;
     let secret = "test-signing-secret";
 
     // PUT with JWT
@@ -364,7 +334,8 @@ async fn test_expired_presigned_url_rejected() {
         .header("content-type", "audio/mpeg")
         .body(Body::from("audio data"))
         .unwrap();
-    let _ = app.clone().oneshot(req).await.unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     // GET with expired presigned URL
     let expires = std::time::SystemTime::now()
