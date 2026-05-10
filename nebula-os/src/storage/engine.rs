@@ -233,7 +233,7 @@ impl StorageEngine {
         bucket: &str,
         prefix: Option<&str>,
         delimiter: Option<&str>,
-        limit: Option<i64>,
+        limit: Option<u64>,
         start_after: Option<&str>,
     ) -> Result<ListResult> {
         let bucket = sanitize_bucket(bucket)?;
@@ -251,7 +251,7 @@ impl StorageEngine {
         .bind(&bucket)
         .bind(start_after)
         .bind(format!("{}%", prefix))
-        .bind(limit)
+        .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
 
