@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import type { Song } from "../types";
+import { fetchStreamUrl } from "../api/client";
 
 interface PlayerState {
   currentSong: Song | null;
@@ -8,10 +9,11 @@ interface PlayerState {
   duration: number;
   volume: number;
   buffered: number;
+  currentStreamUrl: string | null;
 }
 
 interface PlayerContextType extends PlayerState {
-  playSong: (song: Song) => void;
+  playSong: (song: Song) => Promise<void>;
   togglePlay: () => void;
   pause: () => void;
   seek: (time: number) => void;
@@ -32,19 +34,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [buffered, setBuffered] = useState(0);
+  const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const playSong = useCallback((song: Song) => {
+  const playSong = useCallback(async (song: Song) => {
     setCurrentSong(song);
     setIsPlaying(true);
     setProgress(0);
     setDuration(song.duration_seconds || 0);
     setBuffered(0);
 
-    // Allow React to update <audio> src, then force restart from beginning
+    let url: string;
+    try {
+      url = await fetchStreamUrl(song.id);
+    } catch {
+      url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/stream`;
+    }
+    setCurrentStreamUrl(url);
+
     requestAnimationFrame(() => {
       const audio = audioRef.current;
       if (!audio) return;
+      audio.src = url;
       audio.currentTime = 0;
       audio.load();
       audio.play().catch(() => {});
@@ -106,6 +117,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         duration,
         volume,
         buffered,
+        currentStreamUrl,
         playSong,
         togglePlay,
         pause,

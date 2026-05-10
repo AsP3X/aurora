@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
-import { streamUrl, logHistory } from "../api/client";
+import { logHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
 
 function formatTime(t: number) {
@@ -23,6 +23,7 @@ export default function PlayerBar() {
     duration,
     volume,
     buffered,
+    currentStreamUrl,
     togglePlay,
     seek,
     setVolume,
@@ -281,7 +282,7 @@ export default function PlayerBar() {
 
       <audio
         ref={audioRef}
-        src={streamUrl(currentSong.id)}
+        src={currentStreamUrl || undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
