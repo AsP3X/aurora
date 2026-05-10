@@ -61,3 +61,29 @@ fn unauthorized() -> Response {
     );
     resp
 }
+
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
+
+pub fn generate_signature(secret: &str, bucket: &str, key: &str, expires: u64) -> String {
+    let payload = format!("GET\n{}\n{}\n{}", bucket, key, expires);
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .expect("HMAC can take key of any size");
+    mac.update(payload.as_bytes());
+    let result = mac.finalize();
+    hex::encode(result.into_bytes())
+}
+
+pub fn verify_signature(secret: &str, bucket: &str, key: &str, expires: u64, signature: &str) -> bool {
+    let expected = generate_signature(secret, bucket, key, expires);
+    if signature != expected {
+        return false;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    expires > now
+}
