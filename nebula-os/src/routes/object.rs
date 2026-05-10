@@ -15,7 +15,6 @@ use crate::routes::AppState;
 #[derive(Debug, Deserialize)]
 pub struct ObjectParams {
     bucket: String,
-    #[serde(rename = "*key")]
     key: String,
 }
 
