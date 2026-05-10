@@ -1,5 +1,7 @@
 mod auth;
 mod config;
+mod storage;
+mod routes;
 
 use anyhow::Result;
 
