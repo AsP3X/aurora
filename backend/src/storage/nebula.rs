@@ -1,7 +1,19 @@
 use futures_util::StreamExt;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::storage::{Storage, StorageStream};
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn generate_signature(method: &str, secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
+    let payload = format!("{}\n{}\n{}\n{}", method.to_uppercase(), bucket, key, expires);
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
+    mac.update(payload.as_bytes());
+    let result = mac.finalize();
+    Ok(hex::encode(result.into_bytes()))
+}
 
 #[derive(Clone, Debug)]
 pub struct NebulaStorage {
@@ -9,16 +21,18 @@ pub struct NebulaStorage {
     base_url: String,
     bucket: String,
     jwt_token: String,
+    signing_secret: String,
 }
 
 impl NebulaStorage {
-    pub fn new(base_url: String, bucket: String, jwt_secret: &str) -> anyhow::Result<Self> {
+    pub fn new(base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
         let token = generate_service_token(jwt_secret)?;
         Ok(Self {
             client: reqwest::Client::new(),
             base_url: base_url.trim_end_matches('/').to_string(),
             bucket,
             jwt_token: token,
+            signing_secret: signing_secret.to_string(),
         })
     }
 
@@ -29,6 +43,15 @@ impl NebulaStorage {
     fn auth_header(&self) -> reqwest::header::HeaderValue {
         reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.jwt_token))
             .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static(""))
+    }
+
+    pub fn presigned_url(&self, key: &str, expires: u64) -> anyhow::Result<String> {
+        let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
+        let url = format!(
+            "{}/{}/{}?signature={}&expires={}",
+            self.base_url, self.bucket, key, signature, expires
+        );
+        Ok(url)
     }
 }
 

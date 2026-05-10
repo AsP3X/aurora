@@ -67,10 +67,10 @@ fn unauthorized() -> Response {
 type HmacSha256 = Hmac<Sha256>;
 
 /// Generates a presigned URL signature.
-/// The signed payload format is: "GET\n{bucket}\n{key}\n{expires}"
+/// The signed payload format is: "{METHOD}\n{bucket}\n{key}\n{expires}"
 /// Keys must not contain newlines (enforced by sanitize_key).
-pub fn generate_signature(secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
-    let payload = format!("GET\n{}\n{}\n{}", bucket, key, expires);
+pub fn generate_signature(method: &str, secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
+    let payload = format!("{}\n{}\n{}\n{}", method.to_uppercase(), bucket, key, expires);
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
     mac.update(payload.as_bytes());
     let result = mac.finalize();
@@ -88,7 +88,7 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     result == 0
 }
 
-pub fn verify_signature(secret: &str, bucket: &str, key: &str, expires: u64, signature: &str) -> bool {
+pub fn verify_signature(method: &str, secret: &str, bucket: &str, key: &str, expires: u64, signature: &str) -> bool {
     let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
         Ok(d) => d.as_secs(),
         Err(_) => return false,
@@ -96,7 +96,7 @@ pub fn verify_signature(secret: &str, bucket: &str, key: &str, expires: u64, sig
     if expires <= now {
         return false;
     }
-    let expected = match generate_signature(secret, bucket, key, expires) {
+    let expected = match generate_signature(method, secret, bucket, key, expires) {
         Ok(sig) => sig,
         Err(_) => return false,
     };
@@ -156,7 +156,7 @@ pub async fn presigned_or_jwt_middleware(
 
     let path = req.uri().path();
     let mut parts = path.splitn(3, '/');
-    let _ = parts.next(); // skip leading empty segment
+    parts.next(); // skip leading empty segment
     let bucket = parts.next();
     let key = parts.next();
 
@@ -164,7 +164,15 @@ pub async fn presigned_or_jwt_middleware(
         return unauthorized();
     };
 
-    if verify_signature(&secret, bucket, key, expires, &signature) {
+    let bucket = urlencoding::decode(bucket).unwrap_or_else(|_| bucket.into());
+    let key = urlencoding::decode(key).unwrap_or_else(|_| key.into());
+
+    if bucket.is_empty() || key.is_empty() {
+        return unauthorized();
+    }
+
+    let method = req.method().as_str();
+    if verify_signature(method, &secret, &bucket, &key, expires, &signature) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -174,7 +182,7 @@ pub async fn presigned_or_jwt_middleware(
             sub: "presigned".to_string(),
             email: "presigned".to_string(),
             role: "listener".to_string(),
-            exp: expires as i64,
+            exp: i64::try_from(expires).unwrap_or(i64::MAX),
             iat: now,
         };
         req.extensions_mut().insert(claims);
