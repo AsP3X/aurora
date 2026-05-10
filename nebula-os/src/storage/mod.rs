@@ -35,6 +35,9 @@ pub fn sanitize_key(key: &str) -> anyhow::Result<String> {
     if key.split('/').any(|segment| segment == "..") {
         anyhow::bail!("invalid key: directory traversal detected");
     }
+    if key.contains('\n') {
+        anyhow::bail!("invalid key: newlines are not allowed");
+    }
     Ok(key)
 }
 

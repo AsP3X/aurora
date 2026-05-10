@@ -66,6 +66,9 @@ fn unauthorized() -> Response {
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Generates a presigned URL signature.
+/// The signed payload format is: "GET\n{bucket}\n{key}\n{expires}"
+/// Keys must not contain newlines (enforced by sanitize_key).
 pub fn generate_signature(secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
     let payload = format!("GET\n{}\n{}\n{}", bucket, key, expires);
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
