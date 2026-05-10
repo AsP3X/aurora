@@ -13,7 +13,7 @@ export interface Song {
   album_artist: string | null;
   track_number: number | null;
   year: number | null;
-  genre: string | null;
+  genres: string[];
   studio: string | null;
   duration_seconds: number;
   file_key: string;
@@ -36,7 +36,7 @@ export interface SongDraft {
   album_artist: string | null;
   track_number: number | null;
   year: number | null;
-  genre: string | null;
+  genres: string[];
   studio: string | null;
   duration_seconds: number;
   file_format: string;
