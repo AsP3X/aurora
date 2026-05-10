@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS song_encryption_keys (
     rotated_at      DATETIME
 );
 
-ALTER TABLE songs
-    ADD COLUMN IF NOT EXISTS hls_ready     INTEGER DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS hls_key_id    BLOB REFERENCES song_encryption_keys(key_id),
-    ADD COLUMN IF NOT EXISTS segment_count  INTEGER;
+ALTER TABLE songs ADD COLUMN hls_ready INTEGER DEFAULT 0;
+ALTER TABLE songs ADD COLUMN hls_key_id BLOB REFERENCES song_encryption_keys(key_id);
+ALTER TABLE songs ADD COLUMN segment_count INTEGER;

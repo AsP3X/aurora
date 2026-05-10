@@ -46,7 +46,7 @@ pub async fn get_playlist(
     // For LocalStorage: proxy through our own segment endpoint
     let is_nebula = state.storage.presigned_segment_url("test", 1).is_ok();
 
-    let base_url = format!("/api/v1/songs/{}/segments", id);
+    let base_url = format!("/api/v1/songs/{}", id);
     let key_uri = format!("/api/v1/songs/{}/key", id);
 
     let prefix = format!("songs/{}/", id);
