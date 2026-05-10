@@ -6,9 +6,11 @@ use axum::{
     Json,
 };
 use axum::http::header;
+use hmac::{Hmac, Mac};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::Sha256;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,28 +64,38 @@ fn unauthorized() -> Response {
     resp
 }
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-
 type HmacSha256 = Hmac<Sha256>;
 
-pub fn generate_signature(secret: &str, bucket: &str, key: &str, expires: u64) -> String {
+pub fn generate_signature(secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
     let payload = format!("GET\n{}\n{}\n{}", bucket, key, expires);
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
     mac.update(payload.as_bytes());
     let result = mac.finalize();
-    hex::encode(result.into_bytes())
+    Ok(hex::encode(result.into_bytes()))
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (x, y) in a.bytes().zip(b.bytes()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 pub fn verify_signature(secret: &str, bucket: &str, key: &str, expires: u64, signature: &str) -> bool {
-    let expected = generate_signature(secret, bucket, key, expires);
-    if signature != expected {
+    let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(_) => return false,
+    };
+    if expires <= now {
         return false;
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    expires > now
+    let expected = match generate_signature(secret, bucket, key, expires) {
+        Ok(sig) => sig,
+        Err(_) => return false,
+    };
+    constant_time_eq(signature, &expected)
 }
