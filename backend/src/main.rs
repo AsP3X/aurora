@@ -33,6 +33,7 @@ pub struct AppState {
     pub staging_dir: PathBuf,
     pub jwt_secret: String,
     pub url_expiry_seconds: u64,
+    pub hls_key_store: crate::hls::key_store::KeyStore,
 }
 
 fn install_sqlx_drivers() {
@@ -119,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let staging_dir = PathBuf::from(&config.music_dir);
+    let pool_clone = pool.clone();
 
     let state = Arc::new(AppState {
         pool,
@@ -126,6 +128,7 @@ async fn main() -> anyhow::Result<()> {
         staging_dir,
         jwt_secret: config.jwt_secret.clone(),
         url_expiry_seconds: config.url_expiry_seconds,
+        hls_key_store: crate::hls::key_store::KeyStore::new(pool_clone, config.master_secret.clone()),
     });
 
     let app = create_router(state);
@@ -154,6 +157,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
         .route("/api/v1/songs/{id}/stream-url", get(songs::handlers::get_stream_url))
         .route("/api/v1/songs/{id}/artwork-url", get(songs::handlers::get_artwork_url))
+        .route("/api/v1/songs/{id}/playlist", get(hls::handlers::get_playlist))
+        .route("/api/v1/songs/{id}/key", get(hls::handlers::get_key))
+        .route("/api/v1/songs/{id}/segments/{segment}", get(hls::handlers::get_segment))
         .route("/api/v1/search", get(search::handlers::search))
         .route("/api/v1/playlists", get(playlists::handlers::list_playlists).post(playlists::handlers::create_playlist))
         .route("/api/v1/playlists/{id}", get(playlists::handlers::get_playlist))
