@@ -3,6 +3,20 @@ pub mod types;
 
 use std::path::PathBuf;
 
+pub fn sanitize_bucket(bucket: &str) -> anyhow::Result<String> {
+    if bucket.is_empty() {
+        anyhow::bail!("bucket cannot be empty");
+    }
+    let bucket = bucket.replace('\\', "/");
+    if bucket.starts_with('/') || bucket.contains("..") {
+        anyhow::bail!("invalid bucket name");
+    }
+    if bucket.len() >= 2 && bucket.as_bytes()[1] == b':' {
+        anyhow::bail!("invalid bucket name");
+    }
+    Ok(bucket)
+}
+
 pub fn sanitize_key(key: &str) -> anyhow::Result<String> {
     if key.is_empty() {
         anyhow::bail!("key cannot be empty");
