@@ -22,6 +22,10 @@ pub struct Config {
     pub object_storage_url: String,
     #[serde(default = "default_object_storage_bucket")]
     pub object_storage_bucket: String,
+    #[serde(default = "default_signing_secret")]
+    pub signing_secret: String,
+    #[serde(default = "default_url_expiry_seconds")]
+    pub url_expiry_seconds: u64,
 }
 
 impl Config {
@@ -66,4 +70,12 @@ fn default_object_storage_bucket() -> String {
 
 fn default_bind_addr() -> String {
     "0.0.0.0:3000".into()
+}
+
+fn default_signing_secret() -> String {
+    "change-me-in-production".into()
+}
+
+fn default_url_expiry_seconds() -> u64 {
+    3600
 }
