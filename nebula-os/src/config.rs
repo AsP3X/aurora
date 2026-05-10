@@ -8,6 +8,7 @@ pub struct NosConfig {
     pub data_dir: String,
     pub meta_path: String,
     pub jwt_secret: String,
+    pub signing_secret: Option<String>,
     pub max_body_size: usize,
     pub allow_public_read: bool,
 }
@@ -19,6 +20,7 @@ impl fmt::Debug for NosConfig {
             .field("data_dir", &self.data_dir)
             .field("meta_path", &self.meta_path)
             .field("jwt_secret", &"[REDACTED]")
+            .field("signing_secret", &"[REDACTED]")
             .field("max_body_size", &self.max_body_size)
             .field("allow_public_read", &self.allow_public_read)
             .finish()
@@ -33,6 +35,7 @@ impl NosConfig {
             data_dir: env::var("NOS_DATA_DIR").unwrap_or_else(|_| "./data/blobs".into()),
             meta_path: env::var("NOS_META_PATH").unwrap_or_else(|_| "./data/meta/metadata.db".into()),
             jwt_secret: env::var("NOS_JWT_SECRET").context("NOS_JWT_SECRET must be set")?,
+            signing_secret: env::var("NOS_SIGNING_SECRET").ok(),
             max_body_size: env::var("NOS_MAX_BODY_SIZE")
                 .ok()
                 .map(|s| s.parse().context("NOS_MAX_BODY_SIZE must be a valid usize"))
