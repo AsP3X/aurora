@@ -66,6 +66,11 @@ async fn main() -> anyhow::Result<()> {
             "SIGNING_SECRET is set to a known weak default. Please set a strong, random SIGNING_SECRET environment variable."
         );
     }
+    if config.master_secret == "change-me-in-production" {
+        anyhow::bail!(
+            "MASTER_SECRET is set to a known weak default. Please set a strong, random MASTER_SECRET environment variable."
+        );
+    }
 
     let pool = db::init_pool(&config.database_url).await?;
     info!("Database connected and migrations applied");
