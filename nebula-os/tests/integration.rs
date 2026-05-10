@@ -51,6 +51,7 @@ async fn setup_app() -> (axum::Router, String, TempDir) {
     let app = create_app(
         storage,
         TEST_SECRET.into(),
+        None,
         10_000_000,
         false,
     )
