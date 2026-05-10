@@ -1,6 +1,6 @@
 FROM rust:1.88-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y libssl-dev pkg-config && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl-dev pkg-config curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
