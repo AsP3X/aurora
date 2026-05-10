@@ -1,4 +1,5 @@
 pub mod bucket;
+pub mod health;
 pub mod object;
 
 use std::sync::Arc;
