@@ -1,19 +1,30 @@
 version: "3.8"
 
 services:
+  init-env:
+    image: alpine:latest
+    container_name: aurora-init-env
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: >
+      sh -c "chmod +x init-env.sh && ./init-env.sh"
+    profiles:
+      - init
+
   postgres:
     image: postgres:16-alpine
     container_name: aurora-postgres
     environment:
-      POSTGRES_USER: aurora
-      POSTGRES_PASSWORD: aurora
-      POSTGRES_DB: aurora
+      POSTGRES_USER: ${POSTGRES_USER:-aurora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aurora}
+      POSTGRES_DB: ${POSTGRES_DB:-aurora}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aurora"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aurora}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,7 +33,7 @@ services:
     image: getmeili/meilisearch:v1.12
     container_name: aurora-meilisearch
     environment:
-      MEILI_MASTER_KEY: aurora-master-key
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
     ports:
       - "7700:7700"
     volumes:
@@ -34,8 +45,8 @@ services:
       dockerfile: Dockerfile
     container_name: aurora-object-storage
     environment:
-      NOS_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
-      NOS_SIGNING_SECRET: ${SIGNING_SECRET:?SIGNING_SECRET must be set}
+      NOS_JWT_SECRET: ${NOS_JWT_SECRET:-dev-nos-jwt-secret-change-me}
+      NOS_SIGNING_SECRET: ${NOS_SIGNING_SECRET:-dev-nos-signing-secret-change-me}
       NOS_BIND_ADDR: 0.0.0.0:9000
       NOS_DATA_DIR: /data/blobs
       NOS_META_PATH: /data/meta/metadata.db
@@ -51,17 +62,19 @@ services:
       dockerfile: Dockerfile
     container_name: aurora-backend
     environment:
-      DATABASE_URL: postgres://aurora:aurora@postgres:5432/aurora
+      DATABASE_URL: ${DATABASE_URL:-postgres://aurora:aurora@postgres:5432/aurora}
       MEILI_URL: http://meilisearch:7700
-      MEILI_MASTER_KEY: aurora-master-key
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
-      SIGNING_SECRET: ${SIGNING_SECRET:?SIGNING_SECRET must be set}
-      URL_EXPIRY_SECONDS: 3600
-      MUSIC_DIR: /music
-      STORAGE_MODE: proxy
-      OBJECT_STORAGE_URL: http://object-storage:9000
-      OBJECT_STORAGE_BUCKET: music
-      RUST_LOG: debug
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
+      SIGNING_SECRET: ${SIGNING_SECRET:-dev-signing-secret-change-me}
+      MASTER_SECRET: ${MASTER_SECRET:-dev-master-secret-change-me}
+      URL_EXPIRY_SECONDS: ${URL_EXPIRY_SECONDS:-3600}
+      MUSIC_DIR: ${MUSIC_DIR:-/music}
+      STORAGE_MODE: ${STORAGE_MODE:-proxy}
+      OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL:-http://object-storage:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-music}
+      RUST_LOG: ${RUST_LOG:-info}
+      BIND_ADDR: ${BIND_ADDR:-0.0.0.0:3000}
     ports:
       - "3000:3000"
     volumes:
@@ -72,6 +85,17 @@ services:
       meilisearch:
         condition: service_started
       object-storage:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aurora-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
         condition: service_started
 
 volumes:
