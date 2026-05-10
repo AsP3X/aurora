@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchArtworkUrl, artworkUrl } from "../api/client";
+import { fetchArtworkUrl } from "../api/client";
 import { stringToHslColor } from "../utils/color";
 
 interface ArtworkImageProps {

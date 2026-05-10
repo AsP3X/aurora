@@ -60,7 +60,7 @@ interface AdminPlaylist {
   user_id: string;
   name: string;
   description: string | null;
-  is_public: number;
+  is_public: boolean;
   created_at: string;
   owner_email: string;
   song_count: number;
