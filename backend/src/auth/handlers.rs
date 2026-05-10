@@ -93,6 +93,18 @@ pub async fn register(
 ) -> Result<Json<AuthResponse>, AppError> {
     info!(email = %body.email, "register attempt");
 
+    let allow_public: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some((value,)) = allow_public {
+        if value == "false" {
+            return Err(AppError::Forbidden("public registration is disabled".into()));
+        }
+    }
+
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
     let user_id = Uuid::new_v4().to_string();
 

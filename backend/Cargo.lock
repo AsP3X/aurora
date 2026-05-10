@@ -95,6 +95,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "chrono",
+ "dotenvy",
  "envy",
  "hyper",
  "jsonwebtoken",

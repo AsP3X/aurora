@@ -20,6 +20,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
+        dotenvy::dotenv().ok();
         let cfg = envy::from_env()?;
         Ok(cfg)
     }

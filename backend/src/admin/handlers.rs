@@ -250,6 +250,18 @@ pub async fn update_user_role(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
+    if claims.role != "admin" {
+        return Err(AppError::Forbidden("only admins can change roles".into()));
+    }
+
+    if claims.sub == user_id {
+        return Err(AppError::BadRequest("cannot change your own role".into()));
+    }
+
+    if body.role != "admin" && body.role != "listener" {
+        return Err(AppError::BadRequest("invalid role".into()));
+    }
+
     let current_role: Option<(String,)> = sqlx::query_as("SELECT role FROM users WHERE id = $1")
         .bind(&user_id)
         .fetch_optional(&state.pool)

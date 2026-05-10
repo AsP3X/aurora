@@ -48,6 +48,17 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
 
+    let known_weak_secrets = [
+        "change-me-in-production",
+        "change-me-in-production-jwt-secret",
+    ];
+    if known_weak_secrets.contains(&config.jwt_secret.as_str()) {
+        anyhow::bail!(
+            "JWT_SECRET is set to a known weak default ({}). Please set a strong, random JWT_SECRET environment variable.",
+            config.jwt_secret
+        );
+    }
+
     let pool = db::init_pool(&config.database_url).await?;
     info!("Database connected and migrations applied");
 
