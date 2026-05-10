@@ -8,6 +8,12 @@ use tokio_util::io::ReaderStream;
 use super::types::{ListItem, ListResult, ObjectMetadata};
 use super::{blob_path, sanitize_bucket, sanitize_key};
 
+fn escape_like_pattern(s: &str) -> String {
+    s.replace("\\", "\\\\")
+     .replace("%", "\\%")
+     .replace("_", "\\_")
+}
+
 #[derive(Clone)]
 pub struct StorageEngine {
     pool: Pool<Sqlite>,
@@ -170,7 +176,7 @@ impl StorageEngine {
             Some((s, e)) => {
                 let size = meta.size as u64;
                 if s >= size {
-                    anyhow::bail!("range not satisfiable");
+                    anyhow::bail!("range not satisfiable: start >= size");
                 }
                 let end = e.min(size - 1);
                 (s, end, end - s + 1)
@@ -241,16 +247,18 @@ impl StorageEngine {
         let prefix = prefix.unwrap_or("");
         let start_after = start_after.unwrap_or("");
 
+        let prefix_pattern = format!("{}%", escape_like_pattern(prefix));
+
         let rows: Vec<ObjectMetadata> = sqlx::query_as(
             "SELECT bucket, key, size, mime_type, etag, created_at, updated_at, custom_meta
              FROM objects
-             WHERE bucket = ? AND key > ? AND key LIKE ?
+             WHERE bucket = ? AND key > ? AND key LIKE ? ESCAPE '\\'
              ORDER BY key
              LIMIT ?"
         )
         .bind(&bucket)
         .bind(start_after)
-        .bind(format!("{}%", prefix))
+        .bind(prefix_pattern)
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;

@@ -8,9 +8,38 @@ use axum::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Map};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, ReadBuf};
 
 use crate::routes::AppState;
+
+struct LimitReader<R> {
+    inner: R,
+    remaining: usize,
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for LimitReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+        let after = buf.filled().len();
+        let read = after - before;
+        if read > self.remaining {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "payload too large",
+            )));
+        }
+        self.remaining -= read;
+        result
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ObjectParams {
@@ -50,6 +79,10 @@ pub async fn put_object(
             result.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
         }),
     );
+    let body_reader = LimitReader {
+        inner: body_reader,
+        remaining: state.max_body_size,
+    };
 
     match state
         .storage
@@ -114,6 +147,13 @@ pub async fn get_object(
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "not found" })),
+            )
+                .into_response()
+        }
+        Err(e) if e.to_string().contains("range not satisfiable") => {
+            (
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                Json(json!({ "error": "range not satisfiable" })),
             )
                 .into_response()
         }
@@ -201,5 +241,8 @@ fn parse_range(value: &str) -> Option<(u64, u64)> {
     } else {
         parts[1].parse().ok()?
     };
+    if start > end {
+        return None;
+    }
     Some((start, end))
 }

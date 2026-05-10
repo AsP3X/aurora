@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{delete, get, head, put},
+    routing::{get, put},
     Router,
 };
 use std::sync::Arc;
