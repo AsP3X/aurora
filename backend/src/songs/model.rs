@@ -21,6 +21,9 @@ pub struct SongDb {
     pub artwork_key: Option<String>,
     pub publisher_id: Option<String>,
     pub enabled: i64,
+    pub hls_ready: Option<bool>,
+    pub hls_key_id: Option<String>,
+    pub segment_count: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -45,6 +48,7 @@ pub struct Song {
     pub artwork_key: Option<String>,
     pub publisher_id: Option<String>,
     pub enabled: i64,
+    pub hls_ready: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -70,6 +74,7 @@ impl From<SongDb> for Song {
             artwork_key: db.artwork_key,
             publisher_id: db.publisher_id,
             enabled: db.enabled,
+            hls_ready: db.hls_ready.unwrap_or(false),
             created_at: db.created_at,
             updated_at: db.updated_at,
         }
