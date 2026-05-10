@@ -145,11 +145,11 @@ export default function Player() {
                 : currentSong.album || (currentSong.year ? String(currentSong.year) : "")}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
-              {currentSong.genre && (
-                <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full">
-                  {currentSong.genre}
+              {currentSong.genres.map((genre) => (
+                <span key={genre} className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full">
+                  {genre}
                 </span>
-              )}
+              ))}
               <span className="text-xs font-medium bg-white/5 text-surface-400 px-2.5 py-1 rounded-full uppercase">
                 {currentSong.file_format}
               </span>

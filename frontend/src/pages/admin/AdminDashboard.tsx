@@ -30,6 +30,7 @@ import type { ContextMenuItem } from "../../components/ui/ContextMenu";
 import ArtworkImage from "../../components/ArtworkImage";
 import PermissionManager from "../../components/admin/PermissionManager";
 import UploadSongDialog from "../../components/admin/UploadSongDialog";
+import MultiGenreField from "../../components/admin/MultiGenreField";
 import type { Song } from "../../types";
 
 type Tab = "overview" | "users" | "groups" | "library" | "playlists" | "settings";
@@ -220,7 +221,7 @@ export default function AdminDashboard() {
     album_artist: string;
     track_number: string;
     year: string;
-    genre: string;
+    genres: string[];
     studio: string;
   }>({
     title: "",
@@ -229,7 +230,7 @@ export default function AdminDashboard() {
     album_artist: "",
     track_number: "",
     year: "",
-    genre: "",
+    genres: [],
     studio: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -459,7 +460,7 @@ export default function AdminDashboard() {
       album_artist: song.album_artist || "",
       track_number: song.track_number?.toString() || "",
       year: song.year?.toString() || "",
-      genre: song.genre || "",
+      genres: song.genres,
       studio: song.studio || "",
     });
   }
@@ -475,7 +476,7 @@ export default function AdminDashboard() {
         album_artist: editForm.album_artist || undefined,
         track_number: editForm.track_number ? parseInt(editForm.track_number) : undefined,
         year: editForm.year ? parseInt(editForm.year) : undefined,
-        genre: editForm.genre || undefined,
+        genres: editForm.genres,
         studio: editForm.studio || undefined,
       });
       setSongs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -1189,12 +1190,12 @@ export default function AdminDashboard() {
                   className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Genre</label>
-                <input
-                  value={editForm.genre}
-                  onChange={(e) => setEditForm((f) => ({ ...f, genre: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
+              <div className="col-span-2">
+                <MultiGenreField
+                  label="Genre"
+                  values={editForm.genres}
+                  onChange={(v) => setEditForm((f) => ({ ...f, genres: v }))}
+                  existingValues={[]}
                 />
               </div>
               <div>
