@@ -21,6 +21,8 @@ pub trait Storage: Send + Sync + 'static {
     async fn delete(&self, key: &str) -> anyhow::Result<()>;
 
     async fn put(&self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()>;
+
+    fn presigned_url(&self, key: &str, expiry_seconds: u64) -> anyhow::Result<String>;
 }
 
 #[derive(Clone, Debug)]
@@ -65,5 +67,9 @@ impl Storage for LocalStorage {
         }
         tokio::fs::write(&path, data).await?;
         Ok(())
+    }
+
+    fn presigned_url(&self, _key: &str, _expiry_seconds: u64) -> anyhow::Result<String> {
+        anyhow::bail!("presigned URLs are not supported in local storage mode")
     }
 }

@@ -156,4 +156,8 @@ impl Storage for NebulaStorage {
         }
         Ok(())
     }
+
+    fn presigned_url(&self, _key: &str, _expiry_seconds: u64) -> anyhow::Result<String> {
+        anyhow::bail!("presigned URLs are not yet implemented for NebulaStorage")
+    }
 }
