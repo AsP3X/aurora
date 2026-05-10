@@ -24,6 +24,8 @@ pub struct Config {
     pub object_storage_bucket: String,
     #[serde(default = "default_signing_secret")]
     pub signing_secret: String,
+    #[serde(default = "default_master_secret")]
+    pub master_secret: String,
     #[serde(default = "default_url_expiry_seconds")]
     pub url_expiry_seconds: u64,
 }
@@ -78,4 +80,8 @@ fn default_signing_secret() -> String {
 
 fn default_url_expiry_seconds() -> u64 {
     3600
+}
+
+fn default_master_secret() -> String {
+    "change-me-in-production".into()
 }
