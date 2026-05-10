@@ -1229,6 +1229,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "dotenvy",
  "futures-util",
  "jsonwebtoken",
  "md5",

@@ -1,21 +1,26 @@
 use std::path::PathBuf;
+use bytes::Bytes;
+use futures_util::Stream;
+use std::pin::Pin;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-pub trait Storage: Send + Sync + Clone + 'static {
-    fn get_stream(
+pub mod nebula;
+
+pub type StorageStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
+
+#[async_trait::async_trait]
+pub trait Storage: Send + Sync + 'static {
+    async fn get_stream(
         &self,
         key: &str,
-    ) -> impl std::future::Future<Output = anyhow::Result<(ReaderStream<File>, u64, String)>> + Send;
+    ) -> anyhow::Result<(StorageStream, u64, String)>;
 
-    #[allow(dead_code)]
-    fn exists(
-        &self, key: &str
-    ) -> impl std::future::Future<Output = anyhow::Result<bool>> + Send;
+    async fn exists(&self, key: &str) -> anyhow::Result<bool>;
 
-    fn delete(
-        &self, key: &str
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    async fn delete(&self, key: &str) -> anyhow::Result<()>;
+
+    async fn put(&self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()>;
 }
 
 #[derive(Clone, Debug)]
@@ -23,11 +28,12 @@ pub struct LocalStorage {
     pub base_dir: PathBuf,
 }
 
+#[async_trait::async_trait]
 impl Storage for LocalStorage {
     async fn get_stream(
         &self,
         key: &str,
-    ) -> anyhow::Result<(ReaderStream<File>, u64, String)> {
+    ) -> anyhow::Result<(StorageStream, u64, String)> {
         let path = self.base_dir.join(key);
         let file = File::open(&path).await?;
         let metadata = file.metadata().await?;
@@ -36,7 +42,7 @@ impl Storage for LocalStorage {
         let mime = mime_guess::from_path(&path)
             .first_or_octet_stream()
             .to_string();
-        Ok((stream, size, mime))
+        Ok((Box::pin(stream), size, mime))
     }
 
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
@@ -49,6 +55,15 @@ impl Storage for LocalStorage {
         if path.exists() {
             tokio::fs::remove_file(&path).await?;
         }
+        Ok(())
+    }
+
+    async fn put(&self, key: &str, _content_type: &str, data: Vec<u8>) -> anyhow::Result<()> {
+        let path = self.base_dir.join(key);
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&path, data).await?;
         Ok(())
     }
 }

@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     permissions::require_permission,
-    storage::Storage,
     AppState,
 };
 
