@@ -1,15 +1,12 @@
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
-use uuid::Uuid;
 
 pub struct HlsOutput {
     pub playlist_path: PathBuf,
     pub key_path: PathBuf,
-    pub key_id: Uuid,
     pub segments_dir: PathBuf,
     pub segment_count: usize,
-    pub total_duration: f64,
 }
 
 pub struct HlsEncoder;
@@ -82,27 +79,11 @@ impl HlsEncoder {
             }
         }
 
-        // Parse total duration from the m3u8
-        let playlist_content = tokio::fs::read_to_string(&playlist_path).await
-            .context("reading generated playlist")?;
-        let total_duration = Self::parse_duration(&playlist_content).unwrap_or(0.0);
-
-        let key_id = Uuid::new_v4();
-
         Ok(HlsOutput {
             playlist_path,
             key_path,
-            key_id,
             segments_dir,
             segment_count,
-            total_duration,
         })
-    }
-
-    fn parse_duration(playlist: &str) -> Option<f64> {
-        playlist.lines()
-            .filter(|l| l.starts_with("#EXTINF:"))
-            .filter_map(|l| l.trim_start_matches("#EXTINF:").trim_end_matches(',').parse::<f64>().ok())
-            .reduce(|a, b| a + b)
     }
 }

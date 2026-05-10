@@ -3,6 +3,7 @@ use sqlx::FromRow;
 use std::collections::HashMap;
 
 #[derive(Debug, FromRow)]
+#[allow(dead_code)]
 pub struct SongDb {
     pub id: String,
     pub title: String,
