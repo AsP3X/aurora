@@ -710,8 +710,8 @@ export default function AdminDashboard() {
       {/* ─── Users Tab ─── */}
       {activeTab === "users" && (
         <div className="space-y-6">
-          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm text-left">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm text-left min-w-[500px]">
               <thead className="bg-surface-800 text-surface-400 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 font-medium">Email</th>
@@ -1034,8 +1034,8 @@ export default function AdminDashboard() {
             {songLoading && <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />}
           </div>
 
-          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm text-left">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm text-left min-w-[700px]">
               <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
                 <tr>
                   <th className="px-4 py-3 font-medium">Artwork</th>
@@ -1236,8 +1236,8 @@ export default function AdminDashboard() {
       {/* ─── Playlists Tab ─── */}
       {activeTab === "playlists" && (
         <div className="space-y-4">
-          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm text-left">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm text-left min-w-[600px]">
               <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
@@ -1294,8 +1294,8 @@ export default function AdminDashboard() {
       {/* ─── Settings Tab ─── */}
       {activeTab === "settings" && (
         <div className="space-y-4">
-          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm text-left">
+          <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm text-left min-w-[500px]">
               <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
                 <tr>
                   <th className="px-4 py-3 font-medium">Key</th>

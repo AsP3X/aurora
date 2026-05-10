@@ -230,9 +230,9 @@ pub async fn stage_song(
                 )));
             }
             tracing::info!("about to read field bytes");
-            let bytes_result = field.bytes().await;
-            tracing::info!(?bytes_result, "field.bytes() result");
-            let bytes = bytes_result
+            let bytes = field
+                .bytes()
+                .await
                 .map_err(|e| {
                     tracing::warn!(error = %e, "field.bytes() failed");
                     AppError::BadRequest(e.to_string())

@@ -14,7 +14,7 @@ function formatTime(t: number) {
 export default function PlayerBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const isLibrary = pathname === "/";
+  const isDashboard = pathname === "/" || pathname === "/playlists" || pathname.startsWith("/playlist/");
   const isPlayerPage = pathname.startsWith("/player/");
   const {
     currentSong,
@@ -94,7 +94,7 @@ export default function PlayerBar() {
       {/* Floating Pill Player */}
       <div
         className={`fixed bottom-4 z-40 ${
-          isLibrary ? "md:left-72 left-4" : "md:left-8 left-4"
+          isDashboard ? "md:left-72 left-4" : "md:left-8 left-4"
         } right-4 md:right-8`}
       >
         {/* Liquid Glass Container */}

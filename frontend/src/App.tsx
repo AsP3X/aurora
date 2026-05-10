@@ -32,20 +32,52 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
+function MobileNavLink({ to, onClick, children }: { to: string; onClick?: () => void; children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const active = pathname === to || (to !== "/" && pathname.startsWith(to));
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className={`block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+        active
+          ? "text-white bg-white/10"
+          : "text-surface-300 hover:text-white hover:bg-white/5"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, can } = useAuth();
   const { currentSong } = usePlayer();
   const { pathname } = useLocation();
-  const isHome = pathname === "/";
+  const isDashboard = pathname === "/" || pathname === "/playlists" || pathname.startsWith("/playlist/");
   const hasPlayer = !!currentSong;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-surface-950 text-white relative">
-      {!isHome && (
+      {!isDashboard && (
         <header className="sticky top-0 z-50 border-b border-white/10 backdrop-blur-2xl bg-white/5">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-8">
+              <div className="flex items-center gap-3 sm:gap-8">
+                <button
+                  onClick={() => setMobileMenuOpen((v) => !v)}
+                  className="sm:hidden p-2 rounded-lg text-surface-300 hover:text-white hover:bg-white/5 transition-colors"
+                  aria-label="Toggle menu"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    {mobileMenuOpen ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                    )}
+                  </svg>
+                </button>
                 <Link to="/" className="flex items-center gap-2.5 group">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center shadow-lg shadow-aurora-500/20 group-hover:shadow-aurora-500/30 transition-shadow">
                     <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -73,9 +105,33 @@ function Layout({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </div>
+
+          {/* Mobile menu */}
+          {mobileMenuOpen && (
+            <div className="sm:hidden border-t border-white/10 bg-surface-900/95 backdrop-blur-xl">
+              <div className="px-4 py-3 space-y-1">
+                <MobileNavLink to="/" onClick={() => setMobileMenuOpen(false)}>Library</MobileNavLink>
+                <MobileNavLink to="/playlists" onClick={() => setMobileMenuOpen(false)}>Playlists</MobileNavLink>
+                {can("admin.access") && (
+                  <MobileNavLink to="/admin" onClick={() => setMobileMenuOpen(false)}>Admin</MobileNavLink>
+                )}
+              </div>
+              {user && (
+                <div className="px-4 py-3 border-t border-white/10">
+                  <p className="text-sm text-surface-400 mb-2">{user.email}</p>
+                  <button
+                    onClick={() => { logout(); setMobileMenuOpen(false); }}
+                    className="text-sm text-surface-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </header>
       )}
-      <main className={`${isHome ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !isHome && !pathname.startsWith("/player/") ? "pb-32" : ""}`}>{children}</main>
+      <main className={`${isDashboard ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !isDashboard && !pathname.startsWith("/player/") ? "pb-32" : ""}`}>{children}</main>
       <PlayerBar />
     </div>
   );
