@@ -135,7 +135,7 @@ pub struct HistoryEntry {
     pub song_id: String,
     pub started_at: String,
     pub duration_listened_seconds: Option<i32>,
-    pub completed: bool,
+    pub completed: i64,
     pub title: String,
     pub artist: String,
     pub album: Option<String>,

@@ -157,7 +157,7 @@ export async function fetchHistory() {
     song_id: string;
     started_at: string;
     duration_listened_seconds: number | null;
-    completed: boolean;
+    completed: number;
     title: string;
     artist: string;
     album: string | null;
