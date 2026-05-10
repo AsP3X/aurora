@@ -201,4 +201,18 @@ impl Storage for NebulaStorage {
         tracing::debug!(key, %url, expires, "NebulaStorage presigned_url generated");
         Ok(url)
     }
+
+    fn presigned_segment_url(&self, key: &str, expires_secs: u64) -> anyhow::Result<String> {
+        let expires = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_secs() + expires_secs;
+
+        let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
+        let url = format!(
+            "{}/{}/{}?signature={}&expires={}",
+            self.base_url, self.bucket, key, signature, expires
+        );
+        tracing::debug!(key, %url, expires, "NebulaStorage presigned_segment_url generated");
+        Ok(url)
+    }
 }
