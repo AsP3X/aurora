@@ -1,8 +1,4 @@
-mod auth;
-mod config;
-mod routes;
-mod server;
-mod storage;
+use nebula_os::{auth, config, routes, server, storage};
 
 use anyhow::Result;
 use axum::serve;

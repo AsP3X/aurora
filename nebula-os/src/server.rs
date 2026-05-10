@@ -35,13 +35,13 @@ pub async fn create_app(
 
     let app = Router::new()
         .route(
-            "/:bucket/*key",
+            "/{bucket}/{*key}",
             put(object::put_object)
                 .delete(object::delete_object)
                 .get(object::get_object)
                 .head(object::head_object),
         )
-        .route("/:bucket", get(bucket::list_objects))
+        .route("/{bucket}", get(bucket::list_objects))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
         .layer(auth_layer)
         .with_state(state);
