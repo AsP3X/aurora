@@ -7,7 +7,7 @@ edition = "2024"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "compression-full"] }
+tower-http = { version = "0.6", features = ["trace", "compression-full", "normalize-path"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
@@ -18,10 +18,15 @@ tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 md5 = "0.7"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 anyhow = "1"
 dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+url = "2"
+urlencoding = "2"
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "stream"] }

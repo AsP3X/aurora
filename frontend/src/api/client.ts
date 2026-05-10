@@ -117,6 +117,16 @@ export function artworkUrl(id: string) {
   return `${API_BASE}/songs/${id}/artwork`;
 }
 
+export async function fetchStreamUrl(id: string) {
+  const res = await apiFetch(`/songs/${id}/stream-url`) as { url: string };
+  return res.url;
+}
+
+export async function fetchArtworkUrl(id: string) {
+  const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string };
+  return res.url;
+}
+
 export async function fetchPlaylists() {
   return apiFetch("/playlists") as Promise<Playlist[]>;
 }

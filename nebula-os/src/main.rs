@@ -19,6 +19,7 @@ async fn main() -> Result<()> {
     let app = server::create_app(
         storage,
         cfg.jwt_secret,
+        cfg.signing_secret,
         cfg.max_body_size,
         cfg.allow_public_read,
     )
