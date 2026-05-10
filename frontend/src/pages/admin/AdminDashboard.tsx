@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import {
   fetchPermissions,
@@ -234,6 +234,12 @@ export default function AdminDashboard() {
     studio: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
+
+  const existingGenres = useMemo(() => {
+    const genres = new Set<string>();
+    songs.forEach((s) => s.genres.forEach((g) => genres.add(g)));
+    return Array.from(genres).sort();
+  }, [songs]);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -1195,7 +1201,7 @@ export default function AdminDashboard() {
                   label="Genre"
                   values={editForm.genres}
                   onChange={(v) => setEditForm((f) => ({ ...f, genres: v }))}
-                  existingValues={[]}
+                  existingValues={existingGenres}
                 />
               </div>
               <div>
