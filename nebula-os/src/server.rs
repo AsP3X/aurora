@@ -5,6 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tower::ServiceBuilder;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::{presigned_or_jwt_middleware, JwtSecret};
@@ -54,6 +55,7 @@ pub async fn create_app(
 
     let app = public_routes
         .merge(protected_routes)
+        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
         .with_state(state);
 

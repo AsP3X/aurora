@@ -24,36 +24,6 @@ pub struct Claims {
 
 pub struct JwtSecret(pub String);
 
-pub async fn auth_middleware(
-    secret: Arc<JwtSecret>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let auth_header = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok());
-
-    let token = match auth_header {
-        Some(header) if header.starts_with("Bearer ") => &header[7..],
-        _ => {
-            return unauthorized();
-        }
-    };
-
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;
-    validation.validate_nbf = false;
-
-    match decode::<Claims>(token, &DecodingKey::from_secret(secret.0.as_bytes()), &validation) {
-        Ok(token_data) => {
-            req.extensions_mut().insert(token_data.claims);
-            next.run(req).await
-        }
-        Err(_) => unauthorized(),
-    }
-}
-
 fn unauthorized() -> Response {
     let body = Json(json!({"error": "unauthorized"}));
     let mut resp = (StatusCode::UNAUTHORIZED, body).into_response();
@@ -155,19 +125,14 @@ pub async fn presigned_or_jwt_middleware(
     };
 
     let path = req.uri().path();
-    let mut parts = path.splitn(3, '/');
-    parts.next(); // skip leading empty segment
-    let bucket = parts.next();
-    let key = parts.next();
-
-    let (Some(bucket), Some(key)) = (bucket, key) else {
-        return unauthorized();
-    };
+    let segments: Vec<&str> = path.trim_start_matches('/').splitn(2, '/').collect();
+    let bucket = segments.get(0).copied().unwrap_or("");
+    let key = segments.get(1).copied().unwrap_or("");
 
     let bucket = urlencoding::decode(bucket).unwrap_or_else(|_| bucket.into());
     let key = urlencoding::decode(key).unwrap_or_else(|_| key.into());
 
-    if bucket.is_empty() || key.is_empty() {
+    if bucket.is_empty() {
         return unauthorized();
     }
 
