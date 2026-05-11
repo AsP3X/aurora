@@ -361,6 +361,12 @@ export async function fetchValues(
   return apiFetch(`/songs/values?${qs.toString()}`) as Promise<string[]>;
 }
 
+export async function fetchAlbumSongCount(album: string): Promise<number> {
+  const qs = new URLSearchParams({ album });
+  const result = await apiFetch(`/songs/album-song-count?${qs.toString()}`) as { count: number };
+  return result.count;
+}
+
 export async function stageSong(file: File) {
   const form = new FormData();
   form.append("audio", file);
