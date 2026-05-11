@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path as AxumPath, Query, State},
     Json,
 };
 use serde::Deserialize;
@@ -11,6 +11,8 @@ use crate::{
     permissions::require_admin_access,
     AppState,
 };
+use axum::extract::Multipart;
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
@@ -64,10 +66,16 @@ pub async fn list_admin_songs(
     Ok(Json(songs))
 }
 
+async fn delete_storage_key(storage: &dyn crate::storage::Storage, key: &str) {
+    if let Err(e) = storage.delete(key).await {
+        tracing::warn!(key = %key, error = %e, "Failed to delete storage key");
+    }
+}
+
 pub async fn delete_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(id): Path<String>,
+    AxumPath(id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
@@ -130,7 +138,7 @@ pub async fn list_all_playlists(
 pub async fn delete_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(id): Path<String>,
+    AxumPath(id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
@@ -214,7 +222,7 @@ pub struct UpdateSetting {
 pub async fn update_setting(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(key): Path<String>,
+    AxumPath(key): AxumPath<String>,
     Json(body): Json<UpdateSetting>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
@@ -244,7 +252,7 @@ pub struct UpdateRole {
 pub async fn update_user_role(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(user_id): Path<String>,
+    AxumPath(user_id): AxumPath<String>,
     Json(body): Json<UpdateRole>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
@@ -298,7 +306,7 @@ pub async fn update_user_role(
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(user_id): Path<String>,
+    AxumPath(user_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
@@ -333,15 +341,84 @@ pub struct UpdateSongBody {
     pub year: Option<i32>,
     pub genres: Option<Vec<String>>,
     pub studio: Option<String>,
+    pub remove_artwork: Option<bool>,
 }
 
 pub async fn update_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(id): Path<String>,
-    Json(body): Json<UpdateSongBody>,
+    AxumPath(id): AxumPath<String>,
+    req: axum::extract::Request,
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let content_type = req.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+
+    let (body, artwork_bytes, art_ext): (UpdateSongBody, Option<Vec<u8>>, Option<String>) = if content_type.starts_with("multipart/form-data") {
+        let mut multipart = Multipart::from_request(req, &state).await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+        let mut metadata_json: Option<String> = None;
+        let mut artwork: Option<Vec<u8>> = None;
+        let mut artwork_ext: Option<String> = None;
+
+        while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
+            let name = field.name().unwrap_or("").to_string();
+            if name == "metadata" {
+                let data = field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                metadata_json = Some(String::from_utf8_lossy(&data).to_string());
+            } else if name == "artwork" {
+                let file_name = field.file_name().unwrap_or("").to_string();
+                let ext = Path::new(&file_name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_lowercase());
+                let data = field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                artwork = Some(data.to_vec());
+                artwork_ext = ext;
+            }
+        }
+
+        let metadata_json = metadata_json.unwrap_or_else(|| "{}".to_string());
+        let body: UpdateSongBody = serde_json::from_str(&metadata_json).map_err(|e| AppError::BadRequest(e.to_string()))?;
+        (body, artwork, artwork_ext)
+    } else {
+        let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX).await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+        let body: UpdateSongBody = serde_json::from_slice(&body_bytes).map_err(|e| AppError::BadRequest(e.to_string()))?;
+        (body, None, None)
+    };
+
+    if let Some(ref bytes) = artwork_bytes {
+        if bytes.is_empty() {
+            return Err(AppError::BadRequest("artwork file is empty".into()));
+        }
+    }
+
+    let current_artwork_key: Option<Option<String>> = sqlx::query_scalar("SELECT artwork_key FROM songs WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await?;
+    let current_artwork_key = current_artwork_key.ok_or(AppError::NotFound)?;
+
+    let mut should_clear_artwork = false;
+
+    let new_artwork_key: Option<String> = if let Some(bytes) = artwork_bytes {
+        let ext = art_ext.ok_or_else(|| AppError::BadRequest("artwork file missing extension".into()))?;
+        let key = format!("artwork/{}.{}", id, ext);
+        let mime = match ext.as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            _ => "application/octet-stream",
+        };
+        state.storage.put(&key, mime, bytes).await.map_err(|e| AppError::Storage(e.to_string()))?;
+        should_clear_artwork = true;
+        Some(key)
+    } else if body.remove_artwork == Some(true) {
+        should_clear_artwork = true;
+        None
+    } else {
+        current_artwork_key.clone()
+    };
 
     let mut tx = state.pool.begin().await?;
 
@@ -376,6 +453,9 @@ pub async fn update_song(
         sets.push(format!("studio = ${}", sets.len() + 2));
         binds.push(v);
     }
+    if should_clear_artwork {
+        sets.push(format!("artwork_key = ${}", sets.len() + 2));
+    }
 
     let song_db = if !sets.is_empty() {
         let sql = format!(
@@ -385,6 +465,9 @@ pub async fn update_song(
         let mut query = sqlx::query_as::<_, crate::songs::model::SongDb>(&sql).bind(&id);
         for b in &binds {
             query = query.bind(b);
+        }
+        if should_clear_artwork {
+            query = query.bind(new_artwork_key.clone());
         }
         query.fetch_one(&mut *tx).await?
     } else {
@@ -430,6 +513,12 @@ pub async fn update_song(
 
     tx.commit().await?;
 
+    if should_clear_artwork {
+        if let Some(ref old_key) = current_artwork_key {
+            delete_storage_key(&*state.storage, old_key).await;
+        }
+    }
+
     let mut song: crate::songs::model::Song = song_db.into();
     crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
     Ok(Json(song))
@@ -443,7 +532,7 @@ pub struct ToggleEnabledBody {
 pub async fn toggle_song_enabled(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
-    Path(id): Path<String>,
+    AxumPath(id): AxumPath<String>,
     Json(body): Json<ToggleEnabledBody>,
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
