@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
 import MultiGenreField from "./MultiGenreField";
-import { fetchValues } from "../../api/client";
+import { fetchValues, fetchAlbumSongCount } from "../../api/client";
 
 interface SongMetadataFormProps {
   draft: SongDraft;
@@ -57,6 +57,27 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     };
   }, [draft.staging_id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!draft.album) {
+      onChange({ ...draft, track_number: null });
+      return;
+    }
+
+    fetchAlbumSongCount(draft.album)
+      .then((count) => {
+        if (!cancelled) {
+          onChange({ ...draft, track_number: count + 1 });
+        }
+      })
+      .catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.album]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const update = <K extends keyof SongDraft>(field: K, value: SongDraft[K]) => {
     onChange({ ...draft, [field]: value });
   };
@@ -104,17 +125,31 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
       </div>
 
       <div>
-        <label className={labelClass}>Track Number</label>
-        <input
-          className={inputClass}
-          type="number"
-          value={draft.track_number ?? ""}
-          onChange={(e) => {
-            const val = e.target.value ? parseInt(e.target.value, 10) : null;
-            update("track_number", val);
-          }}
-          placeholder="Optional"
-        />
+        {!draft.album ? (
+          <div className="flex h-[38px] items-center">
+            <span className="rounded-full bg-surface-800 px-2 py-0.5 text-xs font-medium text-surface-400">
+              Single
+            </span>
+          </div>
+        ) : (
+          <>
+            <label className={labelClass}>Track Number</label>
+            <input
+              className={inputClass}
+              type="text"
+              value={
+                draft.track_number !== null && draft.track_number !== undefined
+                  ? String(draft.track_number).padStart(2, "0")
+                  : ""
+              }
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                update("track_number", isNaN(val) ? null : val);
+              }}
+              placeholder="01"
+            />
+          </>
+        )}
       </div>
 
       <div>
