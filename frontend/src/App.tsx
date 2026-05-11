@@ -10,7 +10,14 @@ import Library from "./pages/Library";
 import Player from "./pages/Player";
 import Playlists from "./pages/Playlists";
 import PlaylistDetail from "./pages/PlaylistDetail";
-import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminLayout from "./components/admin/AdminLayout";
+import RequireAdmin from "./components/admin/RequireAdmin";
+import AdminOverviewPage from "./pages/admin/AdminOverviewPage";
+import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminGroupsPage from "./pages/admin/AdminGroupsPage";
+import AdminLibraryPage from "./pages/admin/AdminLibraryPage";
+import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
+import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   const { pathname } = useLocation();
@@ -153,6 +160,22 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+function RequireAuthNoLayout({ children }: { children: React.ReactNode }) {
+  const { token, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-surface-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-surface-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 function SetupGuard({ children }: { children: React.ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const navigate = useNavigate();
@@ -234,7 +257,22 @@ function AppRoutes() {
         <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
         <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
         <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
-        <Route path="/admin/*" element={<SetupGuard><RequireAuth><AdminDashboard /></RequireAuth></SetupGuard>} />
+        <Route path="/admin/*" element={
+          <SetupGuard>
+            <RequireAuthNoLayout>
+              <RequireAdmin>
+                <AdminLayout />
+              </RequireAdmin>
+            </RequireAuthNoLayout>
+          </SetupGuard>
+        }>
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="groups" element={<AdminGroupsPage />} />
+          <Route path="library" element={<AdminLibraryPage />} />
+          <Route path="playlists" element={<AdminPlaylistsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
       </Routes>
     </>
   );
