@@ -36,7 +36,7 @@ export default function AdminSidebar({
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-16 w-64 z-50 md:z-30 bg-surface-900/95 border-r border-white/10 backdrop-blur-xl flex flex-col h-[calc(100vh-4rem)] transition-transform duration-300 md:translate-x-0 ${
+        className={`fixed left-0 top-16 w-64 z-50 md:z-30 bg-white/5 border-r border-white/10 backdrop-blur-2xl flex flex-col h-[calc(100vh-4rem)] transition-transform duration-300 md:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
