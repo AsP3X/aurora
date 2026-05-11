@@ -13,7 +13,7 @@ export default function AdminTopbar({
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   return (
-    <header className="h-16 bg-surface-900/80 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-4 md:px-6 sticky top-0 z-40">
+    <header className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-2xl shrink-0 flex items-center justify-between px-4 md:px-6 sticky top-0 z-40">
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuToggle}
@@ -44,7 +44,7 @@ export default function AdminTopbar({
         <div className="relative">
           <button
             onClick={() => setShowUserMenu((v) => !v)}
-            className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full bg-surface-800 border border-white/5 hover:border-white/10 transition-colors"
+            className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full bg-white/5 border border-white/10 hover:border-white/20 transition-colors"
           >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center text-xs font-bold text-white">
               {user?.email?.[0]?.toUpperCase() || "?"}
@@ -57,7 +57,7 @@ export default function AdminTopbar({
 
           {showUserMenu && (
             <>
-              <div className="absolute right-0 mt-2 w-48 bg-surface-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-48 bg-surface-900/95 border border-white/10 backdrop-blur-xl rounded-xl shadow-xl z-50 overflow-hidden">
                 <div className="px-4 py-3 border-b border-white/5">
                   <p className="text-sm font-medium text-white truncate">{user?.email}</p>
                   <p className="text-xs text-surface-500 capitalize">{user?.role}</p>
