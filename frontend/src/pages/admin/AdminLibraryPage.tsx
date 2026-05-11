@@ -4,6 +4,7 @@ import {
   deleteAdminSong,
   updateAdminSong,
   toggleAdminSongEnabled,
+  artworkUrl,
 } from "../../api/client";
 import ArtworkImage from "../../components/ArtworkImage";
 import ContextMenu from "../../components/ui/ContextMenu";
@@ -11,6 +12,7 @@ import type { ContextMenuItem } from "../../components/ui/ContextMenu";
 import UploadSongDialog from "../../components/admin/UploadSongDialog";
 import MultiGenreField from "../../components/admin/MultiGenreField";
 import ConfirmModal from "../../components/admin/ConfirmModal";
+import ArtworkCropper from "../../components/admin/ArtworkCropper";
 import type { Song } from "../../types";
 
 function formatDuration(seconds: number) {
@@ -48,6 +50,10 @@ export default function AdminLibraryPage() {
     studio: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editImageSrc, setEditImageSrc] = useState<string | null>(null);
+  const [editCroppedBlob, setEditCroppedBlob] = useState<Blob | null>(null);
+  const [editArtworkChanged, setEditArtworkChanged] = useState(false);
+  const [editRemoveArtwork, setEditRemoveArtwork] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -86,24 +92,37 @@ export default function AdminLibraryPage() {
       genres: song.genres,
       studio: song.studio || "",
     });
+    setEditImageSrc(song.artwork_key ? artworkUrl(song.id) : null);
+    setEditCroppedBlob(null);
+    setEditArtworkChanged(false);
+    setEditRemoveArtwork(false);
   }
 
   async function handleSaveEdit() {
     if (!editingSong) return;
     setSavingEdit(true);
     try {
-      const updated = await updateAdminSong(editingSong.id, {
-        title: editForm.title,
-        artist: editForm.artist,
-        album: editForm.album || undefined,
-        album_artist: editForm.album_artist || undefined,
-        track_number: editForm.track_number ? parseInt(editForm.track_number, 10) : undefined,
-        year: editForm.year ? parseInt(editForm.year, 10) : undefined,
-        genres: editForm.genres,
-        studio: editForm.studio || undefined,
-      });
+      const updated = await updateAdminSong(
+        editingSong.id,
+        {
+          title: editForm.title,
+          artist: editForm.artist,
+          album: editForm.album || undefined,
+          album_artist: editForm.album_artist || undefined,
+          track_number: editForm.track_number ? parseInt(editForm.track_number, 10) : undefined,
+          year: editForm.year ? parseInt(editForm.year, 10) : undefined,
+          genres: editForm.genres,
+          studio: editForm.studio || undefined,
+        },
+        editCroppedBlob ?? undefined,
+        editArtworkChanged ? editRemoveArtwork : undefined
+      );
       setSongs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
       setEditingSong(null);
+      setEditImageSrc(null);
+      setEditCroppedBlob(null);
+      setEditArtworkChanged(false);
+      setEditRemoveArtwork(false);
     } catch (e: any) {
       setError(e.message || "Failed to update song");
     } finally {
@@ -119,6 +138,31 @@ export default function AdminLibraryPage() {
       setError(e.message || "Failed to toggle enabled state");
     }
   }
+
+  const handleEditReplaceArtwork = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEditImageSrc(reader.result as string);
+      setEditCroppedBlob(null);
+      setEditArtworkChanged(true);
+      setEditRemoveArtwork(false);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleEditCropComplete = useCallback((blob: Blob) => {
+    setEditCroppedBlob(blob);
+    setEditImageSrc(URL.createObjectURL(blob));
+    setEditArtworkChanged(true);
+    setEditRemoveArtwork(false);
+  }, []);
+
+  const handleEditRemoveArtwork = useCallback(() => {
+    setEditImageSrc(null);
+    setEditCroppedBlob(null);
+    setEditArtworkChanged(true);
+    setEditRemoveArtwork(true);
+  }, []);
 
   async function handleDelete() {
     if (!confirmModal) return;
@@ -382,6 +426,15 @@ export default function AdminLibraryPage() {
                   className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
                 />
               </div>
+            </div>
+            <div className="col-span-2 mt-2">
+              <h3 className="mb-2 text-sm font-medium text-white">Artwork</h3>
+              <ArtworkCropper
+                imageSrc={editImageSrc}
+                onCropComplete={handleEditCropComplete}
+                onReplace={handleEditReplaceArtwork}
+                onRemove={handleEditRemoveArtwork}
+              />
             </div>
             <div className="flex gap-3 justify-end mt-6">
               <button

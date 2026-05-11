@@ -298,10 +298,23 @@ export async function deleteAdminSong(id: string) {
   return apiFetch(`/admin/songs/${id}`, { method: "DELETE" });
 }
 
-export async function updateAdminSong(id: string, body: Partial<Pick<Song, "title" | "artist" | "album" | "album_artist" | "track_number" | "year" | "genres" | "studio">>) {
+export async function updateAdminSong(
+  id: string,
+  body: Partial<Pick<Song, "title" | "artist" | "album" | "album_artist" | "track_number" | "year" | "genres" | "studio">>,
+  artworkBlob?: Blob,
+  removeArtwork?: boolean,
+) {
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(body)], { type: "application/json" }));
+  if (artworkBlob) {
+    form.append("artwork", artworkBlob, "artwork.jpg");
+  }
+  if (removeArtwork !== undefined) {
+    form.append("remove_artwork", String(removeArtwork));
+  }
   return apiFetch(`/admin/songs/${id}`, {
     method: "PUT",
-    body: JSON.stringify(body),
+    body: form,
   }) as Promise<Song>;
 }
 
