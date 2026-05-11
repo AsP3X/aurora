@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
 import MultiGenreField from "./MultiGenreField";
@@ -57,18 +57,25 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     };
   }, [draft.staging_id]);
 
+  const onChangeRef = useRef(onChange);
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    draftRef.current = draft;
+  });
+
   useEffect(() => {
     let cancelled = false;
 
-    if (!draft.album) {
-      onChange({ ...draft, track_number: null });
+    if (!draftRef.current.album) {
+      onChangeRef.current({ ...draftRef.current, track_number: null });
       return;
     }
 
-    fetchAlbumSongCount(draft.album)
+    fetchAlbumSongCount(draftRef.current.album)
       .then((count) => {
         if (!cancelled) {
-          onChange({ ...draft, track_number: count + 1 });
+          onChangeRef.current({ ...draftRef.current, track_number: count + 1 });
         }
       })
       .catch(console.error);
@@ -76,7 +83,7 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     return () => {
       cancelled = true;
     };
-  }, [draft.album]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [draft.album]);
 
   const update = <K extends keyof SongDraft>(field: K, value: SongDraft[K]) => {
     onChange({ ...draft, [field]: value });
