@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
 import MultiGenreField from "./MultiGenreField";
-import { fetchValues, fetchAlbumSongCount } from "../../api/client";
+import { fetchValues } from "../../api/client";
 
 interface SongMetadataFormProps {
   draft: SongDraft;
