@@ -104,7 +104,7 @@ pub async fn album_song_count(
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
     let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM songs WHERE album = $1 AND enabled = true",
+        "SELECT COUNT(*) FROM songs WHERE LOWER(album) = LOWER($1) AND enabled = true",
     )
     .bind(&params.album)
     .fetch_one(&state.pool)
