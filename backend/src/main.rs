@@ -82,8 +82,9 @@ async fn main() -> anyhow::Result<()> {
             info!("Using Nebula OS object storage at {}", config.object_storage_url);
             let nebula = NebulaStorage::new(
                 config.object_storage_url.clone(),
+                config.object_storage_public_url.clone(),
                 config.object_storage_bucket.clone(),
-                &config.jwt_secret,
+                &config.object_storage_jwt_secret,
                 &config.signing_secret,
             )?;
 

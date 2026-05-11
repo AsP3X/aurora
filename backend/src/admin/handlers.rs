@@ -172,7 +172,7 @@ pub async fn get_admin_stats(
         .fetch_one(&state.pool)
         .await?;
 
-    let total_storage_bytes: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(file_size_bytes), 0) FROM songs")
+    let total_storage_bytes: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(file_size_bytes), 0)::BIGINT FROM songs")
         .fetch_one(&state.pool)
         .await?;
 

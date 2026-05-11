@@ -19,19 +19,22 @@ fn generate_signature(method: &str, secret: &str, bucket: &str, key: &str, expir
 pub struct NebulaStorage {
     client: reqwest::Client,
     base_url: String,
+    public_base_url: String,
     bucket: String,
     jwt_token: String,
     signing_secret: String,
 }
 
 impl NebulaStorage {
-    pub fn new(base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
+    pub fn new(base_url: String, public_base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
         let token = generate_service_token(jwt_secret)?;
         let base_url = base_url.trim_end_matches('/').to_string();
-        tracing::info!(%base_url, %bucket, "NebulaStorage client initialized");
+        let public_base_url = public_base_url.trim_end_matches('/').to_string();
+        tracing::info!(%base_url, %public_base_url, %bucket, "NebulaStorage client initialized");
         Ok(Self {
             client: reqwest::Client::new(),
             base_url,
+            public_base_url,
             bucket,
             jwt_token: token,
             signing_secret: signing_secret.to_string(),
@@ -40,6 +43,10 @@ impl NebulaStorage {
 
     fn url(&self, key: &str) -> String {
         format!("{}/{}/{}", self.base_url, self.bucket, key)
+    }
+
+    fn public_url(&self, key: &str) -> String {
+        format!("{}/{}/{}", self.public_base_url, self.bucket, key)
     }
 
     fn auth_header(&self) -> reqwest::header::HeaderValue {
@@ -195,8 +202,8 @@ impl Storage for NebulaStorage {
 
         let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
         let url = format!(
-            "{}/{}/{}?signature={}&expires={}",
-            self.base_url, self.bucket, key, signature, expires
+            "{}?signature={}&expires={}",
+            self.public_url(key), signature, expires
         );
         tracing::debug!(key, %url, expires, "NebulaStorage presigned_url generated");
         Ok(url)
@@ -209,8 +216,8 @@ impl Storage for NebulaStorage {
 
         let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
         let url = format!(
-            "{}/{}/{}?signature={}&expires={}",
-            self.base_url, self.bucket, key, signature, expires
+            "{}?signature={}&expires={}",
+            self.public_url(key), signature, expires
         );
         tracing::debug!(key, %url, expires, "NebulaStorage presigned_segment_url generated");
         Ok(url)

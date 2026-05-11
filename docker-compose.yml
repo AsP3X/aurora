@@ -66,12 +66,14 @@ services:
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
-      SIGNING_SECRET: ${SIGNING_SECRET:-dev-signing-secret-change-me}
+      OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:-dev-nos-jwt-secret-change-me}
+      SIGNING_SECRET: ${NOS_SIGNING_SECRET:-dev-nos-signing-secret-change-me}
       MASTER_SECRET: ${MASTER_SECRET:-dev-master-secret-change-me}
       URL_EXPIRY_SECONDS: ${URL_EXPIRY_SECONDS:-3600}
       MUSIC_DIR: ${MUSIC_DIR:-/music}
       STORAGE_MODE: ${STORAGE_MODE:-proxy}
       OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL:-http://object-storage:9000}
+      OBJECT_STORAGE_PUBLIC_URL: ${OBJECT_STORAGE_PUBLIC_URL:-http://localhost:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-music}
       RUST_LOG: ${RUST_LOG:-info}
       BIND_ADDR: ${BIND_ADDR:-0.0.0.0:3000}
