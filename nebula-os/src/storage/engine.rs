@@ -51,7 +51,7 @@ impl StorageEngine {
             if !meta_path_buf.exists() {
                 fs::File::create(&meta_path_buf).await?;
             }
-            meta_path_buf.to_string_lossy().replace('/', "\\")
+            meta_path_buf.to_string_lossy().to_string()
         };
         let pool = SqlitePool::connect(&conn_str).await?;
 

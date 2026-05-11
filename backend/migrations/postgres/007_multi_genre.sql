@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS genres (
 );
 
 CREATE TABLE IF NOT EXISTS song_genres (
-    song_id UUID NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
     genre_id INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
     PRIMARY KEY (song_id, genre_id)
 );

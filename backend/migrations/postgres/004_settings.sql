@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TEXT DEFAULT (now()::text)
 );

@@ -1,16 +1,14 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'listener',
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
 );
 
 CREATE TABLE songs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     artist TEXT NOT NULL,
     album TEXT,
@@ -25,34 +23,34 @@ CREATE TABLE songs (
     bitrate_kbps INT,
     sample_rate_hz INT,
     artwork_key TEXT,
-    publisher_id UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    publisher_id TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
 );
 
 CREATE TABLE playlists (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     is_public BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TEXT DEFAULT (now()::text)
 );
 
 CREATE TABLE playlist_songs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    playlist_id UUID REFERENCES playlists(id) ON DELETE CASCADE,
-    song_id UUID REFERENCES songs(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    playlist_id TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+    song_id TEXT REFERENCES songs(id) ON DELETE CASCADE,
     position INT NOT NULL,
-    added_at TIMESTAMPTZ DEFAULT now(),
+    added_at TEXT DEFAULT (now()::text),
     UNIQUE (playlist_id, position)
 );
 
 CREATE TABLE playback_history (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    song_id UUID REFERENCES songs(id) ON DELETE CASCADE,
-    started_at TIMESTAMPTZ DEFAULT now(),
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    song_id TEXT REFERENCES songs(id) ON DELETE CASCADE,
+    started_at TEXT DEFAULT (now()::text),
     duration_listened_seconds INT,
     completed BOOLEAN DEFAULT false
 );

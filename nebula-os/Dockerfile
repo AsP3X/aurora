@@ -10,6 +10,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/nebula-os /usr/local/bin/nebula-os
-RUN mkdir -p /data/blobs /data/meta
+RUN printf '#!/bin/sh\nmkdir -p /data/blobs /data/meta\nexec nebula-os "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 EXPOSE 9000
-CMD ["nebula-os"]
+ENTRYPOINT ["/entrypoint.sh"]
