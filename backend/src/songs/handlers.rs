@@ -113,7 +113,7 @@ pub async fn list_songs(
          WHERE ($1 IS NULL OR LOWER(artist) LIKE LOWER($1))
          AND ($2 IS NULL OR LOWER(album) LIKE LOWER($2))
          AND ($5 IS NULL OR LOWER(title) LIKE LOWER($5) OR LOWER(artist) LIKE LOWER($5) OR LOWER(album) LIKE LOWER($5))
-         AND enabled = 1
+         AND enabled = true
          ORDER BY {}
          LIMIT $3 OFFSET $4",
         order_clause
@@ -141,7 +141,7 @@ pub async fn get_song(
 ) -> Result<Json<super::model::Song>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let song_db = sqlx::query_as::<_, super::model::SongDb>("SELECT * FROM songs WHERE id = $1 AND enabled = 1")
+    let song_db = sqlx::query_as::<_, super::model::SongDb>("SELECT * FROM songs WHERE id = $1 AND enabled = true")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;
@@ -162,8 +162,8 @@ pub async fn get_stream_url(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let row = sqlx::query_as::<_, (String, Option<i64>)>(
-        "SELECT file_key, hls_ready FROM songs WHERE id = $1 AND enabled = 1"
+    let row = sqlx::query_as::<_, (String, Option<bool>)>(
+        "SELECT file_key, hls_ready FROM songs WHERE id = $1 AND enabled = true"
     )
         .bind(id.to_string())
         .fetch_optional(&state.pool)
@@ -171,7 +171,7 @@ pub async fn get_stream_url(
 
     let (file_key, hls_ready) = row.ok_or(AppError::NotFound)?;
 
-    if hls_ready.map(|v| v != 0).unwrap_or(false) {
+    if hls_ready.unwrap_or(false) {
         let playlist_url = format!("/api/v1/songs/{}/playlist", id);
         return Ok(Json(serde_json::json!({ "url": playlist_url })));
     }
@@ -189,7 +189,7 @@ pub async fn get_artwork_url(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1 AND enabled = 1")
+    let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1 AND enabled = true")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
         .await?;

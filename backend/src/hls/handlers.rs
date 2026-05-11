@@ -22,8 +22,8 @@ pub async fn get_playlist(
 ) -> Result<Response, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
-    let song = sqlx::query_as::<_, (String, Option<i64>, Option<i32>)>(
-        "SELECT file_key, hls_ready, segment_count FROM songs WHERE id = $1 AND enabled = 1"
+    let song = sqlx::query_as::<_, (String, Option<bool>, Option<i32>)>(
+        "SELECT file_key, hls_ready, segment_count FROM songs WHERE id = $1 AND enabled = true"
     )
     .bind(id.to_string())
     .fetch_optional(&state.pool)
@@ -31,7 +31,7 @@ pub async fn get_playlist(
 
     let (file_key, hls_ready, segment_count) = song.ok_or(AppError::NotFound)?;
 
-    if !hls_ready.map(|v| v != 0).unwrap_or(false) {
+    if !hls_ready.unwrap_or(false) {
         // Fallback: return the old presigned stream URL as a single-file playlist
         let url = state.storage.presigned_url(&file_key, state.url_expiry_seconds)
             .map_err(|e| AppError::Storage(e.to_string()))?;

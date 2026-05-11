@@ -1,41 +1,41 @@
 CREATE TABLE IF NOT EXISTS permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     key TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
     category TEXT NOT NULL DEFAULT 'general',
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TEXT DEFAULT (now()::text)
 );
 
 CREATE TABLE IF NOT EXISTS groups (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
 );
 
 CREATE TABLE IF NOT EXISTS group_permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT now(),
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    permission_id TEXT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (now()::text),
     UNIQUE (group_id, permission_id)
 );
 
 CREATE TABLE IF NOT EXISTS user_permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT now(),
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission_id TEXT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (now()::text),
     UNIQUE (user_id, permission_id)
 );
 
 CREATE TABLE IF NOT EXISTS group_memberships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT now(),
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (now()::text),
     UNIQUE (user_id, group_id)
 );
 
@@ -75,26 +75,26 @@ ON CONFLICT (name) DO NOTHING;
 
 -- Assign Default group permissions
 INSERT INTO group_permissions (id, group_id, permission_id)
-SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000001', id
+SELECT gen_random_uuid()::text, '00000000-0000-0000-0000-000000000001', id
 FROM permissions
 WHERE key IN ('library.view', 'playlists.create', 'playlists.update', 'playlists.delete', 'history.view')
 ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- Assign Admin group permissions (all)
 INSERT INTO group_permissions (id, group_id, permission_id)
-SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000002', id
+SELECT gen_random_uuid()::text, '00000000-0000-0000-0000-000000000002', id
 FROM permissions
 ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- Migrate existing users into the Default group
 INSERT INTO group_memberships (id, user_id, group_id)
-SELECT gen_random_uuid(), id, '00000000-0000-0000-0000-000000000001'
+SELECT gen_random_uuid()::text, id, '00000000-0000-0000-0000-000000000001'
 FROM users
 ON CONFLICT (user_id, group_id) DO NOTHING;
 
 -- Also assign users with role 'admin' to the Admin group
 INSERT INTO group_memberships (id, user_id, group_id)
-SELECT gen_random_uuid(), id, '00000000-0000-0000-0000-000000000002'
+SELECT gen_random_uuid()::text, id, '00000000-0000-0000-0000-000000000002'
 FROM users
 WHERE role = 'admin'
 ON CONFLICT (user_id, group_id) DO NOTHING;
