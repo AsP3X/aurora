@@ -1,4 +1,5 @@
 use axum::extract::{Multipart, State};
+use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -7,10 +8,9 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     permissions::require_admin_access,
+    storage::StorageStream,
     AppState,
 };
-
-const STAGING_DIR_NAME: &str = ".staging";
 
 #[derive(Debug, Serialize)]
 pub struct SongDraft {
@@ -157,6 +157,44 @@ fn extract_artwork(path: &Path) -> anyhow::Result<Option<(String, Vec<u8>)>> {
     Ok(None)
 }
 
+async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, AppError> {
+    let chunks: Vec<_> = stream
+        .try_collect()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(chunks.into_iter().flat_map(|b| b.to_vec()).collect())
+}
+
+async fn find_staged_artwork_key(
+    storage: &dyn crate::storage::Storage,
+    staging_id: &str,
+) -> Option<(String, String)> {
+    for ext in ["jpg", "jpeg", "png", "webp"] {
+        let key = format!("staging/{}/artwork.{}", staging_id, ext);
+        if storage.exists(&key).await.unwrap_or(false) {
+            let mime = format!("image/{}", if ext == "jpeg" { "jpeg" } else { ext });
+            return Some((key, mime));
+        }
+    }
+    None
+}
+
+async fn delete_staging_keys(
+    storage: &dyn crate::storage::Storage,
+    staging_id: &str,
+    file_format: &str,
+) {
+    let audio_key = format!("staging/{}/audio.{}", staging_id, file_format);
+    if let Err(e) = storage.delete(&audio_key).await {
+        tracing::warn!(key = %audio_key, error = %e, "Failed to delete staged audio");
+    }
+    if let Some((key, _)) = find_staged_artwork_key(storage, staging_id).await {
+        if let Err(e) = storage.delete(&key).await {
+            tracing::warn!(key = %key, error = %e, "Failed to delete staged artwork");
+        }
+    }
+}
+
 pub async fn stage_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -180,14 +218,12 @@ pub async fn stage_song(
         let content_type = field.content_type().map(|ct| ct.to_string());
         tracing::info!(field_name = %name, field_filename = %filename, field_content_type = ?content_type, "multipart field received");
         if name == "audio" && audio_bytes.is_none() {
-            // Validate extension BEFORE buffering bytes
             ext = Path::new(&filename)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_lowercase();
 
-            // Fallback to MIME type mapping if filename has no extension
             if ext.is_empty() {
                 if let Some(ref ct) = content_type {
                     ext = match ct.as_str() {
@@ -227,16 +263,9 @@ pub async fn stage_song(
                 .to_vec();
             tracing::info!(byte_count = bytes.len(), "audio bytes buffered");
             audio_bytes = Some(bytes);
-            // Continue consuming remaining fields instead of break
             continue;
         }
     }
-
-    let staging_id = Uuid::new_v4().to_string();
-    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&staging_id);
-    tokio::fs::create_dir_all(&staging_dir)
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
 
     let audio_bytes = match audio_bytes {
         Some(b) => b,
@@ -246,20 +275,28 @@ pub async fn stage_song(
         }
     };
 
-    let audio_path = staging_dir.join(format!("audio.{}", ext));
-    tokio::fs::write(&audio_path, &audio_bytes)
+    let staging_id = Uuid::new_v4().to_string();
+
+    // Write to system temp for lofty (needs a real file path)
+    let tmp_dir = std::env::temp_dir().join(format!("aurora_stage_{}", staging_id));
+    tokio::fs::create_dir_all(&tmp_dir)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let tmp_audio = tmp_dir.join(format!("audio.{}", ext));
+    tokio::fs::write(&tmp_audio, &audio_bytes)
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
-    let audio_path_clone = audio_path.clone();
-    let audio_path_fallback = audio_path.clone();
-    let meta = tokio::task::spawn_blocking(move || extract_metadata(&audio_path_clone))
+    let tmp_audio_clone = tmp_audio.clone();
+    let tmp_audio_fallback = tmp_audio.clone();
+    let meta = tokio::task::spawn_blocking(move || extract_metadata(&tmp_audio_clone))
         .await
         .map_err(|e| AppError::Storage(format!("Metadata task failed: {}", e)))?
         .unwrap_or_else(|_| {
-            // lofty failed to read metadata (e.g. unsupported format like wav).
-            // Use filename-derived defaults.
-            let file_stem = audio_path_fallback.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown");
+            let file_stem = tmp_audio_fallback
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown");
             ExtractedMetadata {
                 title: file_stem.to_string(),
                 artist: "Unknown Artist".to_string(),
@@ -269,14 +306,18 @@ pub async fn stage_song(
                 year: None,
                 genres: Vec::new(),
                 duration_seconds: 0,
-                file_format: audio_path_fallback.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_string(),
+                file_format: tmp_audio_fallback
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
                 bitrate_kbps: None,
                 sample_rate_hz: None,
             }
         });
 
-    let audio_path_clone = audio_path.clone();
-    let artwork_data = tokio::task::spawn_blocking(move || extract_artwork(&audio_path_clone))
+    let tmp_audio_clone = tmp_audio.clone();
+    let artwork_data = tokio::task::spawn_blocking(move || extract_artwork(&tmp_audio_clone))
         .await
         .map_err(|e| AppError::Storage(format!("Artwork task failed: {}", e)))?
         .unwrap_or_else(|e| {
@@ -284,12 +325,26 @@ pub async fn stage_song(
             None
         });
 
-    let has_artwork = if let Some((ext, data)) = artwork_data {
-        let art_path = staging_dir.join(format!("artwork.{}", ext));
-        match tokio::fs::write(&art_path, &data).await {
+    // Temp dir no longer needed — clean up before uploading
+    let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+
+    // Upload audio to object storage
+    let audio_stage_key = format!("staging/{}/audio.{}", staging_id, ext);
+    let audio_mime = mime_guess::from_ext(&ext).first_or_octet_stream().to_string();
+    state
+        .storage
+        .put(&audio_stage_key, &audio_mime, audio_bytes)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    // Upload artwork to object storage if present
+    let has_artwork = if let Some((art_ext, art_data)) = artwork_data {
+        let art_key = format!("staging/{}/artwork.{}", staging_id, art_ext);
+        let art_mime = format!("image/{}", art_ext);
+        match state.storage.put(&art_key, &art_mime, art_data).await {
             Ok(()) => true,
             Err(e) => {
-                tracing::warn!("Failed to write extracted artwork: {}", e);
+                tracing::warn!("Failed to store staged artwork: {}", e);
                 false
             }
         }
@@ -383,7 +438,8 @@ pub async fn commit_song(
         return Err(AppError::BadRequest("Title and artist are required".into()));
     }
 
-    Uuid::parse_str(&req.staging_id).map_err(|_| AppError::BadRequest("Invalid staging_id".into()))?;
+    Uuid::parse_str(&req.staging_id)
+        .map_err(|_| AppError::BadRequest("Invalid staging_id".into()))?;
 
     if let Some(ref bytes) = artwork_bytes {
         if bytes.is_empty() {
@@ -391,48 +447,40 @@ pub async fn commit_song(
         }
     }
 
-    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&req.staging_id);
-    if !staging_dir.is_dir() {
-        return Err(AppError::NotFound);
-    }
-
-    let mut entries = tokio::fs::read_dir(&staging_dir)
+    // Download audio from staging storage
+    let audio_stage_key = format!("staging/{}/audio.{}", req.staging_id, req.file_format);
+    let (audio_stream, _, _) = state
+        .storage
+        .get_stream(&audio_stage_key)
         .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-    let mut audio_path = None;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?
-    {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("audio.") {
-            audio_path = Some(entry.path());
-            break;
-        }
-    }
-    let audio_path = audio_path.ok_or(AppError::NotFound)?;
+        .map_err(|_| AppError::NotFound)?;
+    let audio_data = collect_stream(audio_stream).await?;
+    let file_size = audio_data.len() as i64;
 
     let song_id = Uuid::new_v4().to_string();
-    let file_key = format!(
-        "uploads/{}_{}",
-        &song_id,
-        audio_path.file_name().ok_or_else(|| AppError::Storage("Invalid audio path".into()))?.to_string_lossy()
-    );
-
-    let audio_meta = tokio::fs::metadata(&audio_path)
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-    let file_size = audio_meta.len() as i64;
-    let audio_data = tokio::fs::read(&audio_path)
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-    let audio_mime = mime_guess::from_path(&audio_path)
+    let file_key = format!("uploads/{}_audio.{}", song_id, req.file_format);
+    let audio_mime = mime_guess::from_ext(&req.file_format)
         .first_or_octet_stream()
         .to_string();
-    state.storage.put(&file_key, &audio_mime, audio_data).await
+
+    // Write audio to temp dir for HLS encoding (ffmpeg needs a real file path)
+    let hls_tmp_dir = std::env::temp_dir().join(format!("aurora_hls_{}", song_id));
+    tokio::fs::create_dir_all(&hls_tmp_dir)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let tmp_audio = hls_tmp_dir.join(format!("audio.{}", req.file_format));
+    tokio::fs::write(&tmp_audio, &audio_data)
+        .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
+    // Upload to permanent storage
+    state
+        .storage
+        .put(&file_key, &audio_mime, audio_data)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+
+    // Resolve artwork
     let mut artwork_key: Option<String> = None;
 
     if let Some(bytes) = artwork_bytes {
@@ -443,38 +491,32 @@ pub async fn commit_song(
         };
         let art_key = format!("artwork/{}.{}", song_id, art_ext);
         let art_mime = format!("image/{}", art_ext);
-        state.storage.put(&art_key, &art_mime, bytes).await
+        state
+            .storage
+            .put(&art_key, &art_mime, bytes)
+            .await
             .map_err(|e| AppError::Storage(e.to_string()))?;
         artwork_key = Some(art_key);
-    } else {
-        let mut art_entries = tokio::fs::read_dir(&staging_dir)
+    } else if let Some((staged_key, staged_mime)) =
+        find_staged_artwork_key(state.storage.as_ref(), &req.staging_id).await
+    {
+        let staged_ext = Path::new(&staged_key)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("jpg");
+        let art_key = format!("artwork/{}.{}", song_id, staged_ext);
+        let (stream, _, _) = state
+            .storage
+            .get_stream(&staged_key)
             .await
             .map_err(|e| AppError::Storage(e.to_string()))?;
-        while let Some(entry) = art_entries
-            .next_entry()
+        let art_data = collect_stream(stream).await?;
+        state
+            .storage
+            .put(&art_key, &staged_mime, art_data)
             .await
-            .map_err(|e| AppError::Storage(e.to_string()))?
-        {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("artwork.") {
-                let ext = Path::new(&name)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("jpg");
-                let art_key = format!("artwork/{}.{}", song_id, ext);
-                let art_path = entry.path();
-                let art_data = tokio::fs::read(&art_path)
-                    .await
-                    .map_err(|e| AppError::Storage(e.to_string()))?;
-                let art_mime = mime_guess::from_path(&art_path)
-                    .first_or_octet_stream()
-                    .to_string();
-                state.storage.put(&art_key, &art_mime, art_data).await
-                    .map_err(|e| AppError::Storage(e.to_string()))?;
-                artwork_key = Some(art_key);
-                break;
-            }
-        }
+            .map_err(|e| AppError::Storage(e.to_string()))?;
+        artwork_key = Some(art_key);
     }
 
     let result: Result<crate::songs::model::SongDb, AppError> = async {
@@ -485,7 +527,7 @@ pub async fn commit_song(
                 id, title, artist, album, album_artist, track_number, year, studio,
                 duration_seconds, file_key, file_size_bytes, file_format, bitrate_kbps, sample_rate_hz, artwork_key, publisher_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-            RETURNING *"
+            RETURNING *",
         )
         .bind(&song_id)
         .bind(&req.title)
@@ -509,12 +551,15 @@ pub async fn commit_song(
         let mut seen = std::collections::HashSet::new();
         for genre in &req.genres {
             let genre_lower = genre.trim().to_lowercase();
-            if genre_lower.is_empty() || !seen.insert(genre_lower.clone()) { continue; }
+            if genre_lower.is_empty() || !seen.insert(genre_lower.clone()) {
+                continue;
+            }
 
-            let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM genres WHERE name = $1")
-                .bind(&genre_lower)
-                .fetch_optional(&mut *tx)
-                .await?;
+            let existing: Option<(i64,)> =
+                sqlx::query_as("SELECT id FROM genres WHERE name = $1")
+                    .bind(&genre_lower)
+                    .fetch_optional(&mut *tx)
+                    .await?;
 
             if existing.is_none() {
                 sqlx::query("INSERT INTO genres (name) VALUES ($1)")
@@ -525,7 +570,7 @@ pub async fn commit_song(
 
             sqlx::query(
                 "INSERT INTO song_genres (song_id, genre_id)
-                 SELECT $1, id FROM genres WHERE name = $2"
+                 SELECT $1, id FROM genres WHERE name = $2",
             )
             .bind(&song_id)
             .bind(&genre_lower)
@@ -535,17 +580,18 @@ pub async fn commit_song(
 
         tx.commit().await?;
         Ok(song_db)
-    }.await;
+    }
+    .await;
 
     match result {
         Ok(song_db) => {
-            // Spawn HLS encoding in the background
             let song_id_clone = song_id.clone();
-            let audio_path_clone = audio_path.clone();
-            let staging_dir_clone = staging_dir.clone();
+            let staging_id_clone = req.staging_id.clone();
+            let file_format_clone = req.file_format.clone();
             let hls_key_store = state.hls_key_store.clone();
             let pool_clone = state.pool.clone();
             let storage_clone = state.storage.clone();
+            let hls_tmp_dir_clone = hls_tmp_dir.clone();
 
             tokio::spawn(async move {
                 use crate::hls::encoder::HlsEncoder;
@@ -554,39 +600,42 @@ pub async fn commit_song(
                     Ok(u) => u,
                     Err(e) => {
                         tracing::error!(song_id = %song_id_clone, error = %e, "Invalid song_id UUID for HLS encoding");
+                        let _ = tokio::fs::remove_dir_all(&hls_tmp_dir_clone).await;
                         return;
                     }
                 };
 
-                let output_dir = staging_dir_clone.parent().unwrap_or(&staging_dir_clone)
-                    .join("hls_output")
-                    .join(&song_id_clone);
+                let hls_output_dir = hls_tmp_dir_clone
+                    .parent()
+                    .unwrap_or(&hls_tmp_dir_clone)
+                    .join(format!("aurora_hls_out_{}", song_id_clone));
 
                 match hls_key_store.create_key_for_song(song_uuid).await {
                     Ok((key_id, key)) => {
-                        match HlsEncoder::transcode(&audio_path_clone, &output_dir, &key).await {
+                        match HlsEncoder::transcode(&tmp_audio, &hls_output_dir, &key).await {
                             Ok(output) => {
-                                // Upload HLS output to storage
                                 let prefix = format!("songs/{}/", song_id_clone);
 
-                                // Upload playlist
-                                let playlist_data = match tokio::fs::read(&output.playlist_path).await {
-                                    Ok(data) => data,
-                                    Err(e) => {
-                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS playlist");
-                                        return;
-                                    }
-                                };
-                                if let Err(e) = storage_clone.put(
-                                    &format!("{}stream.m3u8", prefix),
-                                    "application/vnd.apple.mpegurl",
-                                    playlist_data
-                                ).await {
+                                let playlist_data =
+                                    match tokio::fs::read(&output.playlist_path).await {
+                                        Ok(data) => data,
+                                        Err(e) => {
+                                            tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS playlist");
+                                            return;
+                                        }
+                                    };
+                                if let Err(e) = storage_clone
+                                    .put(
+                                        &format!("{}stream.m3u8", prefix),
+                                        "application/vnd.apple.mpegurl",
+                                        playlist_data,
+                                    )
+                                    .await
+                                {
                                     tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS playlist");
                                     return;
                                 }
 
-                                // Upload key file
                                 let key_data = match tokio::fs::read(&output.key_path).await {
                                     Ok(data) => data,
                                     Err(e) => {
@@ -594,29 +643,36 @@ pub async fn commit_song(
                                         return;
                                     }
                                 };
-                                if let Err(e) = storage_clone.put(
-                                    &format!("{}key.bin", prefix),
-                                    "application/octet-stream",
-                                    key_data
-                                ).await {
+                                if let Err(e) = storage_clone
+                                    .put(
+                                        &format!("{}key.bin", prefix),
+                                        "application/octet-stream",
+                                        key_data,
+                                    )
+                                    .await
+                                {
                                     tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS key");
                                     return;
                                 }
 
-                                // Upload segments
-                                let mut segment_entries = match tokio::fs::read_dir(&output.segments_dir).await {
-                                    Ok(entries) => entries,
-                                    Err(e) => {
-                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read segments directory");
-                                        return;
-                                    }
-                                };
+                                let mut segment_entries =
+                                    match tokio::fs::read_dir(&output.segments_dir).await {
+                                        Ok(entries) => entries,
+                                        Err(e) => {
+                                            tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read segments directory");
+                                            return;
+                                        }
+                                    };
                                 while let Ok(Some(entry)) = segment_entries.next_entry().await {
                                     let path = entry.path();
                                     if path.extension().and_then(|e| e.to_str()) != Some("ts") {
                                         continue;
                                     }
-                                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                    let name = path
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .to_string();
                                     let data = match tokio::fs::read(&path).await {
                                         Ok(d) => d,
                                         Err(e) => {
@@ -624,24 +680,27 @@ pub async fn commit_song(
                                             continue;
                                         }
                                     };
-                                    if let Err(e) = storage_clone.put(
-                                        &format!("{}segments/{}", prefix, name),
-                                        "video/mp2t",
-                                        data
-                                    ).await {
+                                    if let Err(e) = storage_clone
+                                        .put(
+                                            &format!("{}segments/{}", prefix, name),
+                                            "video/mp2t",
+                                            data,
+                                        )
+                                        .await
+                                    {
                                         tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to upload segment");
                                     }
                                 }
 
-                                // Update database
                                 if let Err(e) = sqlx::query(
-                                    "UPDATE songs SET hls_ready = true, hls_key_id = $1, segment_count = $2 WHERE id = $3"
+                                    "UPDATE songs SET hls_ready = true, hls_key_id = $1, segment_count = $2 WHERE id = $3",
                                 )
                                 .bind(key_id.to_string())
                                 .bind(output.segment_count as i32)
                                 .bind(&song_id_clone)
                                 .execute(&pool_clone)
-                                .await {
+                                .await
+                                {
                                     tracing::error!(song_id = %song_id_clone, error = %e, "Failed to update song HLS status");
                                     return;
                                 }
@@ -658,20 +717,22 @@ pub async fn commit_song(
                     }
                 }
 
-                // Clean up staging directory AFTER HLS encoding is done
-                if let Err(e) = tokio::fs::remove_dir_all(&staging_dir_clone).await {
-                    tracing::warn!(staging_dir = %staging_dir_clone.display(), error = %e, "Failed to remove staging directory after HLS encoding");
-                }
+                // Clean up staging keys from object storage
+                delete_staging_keys(
+                    storage_clone.as_ref(),
+                    &staging_id_clone,
+                    &file_format_clone,
+                )
+                .await;
 
-                // Clean up HLS output directory
-                if let Err(e) = tokio::fs::remove_dir_all(&output_dir).await {
-                    tracing::warn!(output_dir = %output_dir.display(), error = %e, "Failed to remove HLS output directory");
-                }
+                let _ = tokio::fs::remove_dir_all(&hls_tmp_dir_clone).await;
+                let _ = tokio::fs::remove_dir_all(&hls_output_dir).await;
             });
 
-            // Continue with the rest (don't clean up staging_dir here - background task handles it)
             let mut song: crate::songs::model::Song = song_db.into();
-            if let Err(e) = crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await {
+            if let Err(e) =
+                crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await
+            {
                 tracing::warn!("Failed to populate genres after commit: {}", e);
             }
 
@@ -694,9 +755,13 @@ pub async fn commit_song(
                     tracing::warn!("Failed to clean up artwork object after DB error: {}", e);
                 }
             }
-            if let Err(e) = tokio::fs::remove_dir_all(&staging_dir).await {
-                tracing::warn!("Failed to remove staging directory after DB error: {}", e);
-            }
+            delete_staging_keys(
+                state.storage.as_ref(),
+                &req.staging_id,
+                &req.file_format,
+            )
+            .await;
+            let _ = tokio::fs::remove_dir_all(&hls_tmp_dir).await;
             Err(e)
         }
     }
@@ -710,34 +775,14 @@ pub async fn get_staged_artwork(
     tracing::info!(user_id = %claims.sub, staging_id = %staging_id, "get_staged_artwork");
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
-    let staging_dir = state.staging_dir.join(STAGING_DIR_NAME).join(&staging_id);
-    if !staging_dir.is_dir() {
-        return Err(AppError::NotFound);
-    }
-
-    let mut entries = tokio::fs::read_dir(&staging_dir)
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?
-    {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("artwork.") {
-            let path = entry.path();
-            let mime = mime_guess::from_path(&path)
-                .first_or_octet_stream()
-                .to_string();
-            let bytes = tokio::fs::read(&path)
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))?;
-            return Ok((
-                [(axum::http::header::CONTENT_TYPE, mime)],
-                bytes,
-            ));
-        }
+    if let Some((key, mime)) = find_staged_artwork_key(state.storage.as_ref(), &staging_id).await {
+        let (stream, _, _) = state
+            .storage
+            .get_stream(&key)
+            .await
+            .map_err(|e| AppError::Storage(e.to_string()))?;
+        let bytes = collect_stream(stream).await?;
+        return Ok(([(axum::http::header::CONTENT_TYPE, mime)], bytes));
     }
 
     Err(AppError::NotFound)
