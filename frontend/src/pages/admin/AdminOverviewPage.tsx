@@ -1,0 +1,170 @@
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { fetchAdminStats } from "../../api/client";
+import StatCard from "../../components/admin/StatCard";
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+function formatNumber(n: number) {
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+export default function AdminOverviewPage() {
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<{
+    total_users: number;
+    total_songs: number;
+    total_playlists: number;
+    total_storage_bytes: number;
+  } | null>(null);
+  const [error, setError] = useState("");
+
+  const loadStats = useCallback(async () => {
+    try {
+      const data = await fetchAdminStats();
+      setStats(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load stats");
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white">Overview</h1>
+        {error && (
+          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Users"
+          value={stats ? formatNumber(stats.total_users) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+            </svg>
+          }
+          colorClass="bg-aurora-600/20 text-aurora-400"
+        />
+        <StatCard
+          label="Songs"
+          value={stats ? formatNumber(stats.total_songs) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+          }
+          colorClass="bg-emerald-500/20 text-emerald-400"
+        />
+        <StatCard
+          label="Playlists"
+          value={stats ? formatNumber(stats.total_playlists) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          }
+          colorClass="bg-amber-500/20 text-amber-400"
+        />
+        <StatCard
+          label="Storage Used"
+          value={stats ? formatBytes(stats.total_storage_bytes) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+            </svg>
+          }
+          colorClass="bg-rose-500/20 text-rose-400"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <ActionCard icon={<UsersIcon />} label="Manage Users" onClick={() => navigate("/admin/users")} />
+            <ActionCard icon={<LibraryIcon />} label="Browse Library" onClick={() => navigate("/admin/library")} />
+            <ActionCard icon={<PlaylistsIcon />} label="View Playlists" onClick={() => navigate("/admin/playlists")} />
+            <ActionCard icon={<SettingsIcon />} label="Edit Settings" onClick={() => navigate("/admin/settings")} />
+          </div>
+        </div>
+
+        <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">System Info</h3>
+          <div className="space-y-3 text-sm">
+            <InfoRow label="Total registered users" value={stats ? formatNumber(stats.total_users) : "—"} />
+            <InfoRow label="Tracks in library" value={stats ? formatNumber(stats.total_songs) : "—"} />
+            <InfoRow label="User playlists" value={stats ? formatNumber(stats.total_playlists) : "—"} />
+            <InfoRow label="Library storage" value={stats ? formatBytes(stats.total_storage_bytes) : "—"} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionCard({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-2 p-4 bg-surface-800/50 border border-white/5 rounded-xl hover:border-white/10 hover:bg-surface-800 transition-all"
+    >
+      <span className="text-aurora-400">{icon}</span>
+      <span className="text-sm font-medium text-white">{label}</span>
+    </button>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between text-surface-400">
+      <span>{label}</span>
+      <span className="text-white font-medium">{value}</span>
+    </div>
+  );
+}
+
+/* Inline icons for Quick Actions */
+function UsersIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128A9.373 9.373 0 0112.005 21m0 0v-.003c0-1.113-.285-2.16-.786-3.07m0 0a9.378 9.378 0 00-4.252 1.935M12.005 21a9.38 9.38 0 01-2.625-.372m0 0a9.337 9.337 0 01-4.121-.952 4.125 4.125 0 007.533 2.493m0 0v.003c0 1.113.285 2.16.786 3.07m0 0a9.378 9.378 0 004.252-1.935M12.005 21v.005" />
+    </svg>
+  );
+}
+function LibraryIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+    </svg>
+  );
+}
+function PlaylistsIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+    </svg>
+  );
+}
+function SettingsIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
