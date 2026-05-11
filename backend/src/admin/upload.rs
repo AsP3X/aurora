@@ -81,13 +81,9 @@ fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
                     })
                     .unwrap_or_default();
                 (
-                    tag.title()
-                        .as_deref()
-                        .unwrap_or_else(|| {
-                            path.file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or("Unknown")
-                        })
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Unknown")
                         .to_string(),
                     tag.artist().as_deref().unwrap_or("Unknown Artist").to_string(),
                     tag.album().map(|v| v.to_string()),
