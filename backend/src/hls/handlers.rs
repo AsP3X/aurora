@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+
     response::{IntoResponse, Response},
     body::Body,
 };
@@ -118,15 +118,18 @@ pub async fn get_segment(
         return Err(AppError::BadRequest("invalid segment name".to_string()));
     }
 
-    // For NebulaStorage: redirect to presigned URL
-    if let Ok(presigned) = state.storage.presigned_segment_url(&key, 60) {
+    // Try object storage first (covers both Nebula and LocalStorage via the Storage trait)
+    if let Ok((stream, _, _)) = state.storage.get_stream(&key).await {
         return Ok((
-            StatusCode::FOUND,
-            [(axum::http::header::LOCATION, presigned)],
+            [
+                (axum::http::header::CONTENT_TYPE, "video/mp2t"),
+                (axum::http::header::CACHE_CONTROL, "no-store, no-cache, must-revalidate"),
+            ],
+            Body::from_stream(stream),
         ).into_response());
     }
 
-    // For LocalStorage: stream the file directly
+    // Fallback: local filesystem (legacy local-storage mode)
     let path = state.staging_dir.join(&key);
     let file = tokio::fs::File::open(&path).await
         .map_err(|_| AppError::NotFound)?;

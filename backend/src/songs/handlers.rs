@@ -191,17 +191,16 @@ pub async fn get_stream_url(
         .fetch_optional(&state.pool)
         .await?;
 
-    let (file_key, hls_ready) = row.ok_or(AppError::NotFound)?;
+    let (_file_key, hls_ready) = row.ok_or(AppError::NotFound)?;
 
     if hls_ready.unwrap_or(false) {
         let playlist_url = format!("/api/v1/songs/{}/playlist", id);
         return Ok(Json(serde_json::json!({ "url": playlist_url })));
     }
 
-    let url = state.storage.presigned_url(&file_key, state.url_expiry_seconds)
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-
-    Ok(Json(serde_json::json!({ "url": url })))
+    // Return the backend proxy URL so the browser never needs direct object storage access
+    let stream_url = format!("/api/v1/songs/{}/stream", id);
+    Ok(Json(serde_json::json!({ "url": stream_url })))
 }
 
 pub async fn get_artwork_url(
@@ -217,13 +216,12 @@ pub async fn get_artwork_url(
         .await?;
 
     let (key,) = row.ok_or(AppError::NotFound)?;
-    let Some(key) = key else {
+    if key.is_none() {
         return Ok(Json(serde_json::json!({ "url": null })));
-    };
-    let url = state.storage.presigned_url(&key, state.url_expiry_seconds)
-        .map_err(|e| AppError::Storage(e.to_string()))?;
+    }
 
-    Ok(Json(serde_json::json!({ "url": url })))
+    let artwork_url = format!("/api/v1/songs/{}/artwork", id);
+    Ok(Json(serde_json::json!({ "url": artwork_url })))
 }
 
 pub async fn stream_song(
