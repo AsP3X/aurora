@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
 import MultiGenreField from "./MultiGenreField";
-import { fetchValues } from "../../api/client";
+import { fetchValues, fetchAlbumSongCount } from "../../api/client";
 
 interface SongMetadataFormProps {
   draft: SongDraft;
@@ -37,10 +37,11 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     ])
       .then(([artists, albums, albumArtists, genres, studios]) => {
         if (cancelled) return;
+        const mergedArtists = Array.from(new Set([...artists, ...albumArtists])).sort();
         setExistingValues({
-          artist: artists,
+          artist: mergedArtists,
           album: albums,
-          album_artist: albumArtists,
+          album_artist: mergedArtists,
           genre: genres,
           studio: studios,
         });
