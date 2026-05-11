@@ -304,17 +304,39 @@ export async function updateAdminSong(
   artworkBlob?: Blob,
   removeArtwork?: boolean,
 ) {
-  const form = new FormData();
-  form.append("metadata", new Blob([JSON.stringify(body)], { type: "application/json" }));
-  if (artworkBlob) {
-    form.append("artwork", artworkBlob, "artwork.jpg");
+  if (artworkBlob || removeArtwork) {
+    const form = new FormData();
+    const metadata = {
+      ...body,
+      remove_artwork: removeArtwork ?? false,
+    };
+    form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+    if (artworkBlob) {
+      form.append("artwork", artworkBlob, "artwork.jpg");
+    }
+
+    const token = getToken();
+    const url = `${API_BASE}/admin/songs/${id}`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (res.status === 401) {
+      localStorage.removeItem("aurora_token");
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<Song>;
   }
-  if (removeArtwork !== undefined) {
-    form.append("remove_artwork", String(removeArtwork));
-  }
+
   return apiFetch(`/admin/songs/${id}`, {
     method: "PUT",
-    body: form,
+    body: JSON.stringify(body),
   }) as Promise<Song>;
 }
 
