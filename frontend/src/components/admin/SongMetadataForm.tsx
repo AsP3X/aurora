@@ -37,11 +37,10 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     ])
       .then(([artists, albums, albumArtists, genres, studios]) => {
         if (cancelled) return;
-        const mergedArtists = Array.from(new Set([...artists, ...albumArtists])).sort();
         setExistingValues({
-          artist: mergedArtists,
+          artist: artists,
           album: albums,
-          album_artist: mergedArtists,
+          album_artist: albumArtists,
           genre: genres,
           studio: studios,
         });
@@ -89,6 +88,13 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     onChange({ ...draft, [field]: value });
   };
 
+  const mergedArtists = Array.from(new Set([
+    ...existingValues.artist,
+    ...existingValues.album_artist,
+    ...(draft.artist ? [draft.artist] : []),
+    ...(draft.album_artist ? [draft.album_artist] : []),
+  ])).sort();
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div className="sm:col-span-2">
@@ -107,7 +113,7 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
           value={draft.artist}
           onChange={(v) => update("artist", v ?? "")}
           entityType="artist"
-          existingValues={existingValues.artist}
+          existingValues={mergedArtists}
         />
       </div>
 
@@ -127,7 +133,7 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
           value={draft.album_artist}
           onChange={(v) => update("album_artist", v)}
           entityType="album_artist"
-          existingValues={existingValues.album_artist}
+          existingValues={mergedArtists}
         />
       </div>
 
