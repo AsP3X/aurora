@@ -20,10 +20,14 @@ pub struct Config {
     pub storage_mode: String,
     #[serde(default = "default_object_storage_url")]
     pub object_storage_url: String,
+    #[serde(default = "default_object_storage_public_url")]
+    pub object_storage_public_url: String,
     #[serde(default = "default_object_storage_bucket")]
     pub object_storage_bucket: String,
     #[serde(default = "default_signing_secret")]
     pub signing_secret: String,
+    #[serde(default = "default_object_storage_jwt_secret")]
+    pub object_storage_jwt_secret: String,
     #[serde(default = "default_master_secret")]
     pub master_secret: String,
     #[serde(default = "default_url_expiry_seconds")]
@@ -66,6 +70,10 @@ fn default_object_storage_url() -> String {
     "http://localhost:9000".into()
 }
 
+fn default_object_storage_public_url() -> String {
+    "http://localhost:9000".into()
+}
+
 fn default_object_storage_bucket() -> String {
     "music".into()
 }
@@ -76,6 +84,10 @@ fn default_bind_addr() -> String {
 
 fn default_signing_secret() -> String {
     "change-me-in-production".into()
+}
+
+fn default_object_storage_jwt_secret() -> String {
+    "dev-nos-jwt-secret-change-me".into()
 }
 
 fn default_master_secret() -> String {
