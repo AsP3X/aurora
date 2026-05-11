@@ -156,6 +156,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/me", get(auth::handlers::me))
         .route("/api/v1/songs", get(songs::handlers::list_songs))
         .route("/api/v1/songs/values", get(songs::handlers::list_values))
+        .route("/api/v1/songs/album-song-count", get(songs::handlers::album_song_count))
         .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
         .route("/api/v1/songs/{id}/stream-url", get(songs::handlers::get_stream_url))
         .route("/api/v1/songs/{id}/artwork-url", get(songs::handlers::get_artwork_url))
