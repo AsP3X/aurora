@@ -91,6 +91,28 @@ pub async fn list_values(
     Ok(Json(values.into_iter().map(|v| v.0).collect()))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AlbumCountParams {
+    pub album: String,
+}
+
+pub async fn album_song_count(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<AlbumCountParams>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM songs WHERE album = $1 AND enabled = true",
+    )
+    .bind(&params.album)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "count": row.0 })))
+}
+
 fn sanitize_order_by(order_by: Option<String>) -> &'static str {
     match order_by.as_deref() {
         Some("created_at") => "created_at DESC",
