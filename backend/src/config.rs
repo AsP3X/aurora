@@ -63,7 +63,7 @@ fn default_music_dir() -> String {
 }
 
 fn default_storage_mode() -> String {
-    "direct".into()
+    "proxy".into()
 }
 
 fn default_object_storage_url() -> String {
