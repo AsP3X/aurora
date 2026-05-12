@@ -1,19 +1,6 @@
 #!/bin/sh
 set -e
 
-ENV_FILE="${ENV_FILE:-.env}"
-EXAMPLE_FILE="${EXAMPLE_FILE:-.env.example}"
-
-if [ ! -f "$EXAMPLE_FILE" ]; then
-    echo "Error: $EXAMPLE_FILE not found"
-    exit 1
-fi
-
-if [ ! -f "$ENV_FILE" ]; then
-    echo "Creating $ENV_FILE from $EXAMPLE_FILE..."
-    cp "$EXAMPLE_FILE" "$ENV_FILE"
-fi
-
 # Generate random hex strings for any remaining GENERATE_ME placeholders
 generate_secret() {
     if command -v openssl >/dev/null 2>&1; then
@@ -26,15 +13,38 @@ generate_secret() {
     fi
 }
 
-tmp_file="${ENV_FILE}.tmp"
-cp "$ENV_FILE" "$tmp_file"
+# Initialize a single .env file from its .env.example if missing, then replace secrets
+init_env_file() {
+    env_file="$1"
+    example_file="$2"
 
-while grep -q 'GENERATE_ME' "$tmp_file"; do
-    secret="$(generate_secret)"
-    # Replace only the first occurrence each iteration
-    sed -i "0,/GENERATE_ME/s/GENERATE_ME/${secret}/" "$tmp_file" 2>/dev/null || \
-    sed "0,/GENERATE_ME/s/GENERATE_ME/${secret}/" "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
-done
+    if [ ! -f "$example_file" ]; then
+        echo "Error: $example_file not found"
+        exit 1
+    fi
 
-mv "$tmp_file" "$ENV_FILE"
-echo "$ENV_FILE is ready."
+    if [ ! -f "$env_file" ]; then
+        echo "Creating $env_file from $example_file..."
+        cp "$example_file" "$env_file"
+    fi
+
+    tmp_file="${env_file}.tmp"
+    cp "$env_file" "$tmp_file"
+
+    while grep -q 'GENERATE_ME' "$tmp_file"; do
+        secret="$(generate_secret)"
+        perl -i -pe "BEGIN { \$replaced = 0 } if (!\$replaced && /GENERATE_ME/) { s/GENERATE_ME/$secret/; \$replaced = 1; }" "$tmp_file"
+    done
+
+    mv "$tmp_file" "$env_file"
+    echo "$env_file is ready."
+}
+
+# Initialize root .env
+init_env_file ".env" ".env.example"
+
+# Initialize backend .env
+init_env_file "backend/.env" "backend/.env.example"
+
+# Initialize nebula-os .env
+init_env_file "nebula-os/.env" "nebula-os/.env.example"
