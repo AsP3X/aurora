@@ -4,6 +4,11 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TicketParams {
+    pub ticket: Option<String>,
+}
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -198,8 +203,13 @@ pub async fn get_stream_url(
         return Ok(Json(serde_json::json!({ "url": playlist_url })));
     }
 
-    // Return the backend proxy URL so the browser never needs direct object storage access
-    let stream_url = format!("/api/v1/songs/{}/stream", id);
+    let ticket = crate::stream_ticket::generate_ticket(
+        &id.to_string(),
+        &claims.sub,
+        &state.signing_secret,
+        state.url_expiry_seconds,
+    );
+    let stream_url = format!("/api/v1/songs/{}/stream?ticket={}", id, ticket);
     Ok(Json(serde_json::json!({ "url": stream_url })))
 }
 
@@ -220,14 +230,24 @@ pub async fn get_artwork_url(
         return Ok(Json(serde_json::json!({ "url": null })));
     }
 
-    let artwork_url = format!("/api/v1/songs/{}/artwork", id);
+    let ticket = crate::stream_ticket::generate_ticket(
+        &id.to_string(),
+        &claims.sub,
+        &state.signing_secret,
+        state.url_expiry_seconds,
+    );
+    let artwork_url = format!("/api/v1/songs/{}/artwork?ticket={}", id, ticket);
     Ok(Json(serde_json::json!({ "url": artwork_url })))
 }
 
 pub async fn stream_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
+    Query(params): Query<TicketParams>,
 ) -> Result<impl IntoResponse, AppError> {
+    let ticket = params.ticket.ok_or(AppError::Unauthorized)?;
+    crate::stream_ticket::validate_ticket(&ticket, &id.to_string(), &state.signing_secret)?;
+
     let row = sqlx::query_as::<_, (String,)>("SELECT file_key FROM songs WHERE id = $1")
         .bind(id.to_string())
         .fetch_optional(&state.pool)
@@ -250,7 +270,11 @@ pub async fn stream_song(
 pub async fn get_artwork(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
+    Query(params): Query<TicketParams>,
 ) -> Result<axum::response::Response, AppError> {
+    let ticket = params.ticket.ok_or(AppError::Unauthorized)?;
+    crate::stream_ticket::validate_ticket(&ticket, &id.to_string(), &state.signing_secret)?;
+
     let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1")
         .bind(id.to_string())
         .fetch_optional(&state.pool)

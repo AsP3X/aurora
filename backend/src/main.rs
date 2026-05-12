@@ -21,6 +21,7 @@ mod search;
 mod setup;
 mod songs;
 mod storage;
+mod stream_ticket;
 
 use config::Config;
 use storage::{LocalStorage, Storage, nebula::NebulaStorage};
@@ -32,6 +33,7 @@ pub struct AppState {
     pub storage: Arc<dyn Storage>,
     pub staging_dir: PathBuf,
     pub jwt_secret: String,
+    pub signing_secret: String,
     pub url_expiry_seconds: u64,
     pub hls_key_store: crate::hls::key_store::KeyStore,
 }
@@ -128,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
         storage,
         staging_dir,
         jwt_secret: config.jwt_secret.clone(),
+        signing_secret: config.signing_secret.clone(),
         url_expiry_seconds: config.url_expiry_seconds,
         hls_key_store: crate::hls::key_store::KeyStore::new(pool_clone, config.master_secret.clone()),
     });

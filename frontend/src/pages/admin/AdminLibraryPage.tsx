@@ -4,7 +4,7 @@ import {
   deleteAdminSong,
   updateAdminSong,
   toggleAdminSongEnabled,
-  artworkUrl,
+  fetchArtworkUrl,
 } from "../../api/client";
 import ArtworkImage from "../../components/ArtworkImage";
 import ContextMenu from "../../components/ui/ContextMenu";
@@ -80,7 +80,7 @@ export default function AdminLibraryPage() {
     loadSongs(songQuery || undefined, songOffset);
   }, [songQuery, songOffset, loadSongs]);
 
-  function openEditDialog(song: Song) {
+  async function openEditDialog(song: Song) {
     setEditingSong(song);
     setEditForm({
       title: song.title,
@@ -92,10 +92,15 @@ export default function AdminLibraryPage() {
       genres: song.genres,
       studio: song.studio || "",
     });
-    setEditImageSrc(song.artwork_key ? artworkUrl(song.id) : null);
     setEditCroppedBlob(null);
     setEditArtworkChanged(false);
     setEditRemoveArtwork(false);
+    if (song.artwork_key) {
+      const url = await fetchArtworkUrl(song.id).catch(() => null);
+      setEditImageSrc(url);
+    } else {
+      setEditImageSrc(null);
+    }
   }
 
   async function handleSaveEdit() {
