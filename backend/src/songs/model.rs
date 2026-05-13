@@ -216,5 +216,33 @@ pub struct AdminListeningStats {
     pub total_plays: i64,
     pub active_users: i64,
     pub total_listening_seconds: i64,
-    pub avg_duration_seconds: f64,
+    pub avg_duration_seconds: f32,
+}
+
+/// Per-song aggregates for a single user (playback sessions joined to library metadata).
+#[derive(Debug, FromRow, Serialize)]
+pub struct UserSongListening {
+    pub song_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub artwork_key: Option<String>,
+    pub duration_seconds: i32,
+    pub play_count: i64,
+    pub total_listened_seconds: i64,
+}
+
+/// One playback row for analytics (per session listened seconds and timestamps).
+#[derive(Debug, FromRow, Serialize)]
+pub struct ListeningSessionEntry {
+    pub id: String,
+    pub song_id: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub duration_listened_seconds: Option<i32>,
+    pub completed: bool,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub song_duration_seconds: i32,
 }

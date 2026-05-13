@@ -37,17 +37,23 @@ export default function AdminOverviewPage() {
     avg_duration_seconds: number;
   } | null>(null);
   const [error, setError] = useState("");
+  const [listeningStatsError, setListeningStatsError] = useState("");
 
   const loadStats = useCallback(async () => {
     try {
-      const [data, lData] = await Promise.all([
-        fetchAdminStats(),
-        fetchAdminListeningStats().catch(() => null),
-      ]);
+      const data = await fetchAdminStats();
       setStats(data);
-      setListeningStats(lData);
+      setError("");
     } catch (e: any) {
       setError(e.message || "Failed to load stats");
+    }
+    try {
+      const lData = await fetchAdminListeningStats();
+      setListeningStats(lData);
+      setListeningStatsError("");
+    } catch (e: any) {
+      setListeningStats(null);
+      setListeningStatsError(e.message || "Failed to load listening stats");
     }
   }, []);
 
@@ -59,9 +65,10 @@ export default function AdminOverviewPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Overview</h1>
-        {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            {error}
+        {(error || listeningStatsError) && (
+          <div className="flex flex-col gap-2 items-end text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error && <span>{error}</span>}
+            {listeningStatsError && <span>{listeningStatsError}</span>}
           </div>
         )}
       </div>

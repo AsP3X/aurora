@@ -16,6 +16,7 @@ import AdminLayout from "./components/admin/AdminLayout";
 import RequireAdmin from "./components/admin/RequireAdmin";
 import AdminOverviewPage from "./pages/admin/AdminOverviewPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminUserListeningPage from "./pages/admin/AdminUserListeningPage";
 import AdminGroupsPage from "./pages/admin/AdminGroupsPage";
 import AdminLibraryPage from "./pages/admin/AdminLibraryPage";
 import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
@@ -276,6 +277,7 @@ function AppRoutes() {
         }>
           <Route index element={<AdminOverviewPage />} />
           <Route path="users" element={<AdminUsersPage />} />
+          <Route path="listening" element={<AdminUserListeningPage />} />
           <Route path="groups" element={<AdminGroupsPage />} />
           <Route path="library" element={<AdminLibraryPage />} />
           <Route path="playlists" element={<AdminPlaylistsPage />} />

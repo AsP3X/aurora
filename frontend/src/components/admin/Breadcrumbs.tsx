@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 const labelMap: Record<string, string> = {
   "/admin": "Overview",
   "/admin/users": "Users",
+  "/admin/listening": "User listening",
   "/admin/groups": "Groups",
   "/admin/library": "Library",
   "/admin/playlists": "Playlists",
