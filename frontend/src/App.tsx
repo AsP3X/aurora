@@ -11,6 +11,7 @@ import Player from "./pages/Player";
 import Playlists from "./pages/Playlists";
 import PlaylistDetail from "./pages/PlaylistDetail";
 import SongDetail from "./pages/SongDetail";
+import StatsPage from "./pages/StatsPage";
 import AdminLayout from "./components/admin/AdminLayout";
 import RequireAdmin from "./components/admin/RequireAdmin";
 import AdminOverviewPage from "./pages/admin/AdminOverviewPage";
@@ -97,6 +98,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                 <nav className="hidden sm:flex items-center gap-1">
                   <NavLink to="/">Library</NavLink>
                   <NavLink to="/playlists">Playlists</NavLink>
+                  {can("stats.view") && <NavLink to="/stats">Stats</NavLink>}
                   {can("admin.access") && <NavLink to="/admin">Admin</NavLink>}
                 </nav>
               </div>
@@ -120,6 +122,9 @@ function Layout({ children }: { children: React.ReactNode }) {
               <div className="px-4 py-3 space-y-1">
                 <MobileNavLink to="/" onClick={() => setMobileMenuOpen(false)}>Library</MobileNavLink>
                 <MobileNavLink to="/playlists" onClick={() => setMobileMenuOpen(false)}>Playlists</MobileNavLink>
+                {can("stats.view") && (
+                  <MobileNavLink to="/stats" onClick={() => setMobileMenuOpen(false)}>Stats</MobileNavLink>
+                )}
                 {can("admin.access") && (
                   <MobileNavLink to="/admin" onClick={() => setMobileMenuOpen(false)}>Admin</MobileNavLink>
                 )}
@@ -259,6 +264,7 @@ function AppRoutes() {
         <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
         <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
         <Route path="/song/:id" element={<SetupGuard><RequireAuth><SongDetail /></RequireAuth></SetupGuard>} />
+        <Route path="/stats" element={<SetupGuard><RequireAuth><StatsPage /></RequireAuth></SetupGuard>} />
         <Route path="/admin/*" element={
           <SetupGuard>
             <RequireAuthNoLayout>

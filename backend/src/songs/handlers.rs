@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     error::AppError,
-    permissions::require_permission,
+    permissions::{require_admin_access, require_permission},
     AppState,
 };
 
@@ -311,40 +311,228 @@ pub async fn log_history(
     Json(body): Json<LogHistoryBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let history_id = Uuid::new_v4().to_string();
+    let started_at = chrono::Utc::now().to_rfc3339();
     sqlx::query(
-        "INSERT INTO playback_history (id, user_id, song_id, duration_listened_seconds, completed) VALUES ($1, $2, $3, $4, $5)"
+        "INSERT INTO playback_history (id, user_id, song_id, started_at, duration_listened_seconds, completed) VALUES ($1, $2, $3, $4, $5, $6)"
     )
-    .bind(history_id)
-    .bind(claims.sub.clone())
-    .bind(body.song_id)
+    .bind(&history_id)
+    .bind(&claims.sub)
+    .bind(&body.song_id)
+    .bind(&started_at)
     .bind(body.duration_listened_seconds)
     .bind(body.completed)
     .execute(&state.pool)
     .await?;
 
+    Ok(Json(serde_json::json!({"id": history_id})))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateHistoryBody {
+    pub duration_listened_seconds: i32,
+    pub completed: bool,
+}
+
+pub async fn update_history(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateHistoryBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ended_at = chrono::Utc::now().to_rfc3339();
+    let result = sqlx::query(
+        "UPDATE playback_history SET duration_listened_seconds = $1, completed = $2, ended_at = $3, updated_at = $3 WHERE id = $4 AND user_id = $5"
+    )
+    .bind(body.duration_listened_seconds)
+    .bind(body.completed)
+    .bind(&ended_at)
+    .bind(&id)
+    .bind(&claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+
     Ok(Json(serde_json::json!({"ok": true})))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryListParams {
+    #[serde(default = "default_history_limit")]
+    pub limit: i64,
+}
+
+fn default_history_limit() -> i64 { 20 }
 
 pub async fn list_history(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<HistoryListParams>,
 ) -> Result<Json<Vec<super::model::HistoryEntry>>, AppError> {
     require_permission(&state.pool, &claims.sub, "history.view").await?;
 
     let entries = sqlx::query_as::<_, super::model::HistoryEntry>(
-        "SELECT h.id, h.user_id, h.song_id, h.started_at, h.duration_listened_seconds, h.completed,
+        "SELECT h.id, h.user_id, h.song_id, h.started_at, h.ended_at, h.duration_listened_seconds, h.completed,
                 s.title, s.artist, s.album, s.artwork_key, s.duration_seconds
          FROM playback_history h
          JOIN songs s ON h.song_id = s.id
          WHERE h.user_id = $1
+           AND (h.duration_listened_seconds > 0 OR h.completed = true)
          ORDER BY h.started_at DESC
-         LIMIT 20"
+         LIMIT $2"
     )
     .bind(&claims.sub)
+    .bind(params.limit)
     .fetch_all(&state.pool)
     .await?;
 
     Ok(Json(entries))
+}
+
+fn period_clause(dialect: &super::date_dialect::Dialect, period: &str) -> Option<String> {
+    match period {
+        "today" => Some(dialect.date_eq_today.to_string()),
+        "week" => Some(dialect.date_gte_week_ago.to_string()),
+        "month" => Some(dialect.date_gte_month_start.to_string()),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListeningTimeParams {
+    #[serde(default = "default_period")]
+    pub period: String,
+}
+
+fn default_period() -> String { "all".to_string() }
+
+pub async fn get_listening_time(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ListeningTimeParams>,
+) -> Result<Json<super::model::ListeningTimeResult>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let dialect = super::date_dialect::get(&state.pool).await;
+    let mut sql = "SELECT COALESCE(SUM(duration_listened_seconds), 0) as total_seconds FROM playback_history WHERE user_id = $1 AND duration_listened_seconds > 0".to_string();
+    if let Some(clause) = period_clause(&dialect, &params.period) {
+        sql.push_str(" AND ");
+        sql.push_str(&clause);
+    }
+    let row: super::model::ListeningTimeResult = sqlx::query_as(&sql)
+        .bind(&claims.sub)
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(Json(row))
+}
+
+pub async fn get_listening_habits(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let dialect = super::date_dialect::get(&state.pool).await;
+
+    let hour_sql = format!(
+        "SELECT {} as hour, COALESCE(SUM(duration_listened_seconds), 0) as total_seconds
+         FROM playback_history
+         WHERE user_id = $1 AND duration_listened_seconds > 0
+         GROUP BY {}
+         ORDER BY {}",
+        dialect.hour_extract, dialect.hour_extract, dialect.hour_extract
+    );
+    let peak_hours: Vec<super::model::HourBucket> = sqlx::query_as(&hour_sql)
+        .bind(&claims.sub)
+        .fetch_all(&state.pool)
+        .await?;
+
+    let dow_sql = format!(
+        "SELECT {} as day, COALESCE(SUM(duration_listened_seconds), 0) as total_seconds
+         FROM playback_history
+         WHERE user_id = $1 AND duration_listened_seconds > 0
+         GROUP BY {}
+         ORDER BY {}",
+        dialect.dow_extract, dialect.dow_extract, dialect.dow_extract
+    );
+    let day_of_week: Vec<super::model::DayBucket> = sqlx::query_as(&dow_sql)
+        .bind(&claims.sub)
+        .fetch_all(&state.pool)
+        .await?;
+
+    Ok(Json(serde_json::json!({
+        "peak_hours": peak_hours,
+        "day_of_week": day_of_week,
+    })))
+}
+
+pub async fn get_top_artists(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ListeningTimeParams>,
+) -> Result<Json<Vec<super::model::TopArtist>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let dialect = super::date_dialect::get(&state.pool).await;
+    let mut sql = "SELECT s.artist, COALESCE(SUM(h.duration_listened_seconds), 0) as total_seconds, COUNT(*) as play_count
+                   FROM playback_history h
+                   JOIN songs s ON h.song_id = s.id
+                   WHERE h.user_id = $1 AND h.duration_listened_seconds > 0".to_string();
+    if let Some(clause) = period_clause(&dialect, &params.period) {
+        sql.push_str(" AND ");
+        sql.push_str(&clause);
+    }
+    sql.push_str(" GROUP BY s.artist ORDER BY total_seconds DESC LIMIT 20");
+
+    let rows: Vec<super::model::TopArtist> = sqlx::query_as(&sql)
+        .bind(&claims.sub)
+        .fetch_all(&state.pool)
+        .await?;
+    Ok(Json(rows))
+}
+
+pub async fn get_top_albums(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ListeningTimeParams>,
+) -> Result<Json<Vec<super::model::TopAlbum>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let dialect = super::date_dialect::get(&state.pool).await;
+    let mut sql = "SELECT s.album, s.album_artist, COALESCE(SUM(h.duration_listened_seconds), 0) as total_seconds, COUNT(*) as play_count
+                   FROM playback_history h
+                   JOIN songs s ON h.song_id = s.id
+                   WHERE h.user_id = $1 AND h.duration_listened_seconds > 0 AND s.album IS NOT NULL".to_string();
+    if let Some(clause) = period_clause(&dialect, &params.period) {
+        sql.push_str(" AND ");
+        sql.push_str(&clause);
+    }
+    sql.push_str(" GROUP BY s.album, s.album_artist ORDER BY total_seconds DESC LIMIT 20");
+
+    let rows: Vec<super::model::TopAlbum> = sqlx::query_as(&sql)
+        .bind(&claims.sub)
+        .fetch_all(&state.pool)
+        .await?;
+    Ok(Json(rows))
+}
+
+pub async fn get_admin_listening_stats(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+) -> Result<Json<super::model::AdminListeningStats>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    let row: super::model::AdminListeningStats = sqlx::query_as(
+        "SELECT
+            COUNT(*) as total_plays,
+            COUNT(DISTINCT user_id) as active_users,
+            COALESCE(SUM(duration_listened_seconds), 0) as total_listening_seconds,
+            COALESCE(AVG(duration_listened_seconds), 0.0) as avg_duration_seconds
+         FROM playback_history
+         WHERE duration_listened_seconds > 0"
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(row))
 }
 
 pub async fn get_stats(
@@ -375,7 +563,7 @@ pub async fn get_play_count(
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
     let row = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM playback_history WHERE user_id = $1 AND song_id = $2 AND completed = 1"
+        "SELECT COUNT(*) FROM playback_history WHERE user_id = $1 AND song_id = $2 AND completed IS TRUE"
     )
     .bind(&claims.sub)
     .bind(id.to_string())
@@ -399,7 +587,7 @@ pub async fn get_top_plays(
                 COUNT(*) as play_count, MAX(h.started_at) as last_played_at
          FROM playback_history h
          JOIN songs s ON h.song_id = s.id
-         WHERE h.user_id = $1 AND h.completed = 1
+         WHERE h.user_id = $1 AND h.completed IS TRUE
          GROUP BY h.song_id, s.title, s.artist, s.album, s.artwork_key, s.duration_seconds
          ORDER BY play_count DESC, last_played_at DESC
          LIMIT 20"

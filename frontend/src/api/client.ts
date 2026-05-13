@@ -188,15 +188,23 @@ export async function logHistory(songId: string, duration?: number, completed = 
   return apiFetch("/history", {
     method: "POST",
     body: JSON.stringify({ song_id: songId, duration_listened_seconds: duration, completed }),
+  }) as Promise<{ id: string }>;
+}
+
+export async function updateHistory(id: string, duration: number, completed = false) {
+  return apiFetch(`/history/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ duration_listened_seconds: Math.round(duration), completed }),
   });
 }
 
-export async function fetchHistory() {
-  return apiFetch("/history") as Promise<Array<{
+export async function fetchHistory(limit = 20) {
+  return apiFetch(`/history?limit=${limit}`) as Promise<Array<{
     id: string;
     user_id: string;
     song_id: string;
     started_at: string;
+    ended_at: string | null;
     duration_listened_seconds: number | null;
     completed: number;
     title: string;
@@ -230,6 +238,43 @@ export async function fetchStats() {
     total_artists: number;
     total_albums: number;
     total_duration_seconds: number;
+  }>;
+}
+
+export async function fetchListeningTime(period: "today" | "week" | "month" | "all") {
+  return apiFetch(`/me/listening-time?period=${period}`) as Promise<{ total_seconds: number }>;
+}
+
+export async function fetchListeningHabits() {
+  return apiFetch("/me/listening-habits") as Promise<{
+    peak_hours: Array<{ hour: number; total_seconds: number }>;
+    day_of_week: Array<{ day: number; total_seconds: number }>;
+  }>;
+}
+
+export async function fetchTopArtists(period: "today" | "week" | "month" | "all" = "all") {
+  return apiFetch(`/me/top-artists?period=${period}`) as Promise<Array<{
+    artist: string;
+    total_seconds: number;
+    play_count: number;
+  }>>;
+}
+
+export async function fetchTopAlbums(period: "today" | "week" | "month" | "all" = "all") {
+  return apiFetch(`/me/top-albums?period=${period}`) as Promise<Array<{
+    album: string;
+    album_artist: string | null;
+    total_seconds: number;
+    play_count: number;
+  }>>;
+}
+
+export async function fetchAdminListeningStats() {
+  return apiFetch("/admin/listening-stats") as Promise<{
+    total_plays: number;
+    active_users: number;
+    total_listening_seconds: number;
+    avg_duration_seconds: number;
   }>;
 }
 
