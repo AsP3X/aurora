@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
-import { fetchSong } from "../api/client";
+import { fetchSong, fetchPlayCount } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 import AddToPlaylist from "../components/AddToPlaylist";
 import type { Song } from "../types";
@@ -35,16 +35,21 @@ export default function SongDetail() {
   const navigate = useNavigate();
   const { playSong } = usePlayer();
   const [song, setSong] = useState<Song | null>(null);
+  const [playCount, setPlayCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetchSong(id)
-      .then((data) => {
+    Promise.all([
+      fetchSong(id),
+      fetchPlayCount(id).catch(() => ({ play_count: 0 })),
+    ])
+      .then(([data, countData]) => {
         if (!cancelled) {
           setSong(data);
+          setPlayCount(countData.play_count);
           setLoading(false);
         }
       })
@@ -278,6 +283,12 @@ export default function SongDetail() {
               <p className="text-surface-500 text-xs uppercase tracking-wider mb-1">File Size</p>
               <p className="text-white font-medium">{formatFileSize(song.file_size_bytes)}</p>
             </div>
+            {playCount != null && (
+              <div className="bg-surface-900 border border-white/5 rounded-xl p-3">
+                <p className="text-surface-500 text-xs uppercase tracking-wider mb-1">Plays</p>
+                <p className="text-white font-medium">{playCount}</p>
+              </div>
+            )}
             {song.track_number != null && (
               <div className="bg-surface-900 border border-white/5 rounded-xl p-3">
                 <p className="text-surface-500 text-xs uppercase tracking-wider mb-1">Track Number</p>

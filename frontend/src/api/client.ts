@@ -207,6 +207,23 @@ export async function fetchHistory() {
   }>>;
 }
 
+export async function fetchPlayCount(id: string) {
+  return apiFetch(`/songs/${id}/play-count`) as Promise<{ song_id: string; play_count: number }>;
+}
+
+export async function fetchTopPlays() {
+  return apiFetch("/me/top-plays") as Promise<Array<{
+    song_id: string;
+    title: string;
+    artist: string;
+    album: string | null;
+    artwork_key: string | null;
+    duration_seconds: number;
+    play_count: number;
+    last_played_at: string | null;
+  }>>;
+}
+
 export async function fetchStats() {
   return apiFetch("/stats") as Promise<{
     total_songs: number;

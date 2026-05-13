@@ -366,3 +366,47 @@ pub async fn get_stats(
 
     Ok(Json(row))
 }
+
+pub async fn get_play_count(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<super::model::PlayCount>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
+    let row = sqlx::query_as::<_, (i64,)>(
+        "SELECT COUNT(*) FROM playback_history WHERE user_id = $1 AND song_id = $2 AND completed = 1"
+    )
+    .bind(&claims.sub)
+    .bind(id.to_string())
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(super::model::PlayCount {
+        song_id: id.to_string(),
+        play_count: row.0,
+    }))
+}
+
+pub async fn get_top_plays(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+) -> Result<Json<Vec<super::model::TopPlay>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "history.view").await?;
+
+    let entries = sqlx::query_as::<_, super::model::TopPlay>(
+        "SELECT h.song_id, s.title, s.artist, s.album, s.artwork_key, s.duration_seconds,
+                COUNT(*) as play_count, MAX(h.started_at) as last_played_at
+         FROM playback_history h
+         JOIN songs s ON h.song_id = s.id
+         WHERE h.user_id = $1 AND h.completed = 1
+         GROUP BY h.song_id, s.title, s.artist, s.album, s.artwork_key, s.duration_seconds
+         ORDER BY play_count DESC, last_played_at DESC
+         LIMIT 20"
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(entries))
+}

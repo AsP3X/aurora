@@ -7,7 +7,7 @@ import {
   removeSongFromPlaylist,
   reorderPlaylistSongs,
   addSongToPlaylist,
-  fetchHistory,
+  fetchSongs,
 } from "../api/client";
 import { usePlayer } from "../context/PlayerContext";
 import DashboardLayout from "../components/DashboardLayout";
@@ -94,25 +94,19 @@ export default function PlaylistDetail() {
 
   const totalDuration = songs.reduce((sum, s) => sum + s.duration_seconds, 0);
 
-  /* Load listened songs when dialog opens */
+  /* Load library songs when dialog opens */
   useEffect(() => {
     if (!showAddDialog) return;
     setAddDialogLoading(true);
-    fetchHistory()
+    fetchSongs({ order_by: "title", limit: 10000 })
       .then((data) => {
-        const seen = new Set<string>();
-        const mapped: SongOption[] = [];
-        for (const entry of data) {
-          if (seen.has(entry.song_id)) continue;
-          seen.add(entry.song_id);
-          mapped.push({
-            id: entry.song_id,
-            title: entry.title,
-            artist: entry.artist,
-            album: entry.album,
-            duration_seconds: entry.duration_seconds,
-          });
-        }
+        const mapped: SongOption[] = data.map((s) => ({
+          id: s.id,
+          title: s.title,
+          artist: s.artist,
+          album: s.album,
+          duration_seconds: s.duration_seconds,
+        }));
         setLibrarySongs(mapped);
       })
       .catch(() => setLibrarySongs([]))
@@ -131,11 +125,12 @@ export default function PlaylistDetail() {
 
   const filteredOptions = useMemo(() => {
     const scored = librarySongs
+      .filter((s) => !existingIds.has(s.id))
       .map((s) => ({ song: s, score: fuzzyScore(addSearch, s) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score || a.song.title.localeCompare(b.song.title));
     return scored.map((x) => x.song);
-  }, [librarySongs, addSearch]);
+  }, [librarySongs, addSearch, existingIds]);
 
   function toggleSelection(songId: string) {
     setSelectedSongIds((prev) => {
@@ -150,10 +145,9 @@ export default function PlaylistDetail() {
   }
 
   function selectAllVisible() {
-    const visible = filteredOptions.filter((s) => !existingIds.has(s.id));
     setSelectedSongIds((prev) => {
       const next = new Set(prev);
-      for (const s of visible) next.add(s.id);
+      for (const s of filteredOptions) next.add(s.id);
       return next;
     });
   }
@@ -287,8 +281,8 @@ export default function PlaylistDetail() {
     );
   }
 
-  const addableCount = filteredOptions.filter((s) => !existingIds.has(s.id)).length;
-  const selectedAddableCount = Array.from(selectedSongIds).filter((sid) => !existingIds.has(sid)).length;
+  const addableCount = filteredOptions.length;
+  const selectedAddableCount = Array.from(selectedSongIds).filter((sid) => filteredOptions.some((s) => s.id === sid)).length;
 
   return (
     <DashboardLayout>
@@ -544,24 +538,16 @@ export default function PlaylistDetail() {
                 ) : (
                   <div className="divide-y divide-white/5">
                     {filteredOptions.map((song) => {
-                      const isExisting = existingIds.has(song.id);
                       const isSelected = selectedSongIds.has(song.id);
                       return (
                         <div
                           key={song.id}
-                          onClick={() => {
-                            if (!isExisting) toggleSelection(song.id);
-                          }}
-                          className={`flex items-center gap-3 px-5 py-3 transition-colors ${
-                            isExisting
-                              ? "opacity-40 cursor-not-allowed"
-                              : "hover:bg-white/5 cursor-pointer"
-                          }`}
+                          onClick={() => toggleSelection(song.id)}
+                          className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-white/5 cursor-pointer"
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            disabled={isExisting}
                             readOnly
                             className="w-4 h-4 rounded border-white/10 bg-surface-950 text-aurora-500 focus:ring-aurora-500/50 shrink-0 pointer-events-none"
                           />
@@ -574,12 +560,7 @@ export default function PlaylistDetail() {
                             />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`text-sm font-medium truncate ${isExisting ? "text-surface-500" : "text-white"}`}>
-                              {song.title}
-                              {isExisting && (
-                                <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-surface-600">Added</span>
-                              )}
-                            </p>
+                            <p className="text-sm font-medium truncate text-white">{song.title}</p>
                             <p className="text-xs text-surface-400 truncate">{song.artist}{song.album ? ` · ${song.album}` : ""}</p>
                           </div>
                           <div className="text-xs text-surface-500 font-mono shrink-0">
