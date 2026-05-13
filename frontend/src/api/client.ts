@@ -1,4 +1,4 @@
-import type { Song, Playlist } from "../types";
+import type { Song, SongDraft, Playlist } from "../types";
 
 function getApiBase(): string {
   if (import.meta.env.VITE_API_URL) {
@@ -478,4 +478,115 @@ export async function commitSong(draft: import("../types").SongDraft, artworkBlo
 
 export function stagedArtworkUrl(stagingId: string) {
   return `${API_BASE}/admin/songs/stage/${stagingId}/artwork`;
+}
+
+export function stageSongWithProgress(
+  file: File,
+  onProgress: (percent: number) => void
+): Promise<SongDraft> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("audio", file);
+
+    const token = getToken();
+    const url = `${API_BASE}/admin/songs/stage`;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        localStorage.removeItem("aurora_token");
+        window.location.href = "/login";
+        reject(new Error("Unauthorized"));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Invalid JSON response"));
+        }
+      } else {
+        let errBody: { error?: string } = {};
+        try {
+          errBody = JSON.parse(xhr.responseText);
+        } catch {
+          /* ignore parse error */
+        }
+        reject(new Error(errBody.error || `HTTP ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(form);
+  });
+}
+
+export function commitSongWithProgress(
+  draft: SongDraft,
+  artworkBlob: Blob | undefined,
+  onProgress: (percent: number) => void
+): Promise<Song> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append(
+      "metadata",
+      new Blob([JSON.stringify(draft)], { type: "application/json" })
+    );
+    if (artworkBlob) {
+      form.append("artwork", artworkBlob, "artwork.jpg");
+    }
+
+    const token = getToken();
+    const url = `${API_BASE}/admin/songs/commit`;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        localStorage.removeItem("aurora_token");
+        window.location.href = "/login";
+        reject(new Error("Unauthorized"));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Invalid JSON response"));
+        }
+      } else {
+        let errBody: { error?: string } = {};
+        try {
+          errBody = JSON.parse(xhr.responseText);
+        } catch {
+          /* ignore parse error */
+        }
+        reject(new Error(errBody.error || `HTTP ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(form);
+  });
 }
