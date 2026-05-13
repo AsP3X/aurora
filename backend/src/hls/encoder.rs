@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 pub struct HlsOutput {
@@ -16,6 +17,8 @@ impl HlsEncoder {
         input_path: &Path,
         output_dir: &Path,
         key: &[u8; 16],
+        duration_seconds: i32,
+        progress_tx: Option<tokio::sync::watch::Sender<i32>>,
     ) -> anyhow::Result<HlsOutput> {
         tokio::fs::create_dir_all(output_dir).await
             .context("creating HLS output directory")?;
@@ -45,7 +48,7 @@ impl HlsEncoder {
             .await
             .context("writing key info file")?;
 
-        let status = Command::new("ffmpeg")
+        let mut child = Command::new("ffmpeg")
             .args(&[
                 "-i", input_path.to_str().unwrap(),
                 "-c:a", "aac",
@@ -59,12 +62,34 @@ impl HlsEncoder {
                 playlist_path.to_str().unwrap(),
             ])
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()
-            .context("spawning ffmpeg")?
-            .wait()
-            .await
-            .context("waiting for ffmpeg")?;
+            .context("spawning ffmpeg")?;
+
+        // Spawn stderr parser to report encoding progress
+        let duration = duration_seconds as f64;
+        let progress_tx_clone = progress_tx.clone();
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
+            Some(tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(progress) = parse_ffmpeg_progress(&line, duration) {
+                        if let Some(ref tx) = progress_tx_clone {
+                            let _ = tx.send(progress);
+                        }
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        let status = child.wait().await.context("waiting for ffmpeg")?;
+
+        if let Some(handle) = stderr_handle {
+            let _ = handle.await;
+        }
 
         if !status.success() {
             bail!("ffmpeg exited with code: {:?}", status.code());
@@ -86,4 +111,31 @@ impl HlsEncoder {
             segment_count,
         })
     }
+}
+
+fn parse_ffmpeg_progress(line: &str, duration: f64) -> Option<i32> {
+    // ffmpeg stderr output includes lines like:
+    // size=    256kB time=00:00:15.23 bitrate= ...
+    // We look for "time=" followed by HH:MM:SS.xx or MM:SS.xx
+    let time_prefix = "time=";
+    let start = line.find(time_prefix)?;
+    let time_str = &line[start + time_prefix.len()..];
+    let end = time_str.find(' ').unwrap_or(time_str.len());
+    let time_val = &time_str[..end];
+
+    let parts: Vec<&str> = time_val.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let hours: f64 = parts[0].parse().ok()?;
+    let minutes: f64 = parts[1].parse().ok()?;
+    let seconds: f64 = parts[2].parse().ok()?;
+    let current = hours * 3600.0 + minutes * 60.0 + seconds;
+
+    if duration <= 0.0 {
+        return None;
+    }
+    let pct = ((current / duration) * 100.0).clamp(0.0, 100.0) as i32;
+    Some(pct)
 }

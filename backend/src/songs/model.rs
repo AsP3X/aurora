@@ -25,6 +25,7 @@ pub struct SongDb {
     pub hls_ready: Option<bool>,
     pub hls_key_id: Option<String>,
     pub segment_count: Option<i32>,
+    pub conversion_progress: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -50,6 +51,7 @@ pub struct Song {
     pub publisher_id: Option<String>,
     pub enabled: bool,
     pub hls_ready: bool,
+    pub conversion_progress: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -76,6 +78,7 @@ impl From<SongDb> for Song {
             publisher_id: db.publisher_id,
             enabled: db.enabled,
             hls_ready: db.hls_ready.unwrap_or(false),
+            conversion_progress: db.conversion_progress.unwrap_or(0),
             created_at: db.created_at,
             updated_at: db.updated_at,
         }
