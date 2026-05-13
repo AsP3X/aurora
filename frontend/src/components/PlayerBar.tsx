@@ -49,6 +49,14 @@ export default function PlayerBar() {
   } = usePlayer();
 
   const prevStreamUrl = useRef<string | null>(null);
+  const lastLoggedStart = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentSong && currentStreamUrl && currentSong.id !== lastLoggedStart.current) {
+      logHistory(currentSong.id, undefined, false).catch(() => {});
+      lastLoggedStart.current = currentSong.id;
+    }
+  }, [currentSong, currentStreamUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;

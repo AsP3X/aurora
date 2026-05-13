@@ -159,3 +159,21 @@ pub struct LibraryStats {
     pub total_albums: i64,
     pub total_duration_seconds: i64,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlayCount {
+    pub song_id: String,
+    pub play_count: i64,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct TopPlay {
+    pub song_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub artwork_key: Option<String>,
+    pub duration_seconds: i32,
+    pub play_count: i64,
+    pub last_played_at: Option<String>,
+}

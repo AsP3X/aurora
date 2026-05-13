@@ -5,6 +5,7 @@ import {
   fetchRecentSongs,
   fetchHistory,
   fetchStats,
+  fetchTopPlays,
 } from "../api/client";
 import SongCard from "../components/SongCard";
 import DashboardLayout from "../components/DashboardLayout";
@@ -57,6 +58,7 @@ export default function Library() {
   const [stats, setStats] = useState<{ total_songs: number; total_artists: number; total_albums: number; total_duration_seconds: number } | null>(null);
   const [recentSongs, setRecentSongs] = useState<Song[]>([]);
   const [history, setHistory] = useState<Array<{ id: string; song_id: string; title: string; artist: string; album: string | null; artwork_key: string | null; duration_seconds: number; started_at: string }> | null>(null);
+  const [topPlays, setTopPlays] = useState<Array<{ song_id: string; title: string; artist: string; album: string | null; artwork_key: string | null; duration_seconds: number; play_count: number; last_played_at: string | null }> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,11 +84,13 @@ export default function Library() {
       fetchStats().catch(() => null),
       fetchRecentSongs(12).catch(() => []),
       fetchHistory().catch(() => []),
-    ]).then(([statsData, recent, historyData]) => {
+      fetchTopPlays().catch(() => []),
+    ]).then(([statsData, recent, historyData, topPlaysData]) => {
       if (!mounted) return;
       setStats(statsData);
       setRecentSongs(recent);
       setHistory(historyData);
+      setTopPlays(topPlaysData);
       setLoading(false);
     });
 
@@ -253,6 +257,45 @@ export default function Library() {
                       {entry.title}
                     </p>
                     <p className="text-xs text-surface-400 truncate">{entry.artist}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Most Played */}
+        {!isSearching && topPlays && topPlays.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Most Played</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {topPlays.slice(0, 6).map((entry) => (
+                <Link
+                  key={entry.song_id}
+                  to={`/player/${entry.song_id}`}
+                  className="group block space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200"
+                >
+                  <div className="relative aspect-square bg-surface-900 border border-white/5 rounded-xl overflow-hidden shadow-sm">
+                    <ArtworkImage
+                      songId={entry.song_id}
+                      title={entry.title}
+                      artist={entry.artist || undefined}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="w-10 h-10 rounded-full bg-aurora-600/90 backdrop-blur-sm flex items-center justify-center shadow-lg">
+                        <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-1">
+                    <p className="text-sm font-medium text-white truncate group-hover:text-aurora-300 transition-colors">
+                      {entry.title}
+                    </p>
+                    <p className="text-xs text-surface-400 truncate">{entry.artist}</p>
+                    <p className="text-[11px] text-surface-500 truncate">{entry.play_count} play{entry.play_count > 1 ? "s" : ""}</p>
                   </div>
                 </Link>
               ))}
