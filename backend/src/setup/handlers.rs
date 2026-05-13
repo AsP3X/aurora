@@ -64,7 +64,7 @@ pub async fn setup(
 
     // Create admin user
     sqlx::query(
-        "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, 'admin')",
+        "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'admin', true)",
     )
     .bind(&user_id)
     .bind(&body.email)
@@ -105,6 +105,12 @@ pub async fn setup(
         .execute(&mut *tx)
         .await?;
 
+    sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
+        .bind("require_account_activation")
+        .bind("false")
+        .execute(&mut *tx)
+        .await?;
+
     if let Some(dir) = &body.music_dir {
         sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
             .bind("music_dir")
@@ -126,6 +132,7 @@ pub async fn setup(
             id: user_id,
             email: body.email,
             role: "admin".into(),
+            enabled: true,
             permissions,
         },
     }))

@@ -151,6 +151,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))
         .route("/api/v1/auth/oauth/{provider}", get(auth::handlers::oauth_placeholder))
+        .route("/api/v1/settings/registration", get(admin::handlers::get_public_registration_setting))
         // Fallback direct stream for songs not yet transcoded to HLS
         .route("/api/v1/songs/{id}/stream", get(songs::handlers::stream_song))
         .route("/api/v1/songs/{id}/artwork", get(songs::handlers::get_artwork));
@@ -196,6 +197,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/users/{id}/permissions/{key}", axum::routing::delete(permissions::handlers::revoke_user_permission))
         .route("/api/v1/admin/users/{id}/effective-permissions", get(permissions::handlers::get_user_effective_permissions))
         .route("/api/v1/admin/users/{id}/role", axum::routing::put(admin::handlers::update_user_role))
+        .route("/api/v1/admin/users/{id}/enabled", axum::routing::put(permissions::handlers::update_user_enabled))
         .route("/api/v1/admin/users/{id}", axum::routing::delete(admin::handlers::delete_user))
         .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song).put(admin::handlers::update_song))
@@ -204,7 +206,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/playlists", get(admin::handlers::list_all_playlists))
         .route("/api/v1/admin/playlists/{id}", axum::routing::delete(admin::handlers::delete_playlist))
         .route("/api/v1/admin/stats", get(admin::handlers::get_admin_stats))
-        .route("/api/v1/admin/settings", get(admin::handlers::list_settings).put(admin::handlers::update_setting))
+        .route("/api/v1/admin/settings", get(admin::handlers::list_settings))
+        .route("/api/v1/admin/settings/{key}", axum::routing::put(admin::handlers::update_setting))
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 
     let upload_routes = Router::new()

@@ -16,6 +16,10 @@ export default function AdminSettingsPage() {
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [adding, setAdding] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -47,15 +51,42 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function handleAdd() {
+    if (!newKey.trim()) return;
+    setSaving(true);
+    try {
+      await updateAdminSetting(newKey.trim(), newValue);
+      setSettings((prev) => [
+        ...prev,
+        { key: newKey.trim(), value: newValue, updated_at: new Date().toISOString() },
+      ]);
+      setAdding(false);
+      setNewKey("");
+      setNewValue("");
+    } catch (e: any) {
+      setError(e.message || "Failed to add setting");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            {error}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {error && (
+            <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+          <button
+            onClick={() => setAdding(true)}
+            className="text-sm text-aurora-400 hover:text-aurora-300 px-3 py-1.5 rounded-lg hover:bg-aurora-500/10 transition-colors border border-aurora-500/20"
+          >
+            Add Setting
+          </button>
+        </div>
       </div>
 
       <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
@@ -69,6 +100,45 @@ export default function AdminSettingsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
+            {adding && (
+              <tr className="bg-aurora-500/5">
+                <td className="px-4 py-3">
+                  <input
+                    autoFocus
+                    placeholder="key"
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+                    className="w-full px-2 py-1 bg-surface-950 border border-white/10 rounded text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <input
+                    placeholder="value"
+                    value={newValue}
+                    onChange={(e) => setNewValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+                    className="w-full px-2 py-1 bg-surface-950 border border-white/10 rounded text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+                  />
+                </td>
+                <td className="px-4 py-3 text-surface-400 text-xs">—</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={handleAdd}
+                    disabled={saving || !newKey.trim()}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => { setAdding(false); setNewKey(""); setNewValue(""); }}
+                    className="text-xs text-surface-400 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors ml-2"
+                  >
+                    Cancel
+                  </button>
+                </td>
+              </tr>
+            )}
             {loading ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-surface-500">

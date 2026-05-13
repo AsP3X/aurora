@@ -376,14 +376,40 @@ pub async fn list_users(
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
-    let users = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, email, role FROM users ORDER BY created_at DESC",
+    let users = sqlx::query_as::<_, (String, String, String, bool)>(
+        "SELECT id, email, role, enabled FROM users ORDER BY created_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
     let result: Vec<serde_json::Value> = users
         .into_iter()
-        .map(|(id, email, role)| serde_json::json!({"id": id, "email": email, "role": role}))
+        .map(|(id, email, role, enabled)| serde_json::json!({"id": id, "email": email, "role": role, "enabled": enabled}))
         .collect();
     Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEnabled {
+    pub enabled: bool,
+}
+
+pub async fn update_user_enabled(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(user_id): Path<String>,
+    Json(body): Json<UpdateEnabled>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+
+    if claims.sub == user_id {
+        return Err(AppError::BadRequest("cannot change your own enabled status".into()));
+    }
+
+    sqlx::query("UPDATE users SET enabled = $1 WHERE id = $2")
+        .bind(body.enabled)
+        .bind(&user_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
 }

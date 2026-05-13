@@ -38,6 +38,7 @@ pub struct UserDto {
     pub id: String,
     pub email: String,
     pub role: String,
+    pub enabled: bool,
     pub permissions: Vec<String>,
 }
 
@@ -105,17 +106,26 @@ pub async fn register(
         }
     }
 
+    let require_activation: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM app_settings WHERE key = 'require_account_activation'"
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let enabled = !require_activation.map(|(v,)| v == "true").unwrap_or(false);
+
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
     let user_id = Uuid::new_v4().to_string();
 
     let mut tx = state.pool.begin().await?;
 
     let result = sqlx::query_as::<_, (String,)>(
-        "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, 'listener') RETURNING id",
+        "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'listener', $4) RETURNING id",
     )
     .bind(&user_id)
     .bind(&body.email)
     .bind(&password_hash)
+    .bind(enabled)
     .fetch_one(&mut *tx)
     .await;
 
@@ -151,6 +161,7 @@ pub async fn register(
                     id: user_id,
                     email: body.email,
                     role: "listener".into(),
+                    enabled,
                     permissions,
                 },
             }))
@@ -172,20 +183,25 @@ pub async fn login(
 ) -> Result<Json<AuthResponse>, AppError> {
     info!(email = %body.email, "login attempt");
 
-    let row = sqlx::query_as::<_, (String, String, String, String)>(
-        "SELECT id, email, password_hash, role FROM users WHERE email = $1"
+    let row = sqlx::query_as::<_, (String, String, String, String, bool)>(
+        "SELECT id, email, password_hash, role, enabled FROM users WHERE email = $1"
     )
     .bind(&body.email)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (id, email, hash, role) = row.ok_or(AppError::Unauthorized)?;
+    let (id, email, hash, role, enabled) = row.ok_or(AppError::Unauthorized)?;
     let valid = verify_password(&body.password, &hash)
         .map_err(|_| AppError::Unauthorized)?;
 
     if !valid {
         warn!(email = %body.email, "login failed: invalid password");
         return Err(AppError::Unauthorized);
+    }
+
+    if !enabled {
+        warn!(email = %body.email, "login failed: account disabled");
+        return Err(AppError::Forbidden("account is disabled".into()));
     }
 
     info!(user_id = %id, email = %email, role = %role, "login success");
@@ -201,6 +217,7 @@ pub async fn login(
             id,
             email,
             role,
+            enabled,
             permissions,
         },
     }))
@@ -210,14 +227,14 @@ pub async fn me(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<Claims>,
 ) -> Result<Json<UserDto>, AppError> {
-    let row = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, email, role FROM users WHERE id = $1"
+    let row = sqlx::query_as::<_, (String, String, String, bool)>(
+        "SELECT id, email, role, enabled FROM users WHERE id = $1"
     )
     .bind(&claims.sub)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (id, email, role) = row.ok_or(AppError::NotFound)?;
+    let (id, email, role, enabled) = row.ok_or(AppError::NotFound)?;
 
     let permissions = get_user_permission_keys(&state.pool, &id).await;
 
@@ -227,6 +244,7 @@ pub async fn me(
         id,
         email,
         role,
+        enabled,
         permissions,
     }))
 }
