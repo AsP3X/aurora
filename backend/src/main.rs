@@ -204,6 +204,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .put(permissions::handlers::replace_user_permissions))
         .route("/api/v1/admin/users/{id}/permissions/{key}", axum::routing::delete(permissions::handlers::revoke_user_permission))
         .route("/api/v1/admin/users/{id}/effective-permissions", get(permissions::handlers::get_user_effective_permissions))
+        .route("/api/v1/admin/listening-by-song", get(songs::handlers::get_admin_listening_by_song_multi))
+        .route("/api/v1/admin/listening-sessions", get(songs::handlers::get_admin_listening_sessions_multi))
         .route("/api/v1/admin/users/{id}/listening-by-song", get(songs::handlers::get_admin_user_listening_by_song))
         .route("/api/v1/admin/users/{id}/listening-sessions", get(songs::handlers::get_admin_user_listening_sessions))
         .route("/api/v1/admin/users/{id}/role", axum::routing::put(admin::handlers::update_user_role))

@@ -1,7 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { fetchUsers, fetchAdminUserListeningBySong, fetchAdminUserListeningSessions, type UserSongListeningRow, type ListeningSessionRow } from "../../api/client";
+import {
+  fetchUsers,
+  fetchAdminListeningBySong,
+  fetchAdminListeningSessions,
+  type UserSongListeningRow,
+  type ListeningSessionRow,
+} from "../../api/client";
 import ArtworkImage from "../../components/ArtworkImage";
+import UserPickerDialog from "../../components/admin/UserPickerDialog";
 
 type Period = "today" | "week" | "month" | "all";
 
@@ -43,7 +50,8 @@ export default function AdminUserListeningPage() {
 
   const [users, setUsers] = useState<Array<{ id: string; email: string; role: string; enabled: boolean }>>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [selectedUserId, setSelectedUserId] = useState("");
+  const [multiUser, setMultiUser] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [period, setPeriod] = useState<Period>("all");
   const [rows, setRows] = useState<UserSongListeningRow[] | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
@@ -52,12 +60,39 @@ export default function AdminUserListeningPage() {
   const [expandedSongId, setExpandedSongId] = useState<string | null>(null);
   const [sessionsBySong, setSessionsBySong] = useState<Record<string, ListeningSessionRow[]>>({});
   const [sessionsLoadingId, setSessionsLoadingId] = useState<string | null>(null);
+  const [userPickerOpen, setUserPickerOpen] = useState(false);
+
+  const selectionKey = selectedUserIds.join(",");
+
+  const syncUrl = useCallback(
+    (ids: string[], multi: boolean) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.delete("user");
+          if (ids.length === 0) {
+            p.delete("users");
+            p.delete("multi");
+            return p;
+          }
+          p.set("users", ids.join(","));
+          if (multi && ids.length === 1) p.set("multi", "1");
+          else p.delete("multi");
+          return p;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
 
   useEffect(() => {
-    setExpandedSongId(null);
-    setSessionsBySong({});
-    setSessionsLoadingId(null);
-  }, [selectedUserId, period]);
+    queueMicrotask(() => {
+      setExpandedSongId(null);
+      setSessionsBySong({});
+      setSessionsLoadingId(null);
+    });
+  }, [selectionKey, period]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,18 +115,35 @@ export default function AdminUserListeningPage() {
 
   useEffect(() => {
     if (users.length === 0) return;
-    const param = searchParams.get("user");
-    const valid = param && users.some((u) => u.id === param);
-    const next = valid ? param! : users[0].id;
-    setSelectedUserId((prev) => (prev === next ? prev : next));
-    if (param && !valid) {
-      setSearchParams({ user: next }, { replace: true });
-    }
-  }, [users, searchParams, setSearchParams]);
+
+    const rawUsers = searchParams.get("users");
+    const legacyUser = searchParams.get("user");
+    const raw = rawUsers ?? legacyUser ?? "";
+    const parsed = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((id) => users.some((u) => u.id === id));
+
+    const nextIds = parsed.length > 0 ? parsed : [users[0].id];
+    const nextMulti = nextIds.length > 1 || searchParams.get("multi") === "1";
+
+    queueMicrotask(() => {
+      setSelectedUserIds((prev) =>
+        prev.length === nextIds.length && prev.every((id, i) => id === nextIds[i]) ? prev : nextIds
+      );
+      setMultiUser((m) => (m === nextMulti ? m : nextMulti));
+
+      if (legacyUser && !rawUsers) {
+        syncUrl(nextIds, nextMulti);
+      } else if (!rawUsers && !legacyUser && nextIds.length > 0) {
+        syncUrl(nextIds, nextMulti);
+      }
+    });
+  }, [users, searchParams, syncUrl]);
 
   useEffect(() => {
-    if (!selectedUserId) {
-      setRows(null);
+    if (selectedUserIds.length === 0) {
+      queueMicrotask(() => setRows(null));
       return;
     }
 
@@ -100,7 +152,7 @@ export default function AdminUserListeningPage() {
     void (async () => {
       setTableLoading(true);
       try {
-        const data = await fetchAdminUserListeningBySong(selectedUserId, period);
+        const data = await fetchAdminListeningBySong(selectedUserIds, period);
         if (!cancelled) {
           setRows(data);
           setError("");
@@ -118,12 +170,31 @@ export default function AdminUserListeningPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedUserId, period]);
+  }, [selectedUserIds, period]);
 
-  function handleUserChange(id: string) {
-    setSelectedUserId(id);
-    if (id) setSearchParams({ user: id }, { replace: true });
-    else setSearchParams({}, { replace: true });
+  function handleSingleUser(id: string) {
+    setSelectedUserIds([id]);
+    syncUrl([id], false);
+  }
+
+  function handleMultiConfirm(ids: string[]) {
+    if (ids.length === 0) return;
+    setSelectedUserIds(ids);
+    syncUrl(ids, true);
+  }
+
+  function setMultiMode(on: boolean) {
+    if (on) {
+      setMultiUser(true);
+      if (selectedUserIds.length > 0) syncUrl(selectedUserIds, true);
+      return;
+    }
+    setMultiUser(false);
+    const one = selectedUserIds[0];
+    if (one) {
+      setSelectedUserIds([one]);
+      syncUrl([one], false);
+    }
   }
 
   async function toggleSongSessions(songId: string) {
@@ -132,10 +203,10 @@ export default function AdminUserListeningPage() {
       return;
     }
     setExpandedSongId(songId);
-    if (sessionsBySong[songId] || !selectedUserId) return;
+    if (sessionsBySong[songId] || selectedUserIds.length === 0) return;
     setSessionsLoadingId(songId);
     try {
-      const data = await fetchAdminUserListeningSessions(selectedUserId, period, 500, songId);
+      const data = await fetchAdminListeningSessions(selectedUserIds, period, 500, songId);
       setSessionsBySong((prev) => ({ ...prev, [songId]: data }));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load play sessions");
@@ -145,7 +216,29 @@ export default function AdminUserListeningPage() {
     }
   }
 
-  const selectedEmail = users.find((u) => u.id === selectedUserId)?.email;
+  const userById = useMemo(() => new Map(users.map((u) => [u.id, u.email])), [users]);
+
+  const pickerButtonLabel = useMemo(() => {
+    if (usersLoading) return "Loading users…";
+    if (users.length === 0) return "No users";
+    if (selectedUserIds.length === 0) return "Select user";
+    if (selectedUserIds.length === 1) return userById.get(selectedUserIds[0]) ?? "Select user";
+    return `${selectedUserIds.length} users`;
+  }, [usersLoading, users.length, selectedUserIds, userById]);
+
+  const summaryLine = useMemo(() => {
+    if (selectedUserIds.length === 0) return null;
+    if (selectedUserIds.length === 1) {
+      const em = userById.get(selectedUserIds[0]);
+      return em ? `Showing data for ${em}` : null;
+    }
+    const emails = selectedUserIds.map((id) => userById.get(id) ?? id.slice(0, 8));
+    const joined = emails.slice(0, 4).join(", ");
+    const extra = emails.length > 4 ? ` +${emails.length - 4} more` : "";
+    return `Combined listening for ${joined}${extra}`;
+  }, [selectedUserIds, userById]);
+
+  const showSessionUser = selectedUserIds.length > 1;
 
   return (
     <div className="space-y-6">
@@ -164,27 +257,30 @@ export default function AdminUserListeningPage() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
-        <div className="flex-1 min-w-0">
-          <label htmlFor="admin-listening-user" className="block text-xs text-surface-400 mb-1.5 font-medium uppercase tracking-wider">
-            User
-          </label>
-          <select
-            id="admin-listening-user"
-            value={selectedUserId}
-            onChange={(e) => handleUserChange(e.target.value)}
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs text-surface-400 font-medium uppercase tracking-wider">User</span>
+            <label className="flex items-center gap-2 text-xs text-surface-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={multiUser}
+                onChange={(e) => setMultiMode(e.target.checked)}
+                className="rounded border-white/20 bg-surface-900 text-aurora-500 focus:ring-aurora-500/40"
+              />
+              Multiple users
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUserPickerOpen(true)}
             disabled={usersLoading || users.length === 0}
-            className="w-full max-w-xl bg-surface-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500 disabled:opacity-50"
+            className="flex w-full max-w-xl items-center justify-between gap-3 rounded-xl border border-white/10 bg-surface-900 px-4 py-2.5 text-left text-sm text-white transition-colors hover:border-white/20 hover:bg-surface-800/80 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-aurora-500/50"
           >
-            {users.length === 0 && !usersLoading ? (
-              <option value="">No users</option>
-            ) : (
-              users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.email} {!u.enabled ? "(disabled)" : ""}
-                </option>
-              ))
-            )}
-          </select>
+            <span className="min-w-0 truncate">{pickerButtonLabel}</span>
+            <svg className="h-5 w-5 shrink-0 text-surface-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
         <div className="flex flex-wrap gap-2">
           {(["today", "week", "month", "all"] as const).map((p) => (
@@ -207,11 +303,28 @@ export default function AdminUserListeningPage() {
         </div>
       </div>
 
-      {selectedEmail && (
-        <p className="text-sm text-surface-500">
-          Showing data for <span className="text-surface-300">{selectedEmail}</span>
-        </p>
+      {multiUser ? (
+        <UserPickerDialog
+          key={`m-${String(userPickerOpen)}-${selectionKey}`}
+          open={userPickerOpen}
+          onClose={() => setUserPickerOpen(false)}
+          users={users}
+          mode="multi"
+          selectedUserIds={selectedUserIds}
+          onConfirm={handleMultiConfirm}
+        />
+      ) : (
+        <UserPickerDialog
+          key={`s-${String(userPickerOpen)}-${selectionKey}`}
+          open={userPickerOpen}
+          onClose={() => setUserPickerOpen(false)}
+          users={users}
+          selectedUserId={selectedUserIds[0] ?? ""}
+          onSelect={handleSingleUser}
+        />
       )}
+
+      {summaryLine && <p className="text-sm text-surface-500">{summaryLine}</p>}
 
       <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -242,7 +355,8 @@ export default function AdminUserListeningPage() {
                     <tr key={`${row.song_id}-sessions`} className="bg-surface-950/40">
                       <td colSpan={6} className="px-4 py-4 border-t border-white/5">
                         <p className="text-xs text-surface-500 mb-3">
-                          Each row is one play. Listened is reported seconds for that session (up to 500 plays per song in this period).
+                          Each row is one play. Listened is reported seconds for that session (up to 500 plays per song in this
+                          period).
                         </p>
                         {loadingSessions ? (
                           <div className="flex justify-center py-8">
@@ -253,6 +367,7 @@ export default function AdminUserListeningPage() {
                             <table className="w-full text-xs text-left min-w-[720px]">
                               <thead className="text-surface-500 uppercase border-b border-white/5">
                                 <tr>
+                                  {showSessionUser && <th className="py-2 px-3 font-medium">User</th>}
                                   <th className="py-2 px-3 font-medium">Started</th>
                                   <th className="py-2 px-3 font-medium hidden sm:table-cell">Ended</th>
                                   <th className="py-2 px-3 font-medium text-right">Listened</th>
@@ -264,6 +379,11 @@ export default function AdminUserListeningPage() {
                               <tbody className="divide-y divide-white/5 text-surface-300">
                                 {(sessions ?? []).map((s) => (
                                   <tr key={s.id}>
+                                    {showSessionUser && (
+                                      <td className="py-2 px-3 whitespace-nowrap text-surface-400 max-w-[10rem] truncate" title={s.user_id}>
+                                        {userById.get(s.user_id) ?? `${s.user_id.slice(0, 8)}…`}
+                                      </td>
+                                    )}
                                     <td className="py-2 px-3 whitespace-nowrap">{formatDateTime(s.started_at)}</td>
                                     <td className="py-2 px-3 whitespace-nowrap hidden sm:table-cell text-surface-500">
                                       {s.ended_at ? formatDateTime(s.ended_at) : "—"}
@@ -350,7 +470,7 @@ export default function AdminUserListeningPage() {
             </tbody>
           </table>
         </div>
-        {!tableLoading && rows && rows.length === 0 && selectedUserId && (
+        {!tableLoading && rows && rows.length === 0 && selectedUserIds.length > 0 && (
           <p className="text-sm text-surface-500 px-4 py-8 text-center border-t border-white/5">
             No playback data for this period.
           </p>

@@ -236,6 +236,7 @@ pub struct UserSongListening {
 #[derive(Debug, FromRow, Serialize)]
 pub struct ListeningSessionEntry {
     pub id: String,
+    pub user_id: String,
     pub song_id: String,
     pub started_at: String,
     pub ended_at: Option<String>,
