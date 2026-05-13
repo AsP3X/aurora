@@ -289,6 +289,7 @@ export async function fetchListeningBySong(
 
 export type ListeningSessionRow = {
   id: string;
+  user_id: string;
   song_id: string;
   started_at: string;
   ended_at: string | null;
@@ -402,9 +403,21 @@ export async function fetchAdminUserListeningBySong(
   period: "today" | "week" | "month" | "all" = "all",
   limit = 500
 ) {
-  return apiFetch(
-    `/admin/users/${encodeURIComponent(userId)}/listening-by-song?period=${period}&limit=${limit}`
-  ) as Promise<UserSongListeningRow[]>;
+  return fetchAdminListeningBySong([userId], period, limit);
+}
+
+/** One or more user UUIDs (comma-separated on the wire). Aggregates by song across all users. */
+export async function fetchAdminListeningBySong(
+  userIds: string[],
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500
+) {
+  const q = new URLSearchParams({
+    user_ids: userIds.join(","),
+    period,
+    limit: String(limit),
+  });
+  return apiFetch(`/admin/listening-by-song?${q.toString()}`) as Promise<UserSongListeningRow[]>;
 }
 
 export async function fetchAdminUserListeningSessions(
@@ -413,9 +426,18 @@ export async function fetchAdminUserListeningSessions(
   limit = 500,
   songId?: string
 ) {
-  return apiFetch(
-    `/admin/users/${encodeURIComponent(userId)}/listening-sessions${listeningSessionsQuery(period, limit, songId)}`
-  ) as Promise<ListeningSessionRow[]>;
+  return fetchAdminListeningSessions([userId], period, limit, songId);
+}
+
+export async function fetchAdminListeningSessions(
+  userIds: string[],
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500,
+  songId?: string
+) {
+  const q = new URLSearchParams({ user_ids: userIds.join(","), period, limit: String(limit) });
+  if (songId) q.set("song_id", songId);
+  return apiFetch(`/admin/listening-sessions?${q.toString()}`) as Promise<ListeningSessionRow[]>;
 }
 
 export async function updateUserEnabled(userId: string, enabled: boolean) {
