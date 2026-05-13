@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Hls from "hls.js";
 import { usePlayer } from "../context/PlayerContext";
-import { logHistory } from "../api/client";
+import { logHistory, updateHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
 import QueueDrawer from "./QueueDrawer";
 
@@ -53,13 +53,38 @@ export default function PlayerBar() {
 
   const prevStreamUrl = useRef<string | null>(null);
   const lastLoggedStart = useRef<string | null>(null);
+  const historySessionId = useRef<string | null>(null);
+  const listenAccumulator = useRef(0);
+  const lastTimeUpdate = useRef<{ time: number; ts: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (historySessionId.current) {
+        const duration = Math.round(listenAccumulator.current);
+        updateHistory(historySessionId.current, duration, false).catch(() => {});
+      }
+      historySessionId.current = null;
+      listenAccumulator.current = 0;
+      lastTimeUpdate.current = null;
+    };
+  }, [currentSong?.id, currentStreamUrl]);
 
   useEffect(() => {
     if (currentSong && currentStreamUrl && currentSong.id !== lastLoggedStart.current) {
-      logHistory(currentSong.id, undefined, false).catch(() => {});
+      logHistory(currentSong.id, undefined, false)
+        .then((res) => { historySessionId.current = res.id; })
+        .catch(() => {});
       lastLoggedStart.current = currentSong.id;
+      listenAccumulator.current = 0;
+      lastTimeUpdate.current = null;
     }
   }, [currentSong, currentStreamUrl]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      lastTimeUpdate.current = null;
+    }
+  }, [isPlaying]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -124,7 +149,19 @@ export default function PlayerBar() {
     if (audio.buffered.length > 0) {
       setBuffered(audio.buffered.end(audio.buffered.length - 1));
     }
-  }, [audioRef, setProgress, setBuffered]);
+
+    if (isPlaying) {
+      const now = Date.now();
+      if (lastTimeUpdate.current) {
+        const deltaAudio = audio.currentTime - lastTimeUpdate.current.time;
+        const deltaWall = (now - lastTimeUpdate.current.ts) / 1000;
+        if (Math.abs(deltaAudio - deltaWall) < 2 && deltaAudio > 0) {
+          listenAccumulator.current += Math.min(deltaAudio, deltaWall);
+        }
+      }
+      lastTimeUpdate.current = { time: audio.currentTime, ts: now };
+    }
+  }, [audioRef, setProgress, setBuffered, isPlaying]);
 
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
@@ -133,9 +170,14 @@ export default function PlayerBar() {
   }, [audioRef, setDuration]);
 
   const handleEnded = useCallback(() => {
-    if (currentSong) {
-      logHistory(currentSong.id, undefined, true).catch(() => {});
+    if (currentSong && historySessionId.current) {
+      const duration = Math.round(listenAccumulator.current);
+      updateHistory(historySessionId.current, duration, true).catch(() => {});
     }
+    historySessionId.current = null;
+    listenAccumulator.current = 0;
+    lastTimeUpdate.current = null;
+    lastLoggedStart.current = null;
     if (queue.length > 0) {
       playNext();
     }
@@ -148,6 +190,7 @@ export default function PlayerBar() {
 
   const handleSeekInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      lastTimeUpdate.current = null;
       seek(Number(e.target.value));
     },
     [seek]

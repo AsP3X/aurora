@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchAdminStats } from "../../api/client";
+import { fetchAdminStats, fetchAdminListeningStats } from "../../api/client";
 import StatCard from "../../components/admin/StatCard";
 
 function formatBytes(bytes: number) {
@@ -15,6 +15,13 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
+function formatDurationShort(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export default function AdminOverviewPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<{
@@ -23,12 +30,22 @@ export default function AdminOverviewPage() {
     total_playlists: number;
     total_storage_bytes: number;
   } | null>(null);
+  const [listeningStats, setListeningStats] = useState<{
+    total_plays: number;
+    active_users: number;
+    total_listening_seconds: number;
+    avg_duration_seconds: number;
+  } | null>(null);
   const [error, setError] = useState("");
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await fetchAdminStats();
+      const [data, lData] = await Promise.all([
+        fetchAdminStats(),
+        fetchAdminListeningStats().catch(() => null),
+      ]);
       setStats(data);
+      setListeningStats(lData);
     } catch (e: any) {
       setError(e.message || "Failed to load stats");
     }
@@ -89,6 +106,50 @@ export default function AdminOverviewPage() {
             </svg>
           }
           colorClass="bg-rose-500/20 text-rose-400"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Total Plays"
+          value={listeningStats ? formatNumber(listeningStats.total_plays) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+          colorClass="bg-sky-500/20 text-sky-400"
+        />
+        <StatCard
+          label="Active Listeners"
+          value={listeningStats ? formatNumber(listeningStats.active_users) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          }
+          colorClass="bg-violet-500/20 text-violet-400"
+        />
+        <StatCard
+          label="Total Listening Time"
+          value={listeningStats ? formatDurationShort(listeningStats.total_listening_seconds) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+          colorClass="bg-orange-500/20 text-orange-400"
+        />
+        <StatCard
+          label="Avg Session"
+          value={listeningStats ? formatDurationShort(listeningStats.avg_duration_seconds) : "—"}
+          icon={
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          }
+          colorClass="bg-pink-500/20 text-pink-400"
         />
       </div>
 

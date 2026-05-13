@@ -143,6 +143,7 @@ pub struct HistoryEntry {
     pub user_id: String,
     pub song_id: String,
     pub started_at: String,
+    pub ended_at: Option<String>,
     pub duration_listened_seconds: Option<i32>,
     pub completed: bool,
     pub title: String,
@@ -176,4 +177,44 @@ pub struct TopPlay {
     pub duration_seconds: i32,
     pub play_count: i64,
     pub last_played_at: Option<String>,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct TopArtist {
+    pub artist: String,
+    pub total_seconds: i64,
+    pub play_count: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct TopAlbum {
+    pub album: String,
+    pub album_artist: Option<String>,
+    pub total_seconds: i64,
+    pub play_count: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct ListeningTimeResult {
+    pub total_seconds: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct HourBucket {
+    pub hour: i32,
+    pub total_seconds: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct DayBucket {
+    pub day: i32,
+    pub total_seconds: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct AdminListeningStats {
+    pub total_plays: i64,
+    pub active_users: i64,
+    pub total_listening_seconds: i64,
+    pub avg_duration_seconds: f64,
 }
