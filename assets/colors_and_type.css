@@ -1,0 +1,144 @@
+/* =====================================================================
+   AURORA DESIGN SYSTEM — Colors & Type
+   Music streaming service. Dark-first, purple-accent, glassy.
+   Source of truth: AsP3X/aurora @ master · frontend/src/index.css
+   ===================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
+
+:root {
+  /* ─── Aurora (primary purple/violet) ─── */
+  --aurora-50:  #f5f3ff;
+  --aurora-100: #ede9fe;
+  --aurora-200: #ddd6fe;
+  --aurora-300: #c4b5fd;
+  --aurora-400: #a78bfa;
+  --aurora-500: #8b5cf6;  /* primary */
+  --aurora-600: #7c3aed;  /* button bg */
+  --aurora-700: #6d28d9;  /* button bg gradient end */
+  --aurora-800: #5b21b6;
+  --aurora-900: #4c1d95;
+
+  /* ─── Surface (neutral cool greys, tinted with violet) ─── */
+  --surface-50:  #f8f7fa;
+  --surface-100: #f0eff4;
+  --surface-200: #e2e0ea;
+  --surface-300: #c9c5d7;
+  --surface-400: #aaa4be;
+  --surface-500: #8a82a4;
+  --surface-600: #6e6688;
+  --surface-700: #5a5370;
+  --surface-800: #4a4459;
+  --surface-900: #3d3849;
+  --surface-950: #0f0e14;  /* page background */
+
+  /* ─── Semantic ─── */
+  --bg:           var(--surface-950);
+  --bg-elevated: #1a1822;            /* approx surface-900 alpha-blended */
+  --fg:          #e8e6f0;            /* primary text on dark */
+  --fg-muted:    var(--surface-300);
+  --fg-dim:      var(--surface-400);
+  --fg-faint:    var(--surface-500);
+  --border:      rgba(255,255,255,0.05);
+  --border-strong: rgba(255,255,255,0.10);
+  --border-focus:  rgba(139,92,246,0.50);
+
+  /* Status (used sparingly — emerald/amber/rose/sky on dark) */
+  --success: #34d399;
+  --success-bg: rgba(16,185,129,0.10);
+  --warning: #fbbf24;
+  --warning-bg: rgba(245,158,11,0.10);
+  --danger:  #f87171;
+  --danger-bg:  rgba(239,68,68,0.10);
+  --info:    #38bdf8;
+  --info-bg:    rgba(14,165,233,0.10);
+
+  /* ─── Type scale ─── */
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-2xs:  11px;
+  --text-xs:   12px;
+  --text-sm:   14px;
+  --text-base: 16px;
+  --text-lg:   18px;
+  --text-xl:   20px;
+  --text-2xl:  24px;
+  --text-3xl:  30px;
+  --text-4xl:  36px;
+
+  --leading-tight:  1.15;
+  --leading-snug:   1.3;
+  --leading-normal: 1.5;
+
+  --weight-light:    300;
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-black:    800;
+
+  /* ─── Spacing (Tailwind v4 scale, 4px base) ─── */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ─── Radii (cards use 12–24px; pills 9999; player capsule 32px) ─── */
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:  12px;   /* rounded-xl */
+  --radius-xl:  16px;   /* rounded-2xl */
+  --radius-2xl: 24px;   /* rounded-3xl */
+  --radius-pill: 9999px;
+
+  /* ─── Shadows ─── */
+  --shadow-sm:    0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md:    0 4px 12px rgba(0,0,0,0.30);
+  --shadow-xl:    0 12px 32px rgba(0,0,0,0.45);
+  --shadow-2xl:   0 24px 50px rgba(0,0,0,0.55);
+  --shadow-glow:  0 0 24px rgba(139,92,246,0.25);     /* aurora glow */
+  --shadow-glow-strong: 0 0 32px rgba(139,92,246,0.40);
+  --inset-glass:  inset 0 1px 2px rgba(255,255,255,0.15);
+
+  /* ─── Signature gradients ─── */
+  --grad-aurora:      linear-gradient(135deg, var(--aurora-500), var(--aurora-700));
+  --grad-aurora-flat: linear-gradient(90deg,  var(--aurora-400), var(--aurora-500));
+  --grad-glow:        radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.12) 0%, transparent 60%);
+  --grad-glass:       linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02));
+  --grad-protect:     linear-gradient(180deg, rgba(15,14,20,0.0), rgba(15,14,20,0.6));
+}
+
+/* ─── Semantic typography ─── */
+.h1, h1.aurora { font: var(--weight-bold) var(--text-3xl)/var(--leading-tight) var(--font-sans); letter-spacing: -0.02em; color: #fff; }
+.h2, h2.aurora { font: var(--weight-semibold) var(--text-2xl)/var(--leading-tight) var(--font-sans); letter-spacing: -0.015em; color: #fff; }
+.h3, h3.aurora { font: var(--weight-semibold) var(--text-lg)/var(--leading-snug) var(--font-sans); color: #fff; }
+.title-row    { font: var(--weight-semibold) var(--text-sm)/var(--leading-snug) var(--font-sans); color: #fff; }
+.p, p.aurora  { font: var(--weight-regular) var(--text-sm)/var(--leading-normal) var(--font-sans); color: var(--fg-muted); }
+.meta         { font: var(--weight-regular) var(--text-xs)/var(--leading-normal) var(--font-sans); color: var(--fg-dim); }
+.eyebrow      { font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); }
+.mono         { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); }
+
+/* ─── Effects classes ─── */
+.aurora-glow   { background: var(--grad-glow); }
+.glass-panel   { backdrop-filter: blur(24px); background: rgba(255,255,255,0.05); border: 1px solid var(--border-strong); }
+.aurora-card   { background: #1a1822; border: 1px solid var(--border); border-radius: var(--radius-xl); }
+.aurora-button {
+  background: var(--grad-aurora);
+  color: #fff;
+  font: var(--weight-medium) var(--text-sm)/1 var(--font-sans);
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glow);
+  border: none; cursor: pointer;
+  transition: box-shadow 200ms ease, transform 150ms ease;
+}
+.aurora-button:hover  { box-shadow: var(--shadow-glow-strong); }
+.aurora-button:active { transform: scale(0.97); }

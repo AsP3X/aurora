@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Surface palette</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 230px; }
+  h4 { margin: 0 0 14px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600;}
+  .scale { display: grid; grid-template-columns: repeat(11, 1fr); gap: 6px; }
+  .sw { aspect-ratio: 1/1; border-radius: 9px; padding: 6px; display: flex; flex-direction: column; justify-content: flex-end; font-family: ui-monospace, Menlo, monospace; font-size: 9px; position: relative; border: 1px solid rgba(255,255,255,0.04); }
+  .sw .n { font-weight: 700; font-size: 10px; }
+  .sw .h { opacity: 0.7; font-size: 8.5px; }
+  .lite { color: #1c1626; }
+  .dark { color: #fff; }
+  .key { position: absolute; top: 5px; right: 6px; font-size: 8px; opacity: 0.7; }
+  .star { position: absolute; top: 5px; right: 6px; font-size: 10px; }
+  .note { margin-top: 14px; font-size: 11.5px; color: var(--fg-dim); line-height: 1.5; }
+  .note b { color: #fff; font-weight: 600; }
+</style></head>
+<body>
+  <h4>Surface — neutral (tinted with violet)</h4>
+  <div class="scale">
+    <div class="sw lite" style="background:#f8f7fa"><span class="key">50</span><span class="n">50</span><span class="h">F8F7FA</span></div>
+    <div class="sw lite" style="background:#f0eff4"><span class="key">100</span><span class="n">100</span><span class="h">F0EFF4</span></div>
+    <div class="sw lite" style="background:#e2e0ea"><span class="key">200</span><span class="n">200</span><span class="h">E2E0EA</span></div>
+    <div class="sw lite" style="background:#c9c5d7"><span class="key">300</span><span class="n">300</span><span class="h">C9C5D7</span></div>
+    <div class="sw lite" style="background:#aaa4be"><span class="key">400</span><span class="n">400</span><span class="h">AAA4BE</span></div>
+    <div class="sw dark" style="background:#8a82a4"><span class="key">500</span><span class="n">500</span><span class="h">8A82A4</span></div>
+    <div class="sw dark" style="background:#6e6688"><span class="key">600</span><span class="n">600</span><span class="h">6E6688</span></div>
+    <div class="sw dark" style="background:#5a5370"><span class="key">700</span><span class="n">700</span><span class="h">5A5370</span></div>
+    <div class="sw dark" style="background:#4a4459"><span class="key">800</span><span class="n">800</span><span class="h">4A4459</span></div>
+    <div class="sw dark" style="background:#3d3849"><span class="key">900</span><span class="n">900</span><span class="h">3D3849</span></div>
+    <div class="sw dark" style="background:#0f0e14"><span class="star">★</span><span class="n">950</span><span class="h">0F0E14</span></div>
+  </div>
+  <div class="note">
+    <b>★ 950</b> is the page background. <b>900</b> is the default card. Mid greys (400–500) carry body and metadata copy; 300 is the brightest non-white.
+  </div>
+</body></html>

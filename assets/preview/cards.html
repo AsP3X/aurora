@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Card anatomy</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 270px; }
+  h4 { margin: 0 0 14px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600;}
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .stat { background: #1a1822; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 14px; }
+  .stat .ico { width: 48px; height: 48px; border-radius: 12px; background: rgba(124,58,237,0.20); color: var(--aurora-400); display:grid; place-items:center; }
+  .stat .ico svg { width: 22px; height: 22px; }
+  .stat .v { font: 700 22px Inter; color: #fff; line-height: 1; letter-spacing: -0.01em; }
+  .stat .l { font: 600 10.5px Inter; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-dim); margin-top: 6px; }
+
+  .album { background: #1a1822; border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 10px; }
+  .album .art { aspect-ratio: 1/1; width: 100%; border-radius: 12px; background: linear-gradient(135deg, #4c1d95, #db2777 60%, #f97316); position: relative; overflow: hidden; }
+  .album .art::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.30), transparent 50%); }
+  .album .t { font: 600 13px Inter; color: #fff; margin: 10px 4px 2px; }
+  .album .s { font: 400 11.5px Inter; color: var(--fg-dim); margin: 0 4px; }
+
+  .row { display: grid; grid-template-columns: 1.4fr 0.9fr 0.9fr; gap: 14px; align-items: stretch; }
+</style></head>
+<body>
+  <h4>Card anatomy — stat, album, music-row</h4>
+  <div class="row">
+    <div class="stat">
+      <div class="ico"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg></div>
+      <div><div class="v">12,034</div><div class="l">Total Songs</div></div>
+    </div>
+    <div class="album">
+      <div class="art"></div>
+      <div class="t">Solar Tides</div>
+      <div class="s">Adriana Voss</div>
+    </div>
+    <div class="album">
+      <div class="art" style="background: linear-gradient(160deg,#0ea5e9,#1e40af 60%,#0f172a)"></div>
+      <div class="t">Glassworks III</div>
+      <div class="s">Kele Mori</div>
+    </div>
+  </div>
+  <div style="margin-top: 16px; font-size: 11.5px; color: var(--fg-dim); line-height: 1.55;">
+    <b style="color:#fff">Card foundation:</b> bg-surface-900 · border-white/5 · rounded-2xl · padding 16–20px. Stats add a 48×48 colored icon tile. Album cards round to 12px and reveal a play-circle on hover.
+  </div>
+</body></html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Buttons</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 250px; }
+  h4 { margin: 0 0 16px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600;}
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .btn { border: none; cursor: pointer; font: 500 14px/1 Inter; padding: 10px 18px; border-radius: 12px; display: inline-flex; align-items: center; gap: 8px; transition: all 180ms ease; }
+  .btn svg { width: 16px; height: 16px; }
+  .primary   { background: linear-gradient(90deg, #7c3aed, #6d28d9); color: #fff; box-shadow: 0 8px 20px rgba(139,92,246,0.25); }
+  .primary-hover { background: linear-gradient(90deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 10px 26px rgba(139,92,246,0.40); }
+  .ghost     { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.05); }
+  .ghost-hover { background: rgba(255,255,255,0.10); color: #fff; border: 1px solid rgba(255,255,255,0.10); }
+  .text      { background: transparent; color: var(--surface-300); padding: 10px 14px; }
+  .danger    { background: rgba(239,68,68,0.10); color: #fca5a5; border: 1px solid rgba(239,68,68,0.20); }
+  .disabled  { background: rgba(255,255,255,0.05); color: var(--surface-600); cursor: not-allowed; border: 1px solid rgba(255,255,255,0.05); }
+  .play { width: 56px; height: 56px; border-radius: 9999px; background: linear-gradient(135deg, #8b5cf6, #6d28d9); display: grid; place-items: center; box-shadow: 0 10px 24px rgba(139,92,246,0.35); border: none; cursor: pointer; }
+  .play svg { width: 22px; height: 22px; color: #fff; margin-left: 2px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 9999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); display: grid; place-items: center; cursor: pointer; }
+  .icon-btn svg { width: 18px; height: 18px; color: var(--fg-muted); }
+  .lbl { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--fg-faint); margin-left: 6px; }
+</style></head>
+<body>
+  <h4>Buttons</h4>
+  <div class="row">
+    <button class="btn primary">Create Playlist</button>
+    <button class="btn primary-hover">Create Playlist</button><span class="lbl">hover</span>
+    <button class="btn ghost">Browse</button>
+    <button class="btn ghost-hover">Browse</button><span class="lbl">hover</span>
+  </div>
+  <div class="row">
+    <button class="btn text">Cancel</button>
+    <button class="btn danger">Delete account</button>
+    <button class="btn disabled">Import Music</button><span class="lbl">disabled</span>
+  </div>
+  <div class="row" style="margin-top: 8px;">
+    <button class="play"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button><span class="lbl">play CTA · gradient + glow</span>
+    <button class="icon-btn"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
+    <button class="icon-btn"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+    <span class="lbl">transport icon-buttons · 40px round</span>
+  </div>
+</body></html>

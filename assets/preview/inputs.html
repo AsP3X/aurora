@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Inputs</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 230px; }
+  h4 { margin: 0 0 16px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600;}
+  .label { display:block; font: 500 12px Inter; color: var(--surface-300); margin-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field { background: #0f0e14; border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; padding: 10px 14px; font: 400 13px Inter; color: #fff; }
+  .field.focus { border-color: rgba(139,92,246,0.50); box-shadow: 0 0 0 2px rgba(139,92,246,0.20); }
+  .field.placeholder { color: var(--surface-500); }
+  .search { position: relative; }
+  .search .pill { background: #1a1822; border: 1px solid rgba(255,255,255,0.05); border-radius: 9999px; padding: 10px 16px 10px 38px; font: 400 13px Inter; color: var(--surface-500); }
+  .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--fg-faint); }
+  .pill-block { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chip  { font: 500 11px Inter; padding: 6px 12px; background: rgba(255,255,255,0.05); color: var(--fg-dim); border-radius: 9999px; }
+  .chip.active { background: rgba(139,92,246,0.20); color: var(--aurora-300); }
+</style></head>
+<body>
+  <h4>Form fields & search</h4>
+  <div class="grid">
+    <div>
+      <span class="label">Email</span>
+      <div class="field placeholder">you@example.com</div>
+    </div>
+    <div>
+      <span class="label">Password</span>
+      <div class="field focus" style="letter-spacing:.2em">••••••••••</div>
+    </div>
+  </div>
+
+  <div class="search" style="margin-top: 16px;">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+    <div class="pill">Search songs, artists, albums…</div>
+  </div>
+
+  <div class="pill-block">
+    <span class="chip active">Indie</span>
+    <span class="chip">Electronic</span>
+    <span class="chip">Ambient</span>
+    <span class="chip">FLAC</span>
+    <span class="chip">320 kbps</span>
+    <span class="chip">Sub Pop</span>
+  </div>
+</body></html>

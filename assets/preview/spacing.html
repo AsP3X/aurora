@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Spacing</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 220px; }
+  h4 { margin: 0 0 14px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600;}
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; align-items: end; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .bar  { width: 16px; background: linear-gradient(180deg, var(--aurora-400), var(--aurora-600)); border-radius: 3px; box-shadow: 0 0 12px rgba(139,92,246,0.35); }
+  .lbl  { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--fg-dim); text-align: center; line-height: 1.2; }
+  .lbl b { color: #fff; font-weight: 600; display: block; }
+  .note { margin-top: 14px; font-size: 11.5px; color: var(--fg-dim); }
+</style></head>
+<body>
+  <h4>Spacing — 4px base scale</h4>
+  <div class="grid">
+    <div class="item"><div class="bar" style="height: 4px"></div><div class="lbl"><b>1</b>4px</div></div>
+    <div class="item"><div class="bar" style="height: 8px"></div><div class="lbl"><b>2</b>8px</div></div>
+    <div class="item"><div class="bar" style="height: 12px"></div><div class="lbl"><b>3</b>12px</div></div>
+    <div class="item"><div class="bar" style="height: 16px"></div><div class="lbl"><b>4</b>16px</div></div>
+    <div class="item"><div class="bar" style="height: 24px"></div><div class="lbl"><b>6</b>24px</div></div>
+    <div class="item"><div class="bar" style="height: 32px"></div><div class="lbl"><b>8</b>32px</div></div>
+    <div class="item"><div class="bar" style="height: 64px"></div><div class="lbl"><b>16</b>64px</div></div>
+  </div>
+  <div class="note">Card padding clusters around <b style="color:#fff">16–24px</b>. Form fields use <b style="color:#fff">space-y-5</b> (20px). Page gutters <b style="color:#fff">16/24/32px</b> responsive.</div>
+</body></html>
