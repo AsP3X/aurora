@@ -12,6 +12,14 @@ function formatTime(t: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function formatDelta(seconds: number) {
+  const sign = seconds >= 0 ? "+" : "-";
+  const absSeconds = Math.abs(Math.round(seconds));
+  const m = Math.floor(absSeconds / 60);
+  const s = Math.floor(absSeconds % 60);
+  return `${sign}${m}:${s.toString().padStart(2, "0")}`;
+}
+
 export default function PlayerBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -134,6 +142,8 @@ export default function PlayerBar() {
   );
 
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOrigin, setDragOrigin] = useState(0);
 
   const handleProgressMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -147,6 +157,23 @@ export default function PlayerBar() {
 
   const handleProgressMouseLeave = useCallback(() => {
     setHoverPercent(null);
+  }, []);
+
+  const handleSeekPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLInputElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setIsDragging(true);
+      setDragOrigin(Number(e.currentTarget.value));
+    },
+    []
+  );
+
+  const handleSeekPointerUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleSeekLostPointerCapture = useCallback(() => {
+    setIsDragging(false);
   }, []);
 
   if (!currentSong) return null;
@@ -163,14 +190,14 @@ export default function PlayerBar() {
           } right-4 md:right-8`}
         >
         {/* Liquid Glass Container */}
-        <div className="relative rounded-[32px] overflow-hidden">
-          {/* Base glass layers */}
-          <div className="absolute inset-0 backdrop-blur-2xl bg-surface-950/35" />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.12] to-white/[0.02]" />
-          <div className="absolute inset-0 shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]" />
-
-          {/* Border */}
-          <div className="absolute inset-0 rounded-[32px] border border-white/20" />
+        <div className="relative rounded-[32px]">
+          {/* Clipped background shell */}
+          <div className="absolute inset-0 rounded-[32px] overflow-hidden">
+            <div className="absolute inset-0 backdrop-blur-2xl bg-surface-950/35" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.12] to-white/[0.02]" />
+            <div className="absolute inset-0 shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]" />
+            <div className="absolute inset-0 rounded-[32px] border border-white/20" />
+          </div>
 
           {/* Outer floating shadow */}
           <div className="absolute -inset-1 rounded-[36px] bg-black/20 blur-xl -z-10" />
@@ -224,9 +251,31 @@ export default function PlayerBar() {
                 max={duration || currentSong.duration_seconds}
                 value={progress}
                 onChange={handleSeekInput}
+                onPointerDown={handleSeekPointerDown}
+                onPointerUp={handleSeekPointerUp}
+                onLostPointerCapture={handleSeekLostPointerCapture}
                 aria-label="Seek"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
+
+              {isDragging && (
+                <div
+                  className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
+                  style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+                >
+                  <div className="flex flex-col items-center drop-shadow-xl">
+                    <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
+                      <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
+                        {formatTime(progress)}
+                      </span>
+                      <span className="text-[11px] font-semibold text-surface-500 leading-none">
+                        {formatDelta(progress - dragOrigin)}
+                      </span>
+                    </div>
+                    <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Main row */}

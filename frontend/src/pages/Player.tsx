@@ -25,6 +25,8 @@ export default function Player() {
     audioRef,
   } = usePlayer();
   const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOrigin, setDragOrigin] = useState(0);
 
   // Load song if not currently playing
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -67,11 +69,33 @@ export default function Player() {
     setVolume(Number(e.target.value));
   }
 
+  function handleSeekPointerDown(e: React.PointerEvent<HTMLInputElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    setDragOrigin(Number(e.currentTarget.value));
+  }
+
+  function handleSeekPointerUp() {
+    setIsDragging(false);
+  }
+
+  function handleSeekLostPointerCapture() {
+    setIsDragging(false);
+  }
+
   function formatTime(t: number) {
     if (!isFinite(t)) return "0:00";
     const m = Math.floor(t / 60);
     const s = Math.floor(t % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  function formatDelta(seconds: number) {
+    const sign = seconds >= 0 ? "+" : "-";
+    const absSeconds = Math.abs(Math.round(seconds));
+    const m = Math.floor(absSeconds / 60);
+    const s = Math.floor(absSeconds % 60);
+    return `${sign}${m}:${s.toString().padStart(2, "0")}`;
   }
 
   if (loading) {
@@ -173,7 +197,9 @@ export default function Player() {
         <div className="max-w-3xl mx-auto space-y-3">
           {/* Progress Bar */}
           <div>
-            <div className="relative h-1.5 bg-surface-800 rounded-full overflow-hidden group cursor-pointer">
+            <div className="relative h-1.5 group cursor-pointer">
+              {/* Track */}
+              <div className="absolute inset-0 bg-surface-800 rounded-full overflow-hidden">
               <div
                 className="absolute inset-y-0 left-0 bg-surface-600 rounded-full"
                 style={{ width: `${bufferedPercent}%` }}
@@ -182,6 +208,9 @@ export default function Player() {
                 className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-500 to-aurora-400 rounded-full"
                 style={{ width: `${progressPercent}%` }}
               />
+              </div>
+
+              {/* Thumb */}
               <div
                 className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
                 style={{ left: `calc(${progressPercent}% - 6px)` }}
@@ -192,9 +221,32 @@ export default function Player() {
                 max={duration || currentSong.duration_seconds}
                 value={progress}
                 onChange={handleSeek}
+                onPointerDown={handleSeekPointerDown}
+                onPointerUp={handleSeekPointerUp}
+                onLostPointerCapture={handleSeekLostPointerCapture}
                 aria-label="Seek"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
+
+              {/* Drag tooltip */}
+              {isDragging && (
+                <div
+                  className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
+                  style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+                >
+                  <div className="flex flex-col items-center drop-shadow-xl">
+                    <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
+                      <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
+                        {formatTime(progress)}
+                      </span>
+                      <span className="text-[11px] font-semibold text-surface-500 leading-none">
+                        {formatDelta(progress - dragOrigin)}
+                      </span>
+                    </div>
+                    <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between text-xs text-surface-500 font-mono mt-1.5">
               <span>{formatTime(progress)}</span>
