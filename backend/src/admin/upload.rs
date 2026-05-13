@@ -593,6 +593,16 @@ pub async fn commit_song(
             let storage_clone = state.storage.clone();
             let hls_tmp_dir_clone = hls_tmp_dir.clone();
 
+            // Helper to update conversion progress in the database
+            async fn set_progress(pool: &sqlx::AnyPool, song_id: &str, progress: i32) {
+                let _ = sqlx::query("UPDATE songs SET conversion_progress = $1 WHERE id = $2")
+                    .bind(progress)
+                    .bind(song_id)
+                    .execute(pool)
+                    .await;
+            }
+
+            let duration = req.duration_seconds;
             tokio::spawn(async move {
                 use crate::hls::encoder::HlsEncoder;
 
@@ -610,11 +620,44 @@ pub async fn commit_song(
                     .unwrap_or(&hls_tmp_dir_clone)
                     .join(format!("aurora_hls_out_{}", song_id_clone));
 
+                set_progress(&pool_clone, &song_id_clone, 5).await;
+
                 match hls_key_store.create_key_for_song(song_uuid).await {
                     Ok((key_id, key)) => {
-                        match HlsEncoder::transcode(&tmp_audio, &hls_output_dir, &key).await {
+                        let (progress_tx, mut progress_rx) = tokio::sync::watch::channel(0i32);
+                        let pool_for_progress = pool_clone.clone();
+                        let song_id_for_progress = song_id_clone.clone();
+                        let progress_handle = tokio::spawn(async move {
+                            loop {
+                                let pct = *progress_rx.borrow_and_update();
+                                // Scale encoder progress (0-100) to 5-50
+                                let scaled = 5 + (pct as f64 * 0.45) as i32;
+                                set_progress(&pool_for_progress, &song_id_for_progress, scaled).await;
+                                if progress_rx.changed().await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+
+                        let transcode_result = HlsEncoder::transcode(
+                            &tmp_audio,
+                            &hls_output_dir,
+                            &key,
+                            duration,
+                            Some(progress_tx),
+                        )
+                        .await;
+
+                        // Wait a moment for final progress to be flushed
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        drop(progress_handle);
+
+                        match transcode_result {
                             Ok(output) => {
+                                set_progress(&pool_clone, &song_id_clone, 50).await;
                                 let prefix = format!("songs/{}/", song_id_clone);
+                                let total_steps = 2 + output.segment_count;
+                                let mut current_step = 0usize;
 
                                 let playlist_data =
                                     match tokio::fs::read(&output.playlist_path).await {
@@ -635,6 +678,7 @@ pub async fn commit_song(
                                     tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS playlist");
                                     return;
                                 }
+                                current_step += 1;
 
                                 let key_data = match tokio::fs::read(&output.key_path).await {
                                     Ok(data) => data,
@@ -654,6 +698,7 @@ pub async fn commit_song(
                                     tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS key");
                                     return;
                                 }
+                                current_step += 1;
 
                                 let mut segment_entries =
                                     match tokio::fs::read_dir(&output.segments_dir).await {
@@ -690,7 +735,12 @@ pub async fn commit_song(
                                     {
                                         tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to upload segment");
                                     }
+                                    current_step += 1;
+                                    let upload_pct = 50 + ((current_step as f64 / total_steps as f64) * 50.0) as i32;
+                                    set_progress(&pool_clone, &song_id_clone, upload_pct.min(99)).await;
                                 }
+
+                                set_progress(&pool_clone, &song_id_clone, 100).await;
 
                                 if let Err(e) = sqlx::query(
                                     "UPDATE songs SET hls_ready = true, hls_key_id = $1, segment_count = $2 WHERE id = $3",

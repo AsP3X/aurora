@@ -58,6 +58,31 @@ export default function SongDetail() {
     };
   }, [id]);
 
+  // Poll for conversion progress when song is still processing
+  useEffect(() => {
+    if (!song || song.hls_ready) return;
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const data = await fetchSong(id!);
+        if (cancelled) return;
+        setSong(data);
+        if (data.hls_ready) {
+          clearInterval(interval);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const interval = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [song?.hls_ready, id]);
+
   function handlePlay() {
     if (!song) return;
     playSong(song);
@@ -198,6 +223,21 @@ export default function SongDetail() {
                 </span>
               )}
             </div>
+
+            {/* Conversion progress */}
+            {!song.hls_ready && song.conversion_progress > 0 && (
+              <div className="space-y-2">
+                <div className="w-full h-1.5 bg-surface-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-aurora-500 rounded-full transition-all duration-500"
+                    style={{ width: `${song.conversion_progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-surface-500 text-center">
+                  Converting for streaming — {song.conversion_progress}%
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Play Button */}

@@ -44,12 +44,12 @@ function ProgressBar({
   );
 }
 
-function ProcessingIndicator() {
+function ProcessingIndicator({ percent }: { percent: number }) {
   return (
-    <div className="py-8 flex flex-col items-center gap-4">
-      <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
-      <p className="text-sm text-surface-300">Processing audio for streaming…</p>
-    </div>
+    <ProgressBar
+      percent={percent}
+      label="Converting audio for streaming…"
+    />
   );
 }
 
@@ -65,6 +65,7 @@ export default function UploadSongDialog({
   const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [committedSong, setCommittedSong] = useState<Song | null>(null);
+  const [processingProgress, setProcessingProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isBusy =
@@ -139,7 +140,7 @@ export default function UploadSongDialog({
     }
   }, [draft, croppedBlob, onSuccess]);
 
-  // Poll for hls_ready during processing
+  // Poll for hls_ready and conversion_progress during processing
   useEffect(() => {
     if (state !== "processing" || !committedSong) return;
     let cancelled = false;
@@ -149,7 +150,9 @@ export default function UploadSongDialog({
       try {
         const song = await fetchSong(songId);
         if (cancelled) return;
+        setProcessingProgress(song.conversion_progress);
         if (song.hls_ready) {
+          setProcessingProgress(100);
           setState("complete");
         }
       } catch {
@@ -272,7 +275,9 @@ export default function UploadSongDialog({
           <ProgressBar percent={uploadProgress} label="Saving to library…" />
         )}
 
-        {state === "processing" && <ProcessingIndicator />}
+        {state === "processing" && (
+          <ProcessingIndicator percent={processingProgress} />
+        )}
 
         {state === "complete" && committedSong && (
           <div className="py-8 flex flex-col items-center gap-6">
