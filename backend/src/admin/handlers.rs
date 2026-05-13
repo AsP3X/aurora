@@ -107,7 +107,7 @@ pub struct AdminPlaylist {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
-    pub is_public: i64,
+    pub is_public: bool,
     pub created_at: String,
     pub owner_email: String,
     pub song_count: i64,
@@ -211,7 +211,27 @@ pub async fn list_settings(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(settings))
+    let mut merged: std::collections::HashMap<String, AppSetting> =
+        settings.into_iter().map(|s| (s.key.clone(), s)).collect();
+
+    let defaults = [
+        ("allow_public_registration", "false"),
+        ("require_account_activation", "false"),
+    ];
+
+    let now = chrono::Utc::now().to_rfc3339();
+    for (key, value) in &defaults {
+        merged.entry(key.to_string()).or_insert(AppSetting {
+            key: key.to_string(),
+            value: value.to_string(),
+            updated_at: now.clone(),
+        });
+    }
+
+    let mut result: Vec<AppSetting> = merged.into_values().collect();
+    result.sort_by(|a, b| a.key.cmp(&b.key));
+
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,6 +262,19 @@ pub async fn update_setting(
     }
 
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+pub async fn get_public_registration_setting(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let value: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let enabled = value.map(|(v,)| v == "true").unwrap_or(true);
+    Ok(Json(serde_json::json!({ "allow_public_registration": enabled })))
 }
 
 #[derive(Debug, Deserialize)]

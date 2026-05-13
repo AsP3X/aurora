@@ -31,6 +31,17 @@ pub async fn auth_middleware(
         return Err(AppError::Unauthorized);
     }
 
+    let enabled: Option<(bool,)> = sqlx::query_as("SELECT enabled FROM users WHERE id = $1")
+        .bind(&claims.sub)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| AppError::Unauthorized)?;
+
+    let (user_enabled,) = enabled.ok_or(AppError::Unauthorized)?;
+    if !user_enabled {
+        return Err(AppError::Forbidden("account is disabled".into()));
+    }
+
     request.extensions_mut().insert(claims);
     Ok(next.run(request).await)
 }

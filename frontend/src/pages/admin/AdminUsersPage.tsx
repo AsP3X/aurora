@@ -6,6 +6,7 @@ import {
   fetchUserEffectivePermissions,
   setUserPermissions,
   updateUserRole,
+  updateUserEnabled,
   deleteUser,
 } from "../../api/client";
 import PermissionManager from "../../components/admin/PermissionManager";
@@ -23,6 +24,7 @@ interface User {
   id: string;
   email: string;
   role: string;
+  enabled: boolean;
 }
 
 export default function AdminUsersPage() {
@@ -33,6 +35,7 @@ export default function AdminUsersPage() {
 
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [editRole, setEditRole] = useState("");
+  const [editEnabled, setEditEnabled] = useState(true);
 
   const [editingPermissionsFor, setEditingPermissionsFor] = useState<string | null>(null);
   const [userPerms, setUserPerms] = useState<string[]>([]);
@@ -138,19 +141,20 @@ export default function AdminUsersPage() {
             <tr>
               <th className="px-4 py-3 font-medium">User</th>
               <th className="px-4 py-3 font-medium">Role</th>
+              <th className="px-4 py-3 font-medium">Enabled</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {loading ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-surface-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
                   <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin mx-auto" />
                 </td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-surface-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
                   No users found.
                 </td>
               </tr>
@@ -174,10 +178,19 @@ export default function AdminUsersPage() {
                       {u.role}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${
+                      u.enabled
+                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                        : "bg-red-500/10 text-red-300 border-red-500/20"
+                    }`}>
+                      {u.enabled ? "Yes" : "No"}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={() => { setEditingUser(u.id); setEditRole(u.role); }}
+                        onClick={() => { setEditingUser(u.id); setEditRole(u.role); setEditEnabled(u.enabled); }}
                         className="text-xs text-aurora-400 hover:text-aurora-300 px-2 py-1 rounded hover:bg-aurora-500/10 transition-colors"
                       >
                         Edit
@@ -218,6 +231,22 @@ export default function AdminUsersPage() {
                   <option value="admin">admin</option>
                 </select>
               </div>
+              <div className="flex items-center gap-3">
+                <label className="block text-xs text-surface-400">Enabled</label>
+                <button
+                  type="button"
+                  onClick={() => setEditEnabled((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    editEnabled ? "bg-aurora-600" : "bg-surface-700"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      editEnabled ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
             <div className="flex gap-3 justify-end mt-6">
               <button
@@ -238,8 +267,22 @@ export default function AdminUsersPage() {
               <button
                 onClick={async () => {
                   const user = users.find((u) => u.id === editingUser);
-                  if (user && editRole !== user.role) {
-                    await handleRoleChange(editingUser, editRole);
+                  if (user) {
+                    if (editRole !== user.role) {
+                      await handleRoleChange(editingUser, editRole);
+                    }
+                    if (editEnabled !== user.enabled) {
+                      try {
+                        await updateUserEnabled(editingUser, editEnabled);
+                        setUsers((prev) =>
+                          prev.map((u) =>
+                            u.id === editingUser ? { ...u, enabled: editEnabled } : u
+                          )
+                        );
+                      } catch (e: any) {
+                        setError(e.message || "Failed to update enabled status");
+                      }
+                    }
                   }
                   setEditingUser(null);
                 }}

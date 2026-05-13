@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { login, register } from "../api/client";
+import { login, register, fetchPublicRegistrationSetting } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import NetworkBackground from "../components/NetworkBackground";
 
@@ -12,8 +12,15 @@ export default function Login() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState(true);
   const { setAuth } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchPublicRegistrationSetting()
+      .then((data) => setRegistrationEnabled(data.allow_public_registration))
+      .catch(() => setRegistrationEnabled(true));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,16 +126,22 @@ export default function Login() {
           </form>
 
           <div className="mt-6 pt-6 border-t border-white/5 text-center">
-            <p className="text-sm text-surface-400">
-              {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-              <button
-                type="button"
-                onClick={() => { setIsRegister(!isRegister); setError(""); setSuccess(""); }}
-                className="text-aurora-400 hover:text-aurora-300 font-medium transition-colors"
-              >
-                {isRegister ? "Sign in" : "Create one"}
-              </button>
-            </p>
+            {registrationEnabled ? (
+              <p className="text-sm text-surface-400">
+                {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
+                <button
+                  type="button"
+                  onClick={() => { setIsRegister(!isRegister); setError(""); setSuccess(""); }}
+                  className="text-aurora-400 hover:text-aurora-300 font-medium transition-colors"
+                >
+                  {isRegister ? "Sign in" : "Create one"}
+                </button>
+              </p>
+            ) : (
+              <p className="text-sm text-surface-500">
+                Registration is temporarily disabled.
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -237,6 +237,10 @@ export async function setupStatus() {
   return apiFetch("/setup/status", { cache: "no-store" }) as Promise<{ setup_complete: boolean }>;
 }
 
+export async function fetchPublicRegistrationSetting() {
+  return apiFetch("/settings/registration", { cache: "no-store" }) as Promise<{ allow_public_registration: boolean }>;
+}
+
 export async function setup(body: {
   email: string;
   password: string;
@@ -294,7 +298,14 @@ export async function removeGroupMember(groupId: string, userId: string) {
 }
 
 export async function fetchUsers() {
-  return apiFetch("/admin/users") as Promise<Array<{ id: string; email: string; role: string }>>;
+  return apiFetch("/admin/users") as Promise<Array<{ id: string; email: string; role: string; enabled: boolean }>>;
+}
+
+export async function updateUserEnabled(userId: string, enabled: boolean) {
+  return apiFetch(`/admin/users/${userId}/enabled`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 export async function fetchUserPermissions(userId: string) {
