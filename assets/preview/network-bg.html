@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Network background</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 220px; padding: 0; position: relative; overflow: hidden;
+         background: radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.18), transparent 60%), #0f0e14; }
+  canvas { position: absolute; inset: 0; }
+  .label { position: absolute; left: 24px; bottom: 18px; z-index: 2; }
+  .label .t { font: 700 16px Inter; color: #fff; letter-spacing: -0.015em; }
+  .label .s { font: 400 12px Inter; color: var(--fg-dim); margin-top: 4px; max-width: 460px;}
+  .badge { position: absolute; top: 18px; right: 18px; font: 600 10px Inter; letter-spacing: 0.12em; text-transform: uppercase; color: var(--aurora-300); padding: 5px 10px; border-radius: 999px; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.30); z-index: 2; }
+</style></head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="badge">Signature</div>
+  <div class="label">
+    <div class="t">Network Background</div>
+    <div class="s">Animated constellation of violet dots and connecting lines. Used as the brand moment on the Login & Setup screens.</div>
+  </div>
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d');
+function fit(){c.width=innerWidth; c.height=innerHeight;}
+fit(); addEventListener('resize', fit);
+const N = 50, PTS = [];
+for(let i=0;i<N;i++) PTS.push({x:Math.random()*innerWidth, y:Math.random()*innerHeight, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r: Math.random()*1.5+1.4});
+const D = 140;
+function step(){
+  x.clearRect(0,0,c.width,c.height);
+  for(const p of PTS){p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>innerWidth)p.vx*=-1; if(p.y<0||p.y>innerHeight)p.vy*=-1;}
+  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+    const a=PTS[i],b=PTS[j], dx=a.x-b.x, dy=a.y-b.y, d=Math.hypot(dx,dy);
+    if(d<D){ const o=(1-d/D)*0.45; x.strokeStyle=`rgba(167,139,250,${o})`; x.lineWidth=1.1; x.beginPath(); x.moveTo(a.x,a.y); x.lineTo(b.x,b.y); x.stroke();}
+  }
+  for(const p of PTS){
+    x.beginPath(); x.arc(p.x,p.y,p.r,0,Math.PI*2); x.fillStyle='rgba(216,200,255,0.9)'; x.fill();
+    x.beginPath(); x.arc(p.x,p.y,p.r*3,0,Math.PI*2); x.fillStyle='rgba(167,139,250,0.15)'; x.fill();
+  }
+  requestAnimationFrame(step);
+}
+step();
+</script>
+</body></html>

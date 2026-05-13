@@ -1,0 +1,40 @@
+/* Preview card host styles — applied to <body> in each preview/*.html */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
+@import url("../colors_and_type.css");
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--surface-950);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  width: 700px;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Tiny tag/label utility used across cards */
+.label-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-weight: 600;
+}
+
+/* Aurora-glow halo */
+.glow-bg::before {
+  content: "";
+  position: absolute;
+  inset: -40% -20% auto -20%;
+  height: 200px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.18) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Aurora · Player bar</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { height: 180px; padding: 0; display: grid; place-items: center; background:
+    radial-gradient(circle at 30% 0%, rgba(139,92,246,0.30), transparent 50%),
+    radial-gradient(circle at 80% 90%, rgba(219,39,119,0.20), transparent 55%),
+    #0f0e14; }
+  .bar { width: 644px; position: relative; border-radius: 32px; overflow: hidden;
+         box-shadow: 0 24px 50px rgba(0,0,0,0.55); }
+  .bar::before { content: ""; position: absolute; inset: 0; backdrop-filter: blur(24px); background: rgba(15,14,20,0.35); }
+  .bar::after  { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)); pointer-events:none; }
+  .bar > .border { position: absolute; inset: 0; border-radius: 32px; border: 1px solid rgba(255,255,255,0.20); pointer-events: none; box-shadow: inset 0 1px 2px rgba(255,255,255,0.15); }
+  .content { position: relative; z-index: 2; padding: 12px 18px; }
+  .prog { height: 6px; background: rgba(74,68,89,0.6); border-radius: 999px; position: relative; overflow: hidden; }
+  .prog .buf { position: absolute; inset: 0 60% 0 0; background: rgba(138,130,164,0.4); border-radius: 999px;}
+  .prog .fill { position: absolute; inset: 0 70% 0 0; background: linear-gradient(90deg,#a78bfa,#8b5cf6); border-radius: 999px; box-shadow: 0 0 10px rgba(139,92,246,0.45);}
+  .prog .dot { position: absolute; left: 30%; top: 50%; transform: translate(-50%,-50%); width: 10px; height: 10px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3);}
+  .row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .left { display: flex; align-items: center; gap: 12px; }
+  .art { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg,#db2777,#7c3aed); box-shadow: 0 0 0 1px rgba(255,255,255,0.10);}
+  .info .t { font: 600 13px Inter; color: #fff; letter-spacing: -0.005em;}
+  .info .s { font: 400 11.5px Inter; color: rgba(255,255,255,0.65); margin-top: 2px;}
+  .ctrl { display: flex; align-items: center; gap: 8px; }
+  .ic   { width: 36px; height: 36px; border-radius: 999px; display:grid; place-items:center; color: rgba(255,255,255,0.7); }
+  .ic svg { width: 18px; height: 18px; }
+  .play { width: 40px; height: 40px; border-radius: 999px; background: rgba(255,255,255,0.92); display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.30); }
+  .play svg { width: 18px; height: 18px; color: #0f0e14; margin-left: 2px; }
+  .right { display: flex; align-items: center; gap: 12px; color: rgba(255,255,255,0.55); font: 500 10.5px ui-monospace; }
+  .vol { width: 70px; height: 4px; background: rgba(74,68,89,0.6); border-radius: 999px; position: relative; }
+  .vol .f { position: absolute; inset: 0 35% 0 0; background: #aaa4be; border-radius: 999px;}
+</style></head>
+<body>
+  <div class="bar">
+    <div class="border"></div>
+    <div class="content">
+      <div class="prog"><div class="buf"></div><div class="fill"></div><div class="dot"></div></div>
+      <div class="row">
+        <div class="left">
+          <div class="art"></div>
+          <div class="info"><div class="t">Northern Light</div><div class="s">Adriana Voss</div></div>
+        </div>
+        <div class="ctrl">
+          <div class="ic"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></div>
+          <div class="play"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="ic"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
+        </div>
+        <div class="right">
+          <span>1:23 / 3:47</span>
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          <div class="vol"><div class="f"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body></html>
