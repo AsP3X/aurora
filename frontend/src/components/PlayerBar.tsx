@@ -258,24 +258,24 @@ export default function PlayerBar() {
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
 
-              {isDragging && (
+              <div
+                className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
+                style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+              >
                 <div
-                  className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
-                  style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+                  className={`flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${isDragging ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-75 translate-y-2"}`}
                 >
-                  <div className="flex flex-col items-center drop-shadow-xl">
-                    <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
-                      <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
-                        {formatTime(progress)}
-                      </span>
-                      <span className="text-[11px] font-semibold text-surface-500 leading-none">
-                        {formatDelta(progress - dragOrigin)}
-                      </span>
-                    </div>
-                    <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
+                  <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
+                    <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
+                      {formatTime(progress)}
+                    </span>
+                    <span className="text-[11px] font-semibold text-surface-500 leading-none">
+                      {formatDelta(progress - dragOrigin)}
+                    </span>
                   </div>
+                  <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Main row */}
