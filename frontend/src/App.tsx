@@ -10,6 +10,7 @@ import Library from "./pages/Library";
 import Player from "./pages/Player";
 import Playlists from "./pages/Playlists";
 import PlaylistDetail from "./pages/PlaylistDetail";
+import SongDetail from "./pages/SongDetail";
 import AdminLayout from "./components/admin/AdminLayout";
 import RequireAdmin from "./components/admin/RequireAdmin";
 import AdminOverviewPage from "./pages/admin/AdminOverviewPage";
@@ -257,6 +258,7 @@ function AppRoutes() {
         <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
         <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
         <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
+        <Route path="/song/:id" element={<SetupGuard><RequireAuth><SongDetail /></RequireAuth></SetupGuard>} />
         <Route path="/admin/*" element={
           <SetupGuard>
             <RequireAuthNoLayout>
