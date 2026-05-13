@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   fetchListeningTime,
   fetchListeningHabits,
   fetchTopArtists,
   fetchTopAlbums,
   fetchHistory,
+  fetchListeningBySong,
+  fetchListeningSessions,
+  type ListeningSessionRow,
 } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 
@@ -81,6 +85,30 @@ function BarChart({
   );
 }
 
+function formatNumber(n: number) {
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+function formatTrackLen(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function formatDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+function formatSessionListened(seconds: number | null) {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds === 0) return "0s";
+  return formatDurationLong(seconds);
+}
+
 /* ─── Page ─── */
 
 export default function StatsPage() {
@@ -105,8 +133,25 @@ export default function StatsPage() {
     duration_listened_seconds: number | null;
     completed: number;
   }> | null>(null);
+  const [bySong, setBySong] = useState<Array<{
+    song_id: string;
+    title: string;
+    artist: string;
+    album: string | null;
+    artwork_key: string | null;
+    duration_seconds: number;
+    play_count: number;
+    total_listened_seconds: number;
+  }> | null>(null);
+
+  const [expandedSongId, setExpandedSongId] = useState<string | null>(null);
+  const [sessionsBySong, setSessionsBySong] = useState<Record<string, ListeningSessionRow[]>>({});
+  const [sessionsLoadingId, setSessionsLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
+    setExpandedSongId(null);
+    setSessionsBySong({});
+    setSessionsLoadingId(null);
     setLoading(true);
     Promise.all([
       fetchListeningTime(period).catch(() => ({ total_seconds: 0 })),
@@ -114,15 +159,35 @@ export default function StatsPage() {
       fetchTopArtists(period).catch(() => []),
       fetchTopAlbums(period).catch(() => []),
       fetchHistory(50).catch(() => []),
-    ]).then(([timeData, habitsData, artists, albums, history]) => {
+      fetchListeningBySong(period).catch(() => []),
+    ]).then(([timeData, habitsData, artists, albums, history, songAgg]) => {
       setTimeStats((prev) => ({ ...prev, [period]: timeData.total_seconds }));
       setHabits(habitsData);
       setTopArtists(artists);
       setTopAlbums(albums);
       setSessions(history);
+      setBySong(songAgg);
       setLoading(false);
     });
   }, [period]);
+
+  async function toggleSongSessions(songId: string) {
+    if (expandedSongId === songId) {
+      setExpandedSongId(null);
+      return;
+    }
+    setExpandedSongId(songId);
+    if (sessionsBySong[songId]) return;
+    setSessionsLoadingId(songId);
+    try {
+      const data = await fetchListeningSessions(period, 500, songId);
+      setSessionsBySong((prev) => ({ ...prev, [songId]: data }));
+    } catch {
+      setSessionsBySong((prev) => ({ ...prev, [songId]: [] }));
+    } finally {
+      setSessionsLoadingId(null);
+    }
+  }
 
   const hourData = useMemo(() => {
     const buckets = Array.from({ length: 24 }, (_, i) => ({ label: `${i}`, value: 0 }));
@@ -240,6 +305,142 @@ export default function StatsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Per-song totals */}
+      <div className="bg-surface-900 border border-white/5 rounded-2xl p-5 overflow-hidden">
+        <h3 className="text-sm font-semibold text-white mb-4">Songs you listened to</h3>
+        <p className="text-xs text-surface-500 mb-4">
+          Play counts are sessions started in this period. Expand a row to see each play with how long you listened (for analytics).
+        </p>
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm text-left min-w-[700px]">
+            <thead className="text-xs text-surface-400 uppercase border-b border-white/5">
+              <tr>
+                <th className="py-2 pr-2 w-10 font-medium" aria-label="Expand sessions" />
+                <th className="py-2 pr-4 font-medium">Song</th>
+                <th className="py-2 pr-4 font-medium hidden md:table-cell">Album</th>
+                <th className="py-2 pr-4 font-medium text-right w-24">Plays</th>
+                <th className="py-2 pr-4 font-medium text-right w-28">Time listened</th>
+                <th className="py-2 font-medium text-right w-24 hidden sm:table-cell">Track</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {(bySong ?? []).flatMap((row) => {
+                const expanded = expandedSongId === row.song_id;
+                const sess = sessionsBySong[row.song_id];
+                const loadingSessions = sessionsLoadingId === row.song_id;
+                const detailRow = expanded ? (
+                  <tr key={`${row.song_id}-sessions`} className="bg-surface-950/40">
+                    <td colSpan={6} className="py-3 px-4 border-t border-white/5">
+                      {loadingSessions ? (
+                        <div className="flex justify-center py-6">
+                          <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-white/5">
+                          <table className="w-full text-xs text-left min-w-[640px]">
+                            <thead className="text-surface-500 uppercase border-b border-white/5">
+                              <tr>
+                                <th className="py-2 px-2 font-medium">Started</th>
+                                <th className="py-2 px-2 font-medium hidden sm:table-cell">Ended</th>
+                                <th className="py-2 px-2 font-medium text-right">Listened</th>
+                                <th className="py-2 px-2 font-medium text-right">Track</th>
+                                <th className="py-2 px-2 font-medium text-center w-16">Done</th>
+                                <th className="py-2 px-2 font-medium font-mono">Session ID</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 text-surface-300">
+                              {(sess ?? []).map((s) => (
+                                <tr key={s.id}>
+                                  <td className="py-2 px-2 whitespace-nowrap">{formatDateTime(s.started_at)}</td>
+                                  <td className="py-2 px-2 whitespace-nowrap hidden sm:table-cell text-surface-500">
+                                    {s.ended_at ? formatDateTime(s.ended_at) : "—"}
+                                  </td>
+                                  <td className="py-2 px-2 text-right tabular-nums">{formatSessionListened(s.duration_listened_seconds)}</td>
+                                  <td className="py-2 px-2 text-right tabular-nums text-surface-500">
+                                    {formatTrackLen(s.song_duration_seconds)}
+                                  </td>
+                                  <td className="py-2 px-2 text-center">{s.completed ? "Yes" : "No"}</td>
+                                  <td className="py-2 px-2 font-mono text-[10px] text-surface-500 break-all max-w-[10rem]" title={s.id}>
+                                    {s.id}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {sess && sess.length === 0 && (
+                            <p className="text-sm text-surface-500 py-4 text-center">No sessions in this period.</p>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : null;
+
+                const mainRow = (
+                  <tr key={row.song_id} className="hover:bg-white/[0.02]">
+                    <td className="py-2.5 pr-2 align-top">
+                      <button
+                        type="button"
+                        onClick={() => void toggleSongSessions(row.song_id)}
+                        className="p-1 rounded-lg text-surface-400 hover:text-white hover:bg-white/5 transition-colors"
+                        aria-expanded={expanded}
+                        aria-label={expanded ? "Hide play sessions" : "Show play sessions"}
+                      >
+                        <svg
+                          className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg overflow-hidden bg-surface-800 shrink-0">
+                          <ArtworkImage
+                            songId={row.song_id}
+                            title={row.title}
+                            artist={row.artist}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <Link
+                            to={`/player/${row.song_id}`}
+                            className="font-medium text-white truncate block hover:text-aurora-300 transition-colors"
+                          >
+                            {row.title}
+                          </Link>
+                          <span className="text-xs text-surface-500 truncate block">{row.artist}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4 text-surface-400 truncate max-w-[12rem] hidden md:table-cell">
+                      {row.album ?? "—"}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right text-surface-300 tabular-nums">{formatNumber(row.play_count)}</td>
+                    <td className="py-2.5 pr-4 text-right text-surface-300 tabular-nums">
+                      {formatDurationLong(row.total_listened_seconds)}
+                    </td>
+                    <td className="py-2.5 text-right text-surface-500 tabular-nums text-xs hidden sm:table-cell">
+                      {formatTrackLen(row.duration_seconds)}
+                    </td>
+                  </tr>
+                );
+
+                return detailRow ? [mainRow, detailRow] : [mainRow];
+              })}
+            </tbody>
+          </table>
+        </div>
+        {(!bySong || bySong.length === 0) && (
+          <p className="text-sm text-surface-500 pt-2">No song data for this period yet.</p>
+        )}
       </div>
 
       {/* Recent Sessions */}

@@ -408,6 +408,161 @@ pub struct ListeningTimeParams {
 
 fn default_period() -> String { "all".to_string() }
 
+#[derive(Debug, Deserialize)]
+pub struct ListeningBySongParams {
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_by_song_limit")]
+    pub limit: i64,
+}
+
+fn default_listening_by_song_limit() -> i64 {
+    500
+}
+
+fn history_period_sql(dialect: &super::date_dialect::Dialect, period: &str) -> Option<String> {
+    period_clause(dialect, period).map(|c| c.replace("started_at", "h.started_at"))
+}
+
+async fn query_user_listening_by_song(
+    pool: &sqlx::AnyPool,
+    user_id: &str,
+    period: &str,
+    limit: i64,
+) -> Result<Vec<super::model::UserSongListening>, AppError> {
+    let dialect = super::date_dialect::get(pool).await;
+    let mut sql = String::from(
+        "SELECT s.id as song_id, s.title, s.artist, s.album, s.artwork_key, s.duration_seconds, \
+         COUNT(h.id) as play_count, \
+         COALESCE(SUM(CASE WHEN COALESCE(h.duration_listened_seconds, 0) > 0 THEN h.duration_listened_seconds ELSE 0 END), 0) as total_listened_seconds \
+         FROM playback_history h \
+         JOIN songs s ON s.id = h.song_id \
+         WHERE h.user_id = $1",
+    );
+    if let Some(clause) = history_period_sql(&dialect, period) {
+        sql.push_str(" AND ");
+        sql.push_str(&clause);
+    }
+    sql.push_str(
+        " GROUP BY s.id, s.title, s.artist, s.album, s.artwork_key, s.duration_seconds \
+          ORDER BY total_listened_seconds DESC, play_count DESC \
+          LIMIT $2",
+    );
+
+    let lim = limit.clamp(1, 2000);
+    let rows = sqlx::query_as::<_, super::model::UserSongListening>(&sql)
+        .bind(user_id)
+        .bind(lim)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows)
+}
+
+pub async fn get_me_listening_by_song(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ListeningBySongParams>,
+) -> Result<Json<Vec<super::model::UserSongListening>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let rows = query_user_listening_by_song(&state.pool, &claims.sub, &params.period, params.limit).await?;
+    Ok(Json(rows))
+}
+
+pub async fn get_admin_user_listening_by_song(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(user_id): Path<String>,
+    Query(params): Query<ListeningBySongParams>,
+) -> Result<Json<Vec<super::model::UserSongListening>>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    let rows = query_user_listening_by_song(&state.pool, &user_id, &params.period, params.limit).await?;
+    Ok(Json(rows))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListeningSessionsParams {
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_sessions_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub song_id: Option<String>,
+}
+
+fn default_listening_sessions_limit() -> i64 {
+    500
+}
+
+async fn query_listening_sessions(
+    pool: &sqlx::AnyPool,
+    user_id: &str,
+    song_id: Option<&str>,
+    period: &str,
+    limit: i64,
+) -> Result<Vec<super::model::ListeningSessionEntry>, AppError> {
+    let dialect = super::date_dialect::get(pool).await;
+    let lim = limit.clamp(1, 5000);
+    let period_part = history_period_sql(&dialect, period)
+        .map(|c| format!(" AND {}", c))
+        .unwrap_or_default();
+
+    let select = "SELECT h.id, h.song_id, h.started_at, h.ended_at, h.duration_listened_seconds, h.completed, \
+         s.title, s.artist, s.album, s.duration_seconds as song_duration_seconds \
+         FROM playback_history h \
+         JOIN songs s ON s.id = h.song_id \
+         WHERE h.user_id = $1";
+
+    let rows = if let Some(sid) = song_id {
+        let sql = format!("{select} AND h.song_id = $2{period_part} ORDER BY h.started_at DESC LIMIT $3");
+        sqlx::query_as::<_, super::model::ListeningSessionEntry>(&sql)
+            .bind(user_id)
+            .bind(sid)
+            .bind(lim)
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql = format!("{select}{period_part} ORDER BY h.started_at DESC LIMIT $2");
+        sqlx::query_as::<_, super::model::ListeningSessionEntry>(&sql)
+            .bind(user_id)
+            .bind(lim)
+            .fetch_all(pool)
+            .await?
+    };
+
+    Ok(rows)
+}
+
+pub async fn get_me_listening_sessions(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Query(params): Query<ListeningSessionsParams>,
+) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, AppError> {
+    require_permission(&state.pool, &claims.sub, "stats.view").await?;
+    let sid = params.song_id.as_deref();
+    let rows = query_listening_sessions(
+        &state.pool,
+        &claims.sub,
+        sid,
+        &params.period,
+        params.limit,
+    )
+    .await?;
+    Ok(Json(rows))
+}
+
+pub async fn get_admin_user_listening_sessions(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Path(user_id): Path<String>,
+    Query(params): Query<ListeningSessionsParams>,
+) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, AppError> {
+    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    let sid = params.song_id.as_deref();
+    let rows = query_listening_sessions(&state.pool, &user_id, sid, &params.period, params.limit).await?;
+    Ok(Json(rows))
+}
+
 pub async fn get_listening_time(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -520,14 +675,20 @@ pub async fn get_admin_listening_stats(
 ) -> Result<Json<super::model::AdminListeningStats>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
+    // Avoid AVG(integer) → NUMERIC on Postgres (sqlx/AnyPool often cannot decode that into f64).
+    // Count every logged session as a play; time metrics use rows with measured listening only.
     let row: super::model::AdminListeningStats = sqlx::query_as(
         "SELECT
             COUNT(*) as total_plays,
-            COUNT(DISTINCT user_id) as active_users,
-            COALESCE(SUM(duration_listened_seconds), 0) as total_listening_seconds,
-            COALESCE(AVG(duration_listened_seconds), 0.0) as avg_duration_seconds
-         FROM playback_history
-         WHERE duration_listened_seconds > 0"
+            COUNT(DISTINCT CASE WHEN COALESCE(duration_listened_seconds, 0) > 0 THEN user_id END) as active_users,
+            COALESCE(SUM(CASE WHEN COALESCE(duration_listened_seconds, 0) > 0 THEN duration_listened_seconds ELSE 0 END), 0) as total_listening_seconds,
+            CASE
+                WHEN SUM(CASE WHEN COALESCE(duration_listened_seconds, 0) > 0 THEN 1 ELSE 0 END) > 0 THEN
+                    CAST(COALESCE(SUM(CASE WHEN COALESCE(duration_listened_seconds, 0) > 0 THEN duration_listened_seconds ELSE 0 END), 0) AS REAL)
+                    / CAST(SUM(CASE WHEN COALESCE(duration_listened_seconds, 0) > 0 THEN 1 ELSE 0 END) AS REAL)
+                ELSE CAST(0 AS REAL)
+            END as avg_duration_seconds
+         FROM playback_history"
     )
     .fetch_one(&state.pool)
     .await?;

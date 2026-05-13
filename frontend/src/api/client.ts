@@ -269,6 +269,57 @@ export async function fetchTopAlbums(period: "today" | "week" | "month" | "all" 
   }>>;
 }
 
+export type UserSongListeningRow = {
+  song_id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  artwork_key: string | null;
+  duration_seconds: number;
+  play_count: number;
+  total_listened_seconds: number;
+};
+
+export async function fetchListeningBySong(
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500
+) {
+  return apiFetch(`/me/listening-by-song?period=${period}&limit=${limit}`) as Promise<UserSongListeningRow[]>;
+}
+
+export type ListeningSessionRow = {
+  id: string;
+  song_id: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_listened_seconds: number | null;
+  completed: boolean;
+  title: string;
+  artist: string;
+  album: string | null;
+  song_duration_seconds: number;
+};
+
+function listeningSessionsQuery(
+  period: "today" | "week" | "month" | "all",
+  limit: number,
+  songId?: string
+) {
+  const q = new URLSearchParams({ period, limit: String(limit) });
+  if (songId) q.set("song_id", songId);
+  return `?${q.toString()}`;
+}
+
+export async function fetchListeningSessions(
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500,
+  songId?: string
+) {
+  return apiFetch(`/me/listening-sessions${listeningSessionsQuery(period, limit, songId)}`) as Promise<
+    ListeningSessionRow[]
+  >;
+}
+
 export async function fetchAdminListeningStats() {
   return apiFetch("/admin/listening-stats") as Promise<{
     total_plays: number;
@@ -344,6 +395,27 @@ export async function removeGroupMember(groupId: string, userId: string) {
 
 export async function fetchUsers() {
   return apiFetch("/admin/users") as Promise<Array<{ id: string; email: string; role: string; enabled: boolean }>>;
+}
+
+export async function fetchAdminUserListeningBySong(
+  userId: string,
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500
+) {
+  return apiFetch(
+    `/admin/users/${encodeURIComponent(userId)}/listening-by-song?period=${period}&limit=${limit}`
+  ) as Promise<UserSongListeningRow[]>;
+}
+
+export async function fetchAdminUserListeningSessions(
+  userId: string,
+  period: "today" | "week" | "month" | "all" = "all",
+  limit = 500,
+  songId?: string
+) {
+  return apiFetch(
+    `/admin/users/${encodeURIComponent(userId)}/listening-sessions${listeningSessionsQuery(period, limit, songId)}`
+  ) as Promise<ListeningSessionRow[]>;
 }
 
 export async function updateUserEnabled(userId: string, enabled: boolean) {

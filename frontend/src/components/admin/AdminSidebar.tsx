@@ -9,6 +9,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/admin", label: "Overview", icon: <OverviewIcon /> },
   { to: "/admin/users", label: "Users", icon: <UsersIcon /> },
+  { to: "/admin/listening", label: "User listening", icon: <ListeningIcon /> },
   { to: "/admin/groups", label: "Groups", icon: <GroupsIcon /> },
   { to: "/admin/library", label: "Library", icon: <LibraryIcon /> },
   { to: "/admin/playlists", label: "Playlists", icon: <PlaylistsIcon /> },
@@ -97,6 +98,14 @@ function UsersIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+    </svg>
+  );
+}
+
+function ListeningIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 18V6M8 14V8m4 10V4m4 8v-4m4 10V2" />
     </svg>
   );
 }
