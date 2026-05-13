@@ -4,6 +4,7 @@ import Hls from "hls.js";
 import { usePlayer } from "../context/PlayerContext";
 import { logHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
+import QueueDrawer from "./QueueDrawer";
 
 function formatTime(t: number) {
   if (!isFinite(t)) return "0:00";
@@ -45,6 +46,8 @@ export default function PlayerBar() {
     setDuration,
     setBuffered,
     toggleShuffle,
+    queueOpen,
+    setQueueOpen,
     audioRef,
   } = usePlayer();
 
@@ -376,6 +379,17 @@ export default function PlayerBar() {
                 </span>
 
                 <button
+                  onClick={() => setQueueOpen(!queueOpen)}
+                  className={`text-surface-400 hover:text-white transition-colors ${queueOpen ? "text-aurora-400" : ""}`}
+                  aria-label="Queue"
+                  title="Queue"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+
+                <button
                   onClick={toggleMute}
                   aria-label={volume === 0 ? "Unmute" : "Mute"}
                   className="text-surface-400 hover:text-white transition-colors"
@@ -422,6 +436,8 @@ export default function PlayerBar() {
         </div>
       </div>
       )}
+
+      <QueueDrawer />
 
       <audio
         ref={audioRef}

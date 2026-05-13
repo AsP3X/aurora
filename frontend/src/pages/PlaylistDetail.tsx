@@ -20,13 +20,13 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function PlayButton({ song }: { song: Song }) {
-  const { playSong } = usePlayer();
+function PlayButton({ index, songs }: { index: number; songs: Song[] }) {
+  const { playSongs } = usePlayer();
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    playSong(song);
+    playSongs(songs, index);
   }
 
   return (
@@ -59,7 +59,7 @@ function fuzzyScore(query: string, song: SongOption): number {
 export default function PlaylistDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { playSong, playSongs } = usePlayer();
+  const { playSongs, addToQueue } = usePlayer();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
@@ -618,12 +618,12 @@ export default function PlaylistDetail() {
                 <div
                   key={song.id}
                   className="group flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
-                  onClick={() => playSong(song)}
+                  onClick={() => playSongs(songs, i)}
                 >
                   <div className="w-8 text-center text-sm text-surface-500 shrink-0">
                     <span className="group-hover:hidden">{i + 1}</span>
                     <div className="hidden group-hover:block">
-                      <PlayButton song={song} />
+                      <PlayButton index={i} songs={songs} />
                     </div>
                   </div>
                   <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -645,6 +645,18 @@ export default function PlaylistDetail() {
                     {formatDuration(song.duration_seconds)}
                   </div>
                   <div className="w-12 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addToQueue(song);
+                      }}
+                      className="p-1 rounded text-surface-400 hover:text-aurora-400 hover:bg-white/5 transition-colors"
+                      title="Add to queue"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
