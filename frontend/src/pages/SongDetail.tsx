@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { fetchSong } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
+import AddToPlaylist from "../components/AddToPlaylist";
 import type { Song } from "../types";
 
 function formatDuration(seconds: number) {
@@ -241,7 +242,7 @@ export default function SongDetail() {
           </div>
 
           {/* Play Button */}
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-3">
             <button
               onClick={handlePlay}
               className="flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-br from-aurora-500 to-aurora-700 hover:from-aurora-400 hover:to-aurora-600 text-white font-medium shadow-lg shadow-aurora-500/25 hover:shadow-aurora-500/40 transition-all hover:scale-105 active:scale-95"
@@ -255,6 +256,16 @@ export default function SongDetail() {
               </svg>
               Play
             </button>
+            {song && (
+              <AddToPlaylist song={song}>
+                <button className="flex items-center gap-2 px-5 py-3 rounded-full bg-surface-900 border border-white/10 hover:bg-surface-800 text-white font-medium transition-all hover:scale-105 active:scale-95">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add to Playlist
+                </button>
+              </AddToPlaylist>
+            )}
           </div>
 
           {/* Details grid */}

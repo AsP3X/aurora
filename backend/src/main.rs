@@ -1,7 +1,7 @@
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 use std::path::PathBuf;
@@ -168,8 +168,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/songs/{id}/segments/{segment}", get(hls::handlers::get_segment))
         .route("/api/v1/search", get(search::handlers::search))
         .route("/api/v1/playlists", get(playlists::handlers::list_playlists).post(playlists::handlers::create_playlist))
-        .route("/api/v1/playlists/{id}", get(playlists::handlers::get_playlist))
+        .route("/api/v1/playlists/{id}", get(playlists::handlers::get_playlist).put(playlists::handlers::update_playlist).delete(playlists::handlers::delete_playlist))
         .route("/api/v1/playlists/{id}/songs", post(playlists::handlers::add_song))
+        .route("/api/v1/playlists/{id}/songs/reorder", put(playlists::handlers::reorder_songs))
         .route("/api/v1/playlists/{id}/songs/{song_id}", axum::routing::delete(playlists::handlers::remove_song))
         .route("/api/v1/history", get(songs::handlers::list_history).post(songs::handlers::log_history))
         .route("/api/v1/stats", get(songs::handlers::get_stats))
