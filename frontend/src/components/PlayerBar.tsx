@@ -161,8 +161,6 @@ export default function PlayerBar() {
   );
 
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOrigin, setDragOrigin] = useState(0);
 
   const handleProgressMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -176,23 +174,6 @@ export default function PlayerBar() {
 
   const handleProgressMouseLeave = useCallback(() => {
     setHoverPercent(null);
-  }, []);
-
-  const handleSeekPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLInputElement>) => {
-      e.currentTarget.setPointerCapture(e.pointerId);
-      setIsDragging(true);
-      setDragOrigin(Number(e.currentTarget.value));
-    },
-    []
-  );
-
-  const handleSeekPointerUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const handleSeekLostPointerCapture = useCallback(() => {
-    setIsDragging(false);
   }, []);
 
   if (!currentSong) return null;
@@ -241,14 +222,6 @@ export default function PlayerBar() {
                 />
               </div>
 
-              {/* Ghost dot at cursor position */}
-              {hoverPercent !== null && (
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white/40 rounded-full pointer-events-none z-10 transition-[left] duration-300 ease-linear"
-                  style={{ left: `calc(${hoverPercent}% - 5px)` }}
-                />
-              )}
-
               {/* Always-visible dot at the tip of progress */}
               <div
                 className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow pointer-events-none z-10 transition-[left] duration-300 ease-linear"
@@ -270,29 +243,24 @@ export default function PlayerBar() {
                 max={duration || currentSong.duration_seconds}
                 value={progress}
                 onChange={handleSeekInput}
-                onPointerDown={handleSeekPointerDown}
-                onPointerUp={handleSeekPointerUp}
-                onLostPointerCapture={handleSeekLostPointerCapture}
                 aria-label="Seek"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
 
               <div
                 className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
-                style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+                style={{ left: `${hoverPercent ?? progressPercent}%`, transform: "translateX(-50%)" }}
               >
-                <div
-                  className={`flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${isDragging ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-75 translate-y-2"}`}
-                >
-                  <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
-                    <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
-                      {formatTime(progress)}
+                <div className="flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] opacity-0 scale-75 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0">
+                  <div className="bg-white rounded-xl px-4 py-3 flex flex-col items-center gap-1 relative z-10 shadow-2xl shadow-black/30 ring-2 ring-aurora-500/20">
+                    <span className="text-base font-bold text-surface-900 leading-none tracking-tight">
+                      {formatTime(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 : 0)}
                     </span>
-                    <span className="text-[11px] font-semibold text-surface-500 leading-none">
-                      {formatDelta(progress - dragOrigin)}
+                    <span className="text-xs font-semibold text-surface-600 leading-none">
+                      {formatDelta(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 - progress : 0)}
                     </span>
                   </div>
-                  <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
+                  <div className="w-3 h-3 bg-white rotate-45 -mt-2 relative z-0 shadow-lg shadow-black/20 ring-2 ring-aurora-500/20" />
                 </div>
               </div>
             </div>

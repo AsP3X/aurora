@@ -32,8 +32,18 @@ export default function Player() {
     audioRef,
   } = usePlayer();
   const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOrigin, setDragOrigin] = useState(0);
+  const [hoverPercent, setHoverPercent] = useState<number | null>(null);
+
+  function handleProgressMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setHoverPercent(pct);
+  }
+
+  function handleProgressMouseLeave() {
+    setHoverPercent(null);
+  }
 
   // Load song if not currently playing
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -74,20 +84,6 @@ export default function Player() {
 
   function handleVolume(e: React.ChangeEvent<HTMLInputElement>) {
     setVolume(Number(e.target.value));
-  }
-
-  function handleSeekPointerDown(e: React.PointerEvent<HTMLInputElement>) {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setIsDragging(true);
-    setDragOrigin(Number(e.currentTarget.value));
-  }
-
-  function handleSeekPointerUp() {
-    setIsDragging(false);
-  }
-
-  function handleSeekLostPointerCapture() {
-    setIsDragging(false);
   }
 
   function formatTime(t: number) {
@@ -204,7 +200,10 @@ export default function Player() {
         <div className="max-w-3xl mx-auto space-y-3">
           {/* Progress Bar */}
           <div>
-            <div className="relative h-1.5 group cursor-pointer">
+            <div className="relative h-1.5 group cursor-pointer"
+            onMouseMove={handleProgressMouseMove}
+            onMouseLeave={handleProgressMouseLeave}
+          >
               {/* Track */}
               <div className="absolute inset-0 bg-surface-800 rounded-full overflow-hidden">
               <div
@@ -217,20 +216,12 @@ export default function Player() {
               />
               </div>
 
-              {/* Thumb */}
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                style={{ left: `calc(${progressPercent}% - 6px)` }}
-              />
               <input
                 type="range"
                 min={0}
                 max={duration || currentSong.duration_seconds}
                 value={progress}
                 onChange={handleSeek}
-                onPointerDown={handleSeekPointerDown}
-                onPointerUp={handleSeekPointerUp}
-                onLostPointerCapture={handleSeekLostPointerCapture}
                 aria-label="Seek"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
@@ -238,20 +229,18 @@ export default function Player() {
               {/* Drag tooltip */}
               <div
                 className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
-                style={{ left: `${progressPercent}%`, transform: "translateX(-50%)" }}
+                style={{ left: `${hoverPercent ?? progressPercent}%`, transform: "translateX(-50%)" }}
               >
-                <div
-                  className={`flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${isDragging ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-75 translate-y-2"}`}
-                >
-                  <div className="bg-white rounded-xl px-3 py-2 flex flex-col items-center gap-1 relative z-10">
-                    <span className="text-sm font-bold text-surface-900 leading-none tracking-tight">
-                      {formatTime(progress)}
+                <div className="flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] opacity-0 scale-75 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0">
+                  <div className="bg-white rounded-xl px-4 py-3 flex flex-col items-center gap-1 relative z-10 shadow-2xl shadow-black/30 ring-2 ring-aurora-500/20">
+                    <span className="text-base font-bold text-surface-900 leading-none tracking-tight">
+                      {formatTime(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 : 0)}
                     </span>
-                    <span className="text-[11px] font-semibold text-surface-500 leading-none">
-                      {formatDelta(progress - dragOrigin)}
+                    <span className="text-xs font-semibold text-surface-600 leading-none">
+                      {formatDelta(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 - progress : 0)}
                     </span>
                   </div>
-                  <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 relative z-0" />
+                  <div className="w-3 h-3 bg-white rotate-45 -mt-2 relative z-0 shadow-lg shadow-black/20 ring-2 ring-aurora-500/20" />
                 </div>
               </div>
             </div>
