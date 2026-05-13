@@ -14,14 +14,21 @@ export default function Player() {
     duration,
     volume,
     buffered,
+    queue,
+    shuffle,
+    queueOpen,
     togglePlay,
+    playNext,
+    playPrevious,
     seek,
     setVolume,
     toggleMute,
+    toggleShuffle,
     playSong,
     setDuration,
     setBuffered,
     setProgress,
+    setQueueOpen,
     audioRef,
   } = usePlayer();
   const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
@@ -296,10 +303,17 @@ export default function Player() {
             {/* Transport Controls */}
             <div className="flex items-center justify-center gap-2 sm:gap-4">
               <button
-                className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center text-surface-600 cursor-default"
+                onClick={toggleShuffle}
+                disabled={queue.length === 0}
+                className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${
+                  queue.length === 0
+                    ? "text-surface-600 cursor-default"
+                    : shuffle
+                      ? "text-aurora-400"
+                      : "text-surface-400 hover:text-white"
+                }`}
                 title="Shuffle"
-                tabIndex={-1}
-                aria-disabled="true"
+                aria-label="Shuffle"
               >
                 <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
@@ -307,7 +321,11 @@ export default function Player() {
               </button>
 
               <button
-                className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-surface-400 hover:text-white transition-colors"
+                onClick={playPrevious}
+                disabled={queue.length === 0}
+                className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center transition-colors ${
+                  queue.length === 0 ? "text-surface-600 cursor-default" : "text-surface-400 hover:text-white"
+                }`}
                 aria-label="Previous"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
@@ -326,20 +344,26 @@ export default function Player() {
               </button>
 
               <button
-                className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-surface-400 hover:text-white transition-colors"
+                onClick={playNext}
+                disabled={queue.length === 0}
+                className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center transition-colors ${
+                  queue.length === 0 ? "text-surface-600 cursor-default" : "text-surface-400 hover:text-white"
+                }`}
                 aria-label="Next"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
               </button>
 
               <button
-                className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center text-surface-600 cursor-default"
-                title="Repeat"
-                tabIndex={-1}
-                aria-disabled="true"
+                onClick={() => setQueueOpen(true)}
+                className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${
+                  queueOpen ? "text-aurora-400" : "text-surface-400 hover:text-white"
+                }`}
+                title="Queue"
+                aria-label="Queue"
               >
                 <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.058M20 20v-5h-.058M4 14a8 8 0 0113.647-5.647M20 10a8 8 0 01-13.647 5.647" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
             </div>

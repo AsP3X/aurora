@@ -33,7 +33,7 @@ function formatDate(iso: string) {
 export default function SongDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { playSong } = usePlayer();
+  const { playSong, addToQueue } = usePlayer();
   const [song, setSong] = useState<Song | null>(null);
   const [playCount, setPlayCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -260,6 +260,15 @@ export default function SongDetail() {
                 <path d="M8 5v14l11-7z" />
               </svg>
               Play
+            </button>
+            <button
+              onClick={() => song && addToQueue(song)}
+              className="flex items-center gap-2 px-5 py-3 rounded-full bg-surface-900 border border-white/10 hover:bg-surface-800 text-white font-medium transition-all hover:scale-105 active:scale-95"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add to Queue
             </button>
             {song && (
               <AddToPlaylist song={song}>
