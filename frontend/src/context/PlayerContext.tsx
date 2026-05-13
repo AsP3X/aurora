@@ -10,10 +10,16 @@ interface PlayerState {
   volume: number;
   buffered: number;
   currentStreamUrl: string | null;
+  queue: Song[];
+  currentIndex: number;
+  shuffle: boolean;
 }
 
 interface PlayerContextType extends PlayerState {
   playSong: (song: Song) => Promise<void>;
+  playSongs: (songs: Song[], startIndex?: number) => Promise<void>;
+  playNext: () => void;
+  playPrevious: () => void;
   togglePlay: () => void;
   pause: () => void;
   seek: (time: number) => void;
@@ -22,6 +28,7 @@ interface PlayerContextType extends PlayerState {
   setProgress: (p: number) => void;
   setDuration: (d: number) => void;
   setBuffered: (b: number) => void;
+  toggleShuffle: () => void;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
 
@@ -35,15 +42,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [volume, setVolumeState] = useState(1);
   const [buffered, setBuffered] = useState(0);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
+  const [queue, setQueue] = useState<Song[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [shuffle, setShuffle] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const playSong = useCallback(async (song: Song) => {
-    setCurrentSong(song);
-    setIsPlaying(true);
-    setProgress(0);
-    setDuration(song.duration_seconds || 0);
-    setBuffered(0);
-
+  const loadStreamUrl = useCallback(async (song: Song) => {
     let url: string;
     try {
       const songData = await fetchSong(song.id);
@@ -57,6 +61,68 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
     setCurrentStreamUrl(url);
   }, []);
+
+  const playSong = useCallback(async (song: Song) => {
+    setCurrentSong(song);
+    setIsPlaying(true);
+    setProgress(0);
+    setDuration(song.duration_seconds || 0);
+    setBuffered(0);
+    setQueue([]);
+    setCurrentIndex(0);
+    await loadStreamUrl(song);
+  }, [loadStreamUrl]);
+
+  const playSongs = useCallback(async (songs: Song[], startIndex = 0) => {
+    if (songs.length === 0) return;
+    const idx = Math.max(0, Math.min(startIndex, songs.length - 1));
+    const song = songs[idx];
+    setQueue(songs);
+    setCurrentIndex(idx);
+    setCurrentSong(song);
+    setIsPlaying(true);
+    setProgress(0);
+    setDuration(song.duration_seconds || 0);
+    setBuffered(0);
+    await loadStreamUrl(song);
+  }, [loadStreamUrl]);
+
+  const playNext = useCallback(() => {
+    if (queue.length === 0) return;
+    let nextIndex: number;
+    if (shuffle) {
+      nextIndex = Math.floor(Math.random() * queue.length);
+    } else {
+      nextIndex = currentIndex + 1;
+    }
+    if (nextIndex >= queue.length) {
+      nextIndex = 0;
+    }
+    const song = queue[nextIndex];
+    setCurrentIndex(nextIndex);
+    setCurrentSong(song);
+    setIsPlaying(true);
+    setProgress(0);
+    setDuration(song.duration_seconds || 0);
+    setBuffered(0);
+    loadStreamUrl(song);
+  }, [queue, currentIndex, shuffle, loadStreamUrl]);
+
+  const playPrevious = useCallback(() => {
+    if (queue.length === 0) return;
+    let prevIndex = currentIndex - 1;
+    if (prevIndex < 0) {
+      prevIndex = queue.length - 1;
+    }
+    const song = queue[prevIndex];
+    setCurrentIndex(prevIndex);
+    setCurrentSong(song);
+    setIsPlaying(true);
+    setProgress(0);
+    setDuration(song.duration_seconds || 0);
+    setBuffered(0);
+    loadStreamUrl(song);
+  }, [queue, currentIndex, loadStreamUrl]);
 
   const togglePlay = useCallback(() => {
     if (!currentSong) return;
@@ -96,6 +162,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [volume, prevVolume]);
 
+  const toggleShuffle = useCallback(() => {
+    setShuffle((prev) => !prev);
+  }, []);
+
   return (
     <PlayerContext.Provider
       value={{
@@ -106,7 +176,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         volume,
         buffered,
         currentStreamUrl,
+        queue,
+        currentIndex,
+        shuffle,
         playSong,
+        playSongs,
+        playNext,
+        playPrevious,
         togglePlay,
         pause,
         seek,
@@ -115,6 +191,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         setProgress,
         setDuration,
         setBuffered,
+        toggleShuffle,
         audioRef,
       }}
     >

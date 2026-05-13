@@ -50,7 +50,7 @@ export default function DashboardLayout({
       }
     });
     return () => { mounted = false; };
-  }, []);
+  }, [pathname]);
 
   /* Close sidebar on route change (mobile) */
   useEffect(() => {

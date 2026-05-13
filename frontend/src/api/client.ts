@@ -152,6 +152,20 @@ export async function fetchPlaylist(id: string) {
   return apiFetch(`/playlists/${id}`) as Promise<{ playlist: Playlist; songs: Song[] }>;
 }
 
+export async function updatePlaylist(
+  id: string,
+  body: { name?: string; description?: string; is_public?: boolean }
+) {
+  return apiFetch(`/playlists/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }) as Promise<Playlist>;
+}
+
+export async function deletePlaylist(id: string) {
+  return apiFetch(`/playlists/${id}`, { method: "DELETE" });
+}
+
 export async function addSongToPlaylist(playlistId: string, songId: string) {
   return apiFetch(`/playlists/${playlistId}/songs`, {
     method: "POST",
@@ -161,6 +175,13 @@ export async function addSongToPlaylist(playlistId: string, songId: string) {
 
 export async function removeSongFromPlaylist(playlistId: string, songId: string) {
   return apiFetch(`/playlists/${playlistId}/songs/${songId}`, { method: "DELETE" });
+}
+
+export async function reorderPlaylistSongs(playlistId: string, songIds: string[]) {
+  return apiFetch(`/playlists/${playlistId}/songs/reorder`, {
+    method: "PUT",
+    body: JSON.stringify({ song_ids: songIds }),
+  });
 }
 
 export async function logHistory(songId: string, duration?: number, completed = false) {

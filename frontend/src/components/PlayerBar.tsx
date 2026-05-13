@@ -33,13 +33,18 @@ export default function PlayerBar() {
     volume,
     buffered,
     currentStreamUrl,
+    queue,
+    shuffle,
     togglePlay,
+    playNext,
+    playPrevious,
     seek,
     setVolume,
     toggleMute,
     setProgress,
     setDuration,
     setBuffered,
+    toggleShuffle,
     audioRef,
   } = usePlayer();
 
@@ -120,7 +125,10 @@ export default function PlayerBar() {
     if (currentSong) {
       logHistory(currentSong.id, undefined, true).catch(() => {});
     }
-  }, [currentSong]);
+    if (queue.length > 0) {
+      playNext();
+    }
+  }, [currentSong, queue, playNext]);
 
   const handleAudioError = useCallback(() => {
     const audio = audioRef.current;
@@ -306,6 +314,18 @@ export default function PlayerBar() {
               {/* Center: Controls */}
               <div className="flex items-center justify-center gap-1 sm:gap-2">
                 <button
+                  onClick={toggleShuffle}
+                  className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${shuffle ? "text-aurora-400" : "text-surface-400 hover:text-white"}`}
+                  aria-label="Shuffle"
+                  title="Shuffle"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={playPrevious}
                   className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
                   aria-label="Previous"
                 >
@@ -331,6 +351,7 @@ export default function PlayerBar() {
                 </button>
 
                 <button
+                  onClick={playNext}
                   className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
                   aria-label="Next"
                 >
