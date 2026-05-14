@@ -54,3 +54,4 @@ aes-gcm = "0.10"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 hyper = { version = "1", features = ["full"] }
+serde_urlencoded = "0.7"

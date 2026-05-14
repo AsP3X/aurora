@@ -19,9 +19,18 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   const method = options.method || "GET";
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...((options.headers as Record<string, string>) || {}),
   };
+
+  const hasExplicitContentType = Boolean(headers["Content-Type"] ?? headers["content-type"]);
+  if (
+    !hasExplicitContentType &&
+    options.body != null &&
+    typeof options.body === "string" &&
+    (method === "POST" || method === "PUT" || method === "PATCH")
+  ) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -59,10 +68,18 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, body);
+    const raw = await res.text();
+    let parsed: { error?: string } = {};
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw) as { error?: string };
+      } catch {
+        /* plain-text or HTML error body */
+      }
+    }
+    console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, raw ? { raw: raw.slice(0, 500) } : {});
     console.groupEnd();
-    throw new Error(body.error || `HTTP ${res.status}`);
+    throw new Error(parsed.error || raw?.trim().slice(0, 300) || `HTTP ${res.status}`);
   }
 
   console.log(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`);
@@ -412,8 +429,12 @@ export async function fetchAdminListeningBySong(
   period: "today" | "week" | "month" | "all" = "all",
   limit = 500
 ) {
+  const ids = [...new Set(userIds.map((id) => String(id).trim()).filter((id) => id.length > 0))];
+  if (ids.length === 0) {
+    return [] as UserSongListeningRow[];
+  }
   const q = new URLSearchParams({
-    user_ids: userIds.join(","),
+    user_ids: ids.join(","),
     period,
     limit: String(limit),
   });
@@ -435,7 +456,11 @@ export async function fetchAdminListeningSessions(
   limit = 500,
   songId?: string
 ) {
-  const q = new URLSearchParams({ user_ids: userIds.join(","), period, limit: String(limit) });
+  const ids = [...new Set(userIds.map((id) => String(id).trim()).filter((id) => id.length > 0))];
+  if (ids.length === 0) {
+    return [] as ListeningSessionRow[];
+  }
+  const q = new URLSearchParams({ user_ids: ids.join(","), period, limit: String(limit) });
   if (songId) q.set("song_id", songId);
   return apiFetch(`/admin/listening-sessions?${q.toString()}`) as Promise<ListeningSessionRow[]>;
 }
