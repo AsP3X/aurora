@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   fetchUsers,
   fetchAdminListeningBySong,
   fetchAdminListeningSessions,
+  ApiError,
   type UserSongListeningRow,
   type ListeningSessionRow,
 } from "../../api/client";
@@ -60,6 +61,7 @@ export default function AdminUserListeningPage() {
   const [sessionsBySong, setSessionsBySong] = useState<Record<string, ListeningSessionRow[]>>({});
   const [sessionsLoadingId, setSessionsLoadingId] = useState<string | null>(null);
   const [userPickerOpen, setUserPickerOpen] = useState(false);
+  const sessionsFetchAc = useRef<AbortController | null>(null);
 
   const selectionKey = selectedUserIds.join(",");
 
@@ -91,6 +93,8 @@ export default function AdminUserListeningPage() {
       setSessionsBySong({});
       setSessionsLoadingId(null);
     });
+    sessionsFetchAc.current?.abort();
+    sessionsFetchAc.current = null;
   }, [selectionKey, period]);
 
   useEffect(() => {
@@ -146,19 +150,23 @@ export default function AdminUserListeningPage() {
       return;
     }
 
+    const ac = new AbortController();
     let cancelled = false;
 
     void (async () => {
       setTableLoading(true);
       try {
-        const data = await fetchAdminListeningBySong(listeningUserIds, period);
+        const data = await fetchAdminListeningBySong(listeningUserIds, period, 500, { signal: ac.signal });
         if (!cancelled) {
           setRows(data);
           setError("");
         }
       } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load listening data");
+          const msg =
+            e instanceof ApiError ? `${e.message} (HTTP ${e.status})` : e instanceof Error ? e.message : "Failed to load listening data";
+          setError(msg);
           setRows([]);
         }
       } finally {
@@ -168,6 +176,7 @@ export default function AdminUserListeningPage() {
 
     return () => {
       cancelled = true;
+      ac.abort();
     };
   }, [selectedUserIds, period]);
 
@@ -186,15 +195,28 @@ export default function AdminUserListeningPage() {
     setExpandedSongId(songId);
     const sessionUserIds = selectedUserIds.filter((id) => typeof id === "string" && id.trim() !== "");
     if (sessionsBySong[songId] || sessionUserIds.length === 0) return;
+    sessionsFetchAc.current?.abort();
+    const ac = new AbortController();
+    sessionsFetchAc.current = ac;
     setSessionsLoadingId(songId);
     try {
-      const data = await fetchAdminListeningSessions(sessionUserIds, period, 500, songId);
-      setSessionsBySong((prev) => ({ ...prev, [songId]: data }));
+      const data = await fetchAdminListeningSessions(sessionUserIds, period, 500, songId, { signal: ac.signal });
+      if (sessionsFetchAc.current === ac) {
+        setSessionsBySong((prev) => ({ ...prev, [songId]: data }));
+      }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load play sessions");
-      setSessionsBySong((prev) => ({ ...prev, [songId]: [] }));
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      const msg =
+        e instanceof ApiError ? `${e.message} (HTTP ${e.status})` : e instanceof Error ? e.message : "Failed to load play sessions";
+      setError(msg);
+      if (sessionsFetchAc.current === ac) {
+        setSessionsBySong((prev) => ({ ...prev, [songId]: [] }));
+      }
     } finally {
-      setSessionsLoadingId(null);
+      if (sessionsFetchAc.current === ac) {
+        setSessionsLoadingId(null);
+        sessionsFetchAc.current = null;
+      }
     }
   }
 

@@ -1,5 +1,8 @@
 FROM rust:1.88-slim-bookworm AS builder
 
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 RUN apt-get update && apt-get install -y libssl-dev pkg-config curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

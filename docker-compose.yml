@@ -58,6 +58,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: aurora-backend
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://aurora:aurora@postgres:5432/aurora}
@@ -75,6 +77,9 @@ services:
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-music}
       RUST_LOG: ${RUST_LOG:-info}
       BIND_ADDR: ${BIND_ADDR:-0.0.0.0:3000}
+      AURORA_ENVIRONMENT: ${AURORA_ENVIRONMENT:-development}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      ADMIN_LISTENING_RPM: ${ADMIN_LISTENING_RPM:-120}
     ports:
       - "3000:3000"
     volumes:

@@ -11,6 +11,21 @@ use crate::{
 };
 
 #[derive(Debug, Serialize)]
+pub struct ReleaseInfo {
+    pub version: &'static str,
+    pub git_sha: String,
+    pub environment: String,
+}
+
+pub async fn release_info(State(state): State<Arc<AppState>>) -> Json<ReleaseInfo> {
+    Json(ReleaseInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        git_sha: state.git_sha.clone(),
+        environment: state.environment.clone(),
+    })
+}
+
+#[derive(Debug, Serialize)]
 pub struct SetupStatus {
     pub setup_complete: bool,
 }

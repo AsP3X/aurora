@@ -3,6 +3,10 @@ name = "aurora-backend"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "aurora_backend"
+path = "src/lib.rs"
+
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
@@ -55,3 +59,4 @@ aes-gcm = "0.10"
 tower = { version = "0.5", features = ["util"] }
 hyper = { version = "1", features = ["full"] }
 serde_urlencoded = "0.7"
+tempfile = "3"
