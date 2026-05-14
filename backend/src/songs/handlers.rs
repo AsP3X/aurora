@@ -527,8 +527,10 @@ pub async fn get_admin_user_listening_by_song(
 #[derive(Debug, Deserialize)]
 pub struct AdminMultiListeningBySongParams {
     pub user_ids: String,
-    #[serde(flatten)]
-    pub common: ListeningBySongParams,
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_by_song_limit")]
+    pub limit: i64,
 }
 
 pub async fn get_admin_listening_by_song_multi(
@@ -541,8 +543,8 @@ pub async fn get_admin_listening_by_song_multi(
     let rows = query_user_listening_by_song(
         &state.pool,
         &ids,
-        &params.common.period,
-        params.common.limit,
+        &params.period,
+        params.limit,
     )
     .await?;
     Ok(Json(rows))
@@ -663,8 +665,12 @@ pub async fn get_admin_user_listening_sessions(
 #[derive(Debug, Deserialize)]
 pub struct AdminMultiListeningSessionsParams {
     pub user_ids: String,
-    #[serde(flatten)]
-    pub common: ListeningSessionsParams,
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_sessions_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub song_id: Option<String>,
 }
 
 pub async fn get_admin_listening_sessions_multi(
@@ -674,13 +680,13 @@ pub async fn get_admin_listening_sessions_multi(
 ) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
     let ids = parse_user_ids_csv(&params.user_ids)?;
-    let sid = params.common.song_id.as_deref();
+    let sid = params.song_id.as_deref();
     let rows = query_listening_sessions(
         &state.pool,
         &ids,
         sid,
-        &params.common.period,
-        params.common.limit,
+        &params.period,
+        params.limit,
     )
     .await?;
     Ok(Json(rows))
