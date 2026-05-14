@@ -1,7 +1,8 @@
 use axum::{
     extract::{Path, Query, State},
+    extract::rejection::QueryRejection,
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 
@@ -533,13 +534,44 @@ pub struct AdminMultiListeningBySongParams {
     pub limit: i64,
 }
 
-pub async fn get_admin_listening_by_song_multi(
-    State(state): State<Arc<AppState>>,
-    claims: axum::Extension<crate::auth::Claims>,
-    Query(params): Query<AdminMultiListeningBySongParams>,
+#[derive(Debug, Deserialize)]
+pub struct AdminListeningBySongBody {
+    pub user_ids: Vec<String>,
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_by_song_limit")]
+    pub limit: i64,
+}
+
+async fn admin_listening_by_song_multi_inner(
+    state: Arc<AppState>,
+    claims: crate::auth::Claims,
+    params: AdminMultiListeningBySongParams,
 ) -> Result<Json<Vec<super::model::UserSongListening>>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    state
+        .admin_listening_rl
+        .check(&claims.sub)
+        .map_err(|_| AppError::RateLimited)?;
     let ids = parse_user_ids_csv(&params.user_ids)?;
+    tracing::info!(
+        target: "aurora_admin_listening",
+        route = "admin_listening_by_song",
+        admin_id = %claims.sub,
+        subject_user_count = ids.len(),
+        period = %params.period,
+        limit = params.limit,
+        "admin aggregate listening-by-song"
+    );
+    tracing::info!(
+        target: "aurora_audit",
+        event = "admin_listening_by_song",
+        admin_id = %claims.sub,
+        subject_user_count = ids.len(),
+        period = %params.period,
+        limit = params.limit,
+        "admin queried aggregate listening by song"
+    );
     let rows = query_user_listening_by_song(
         &state.pool,
         &ids,
@@ -548,6 +580,44 @@ pub async fn get_admin_listening_by_song_multi(
     )
     .await?;
     Ok(Json(rows))
+}
+
+pub async fn get_admin_listening_by_song_multi(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    query: Result<Query<AdminMultiListeningBySongParams>, QueryRejection>,
+) -> Result<Json<Vec<super::model::UserSongListening>>, Response> {
+    let params = match query {
+        Ok(Query(p)) => p,
+        Err(e) => return Err(crate::error::query_rejection_response(e, state.expose_query_errors)),
+    };
+    admin_listening_by_song_multi_inner(state, claims.0, params)
+        .await
+        .map_err(IntoResponse::into_response)
+}
+
+pub async fn post_admin_listening_by_song_multi(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Json(body): Json<AdminListeningBySongBody>,
+) -> Result<Json<Vec<super::model::UserSongListening>>, AppError> {
+    let AdminListeningBySongBody {
+        user_ids,
+        period,
+        limit,
+    } = body;
+    let joined = user_ids
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(",");
+    let params = AdminMultiListeningBySongParams {
+        user_ids: joined,
+        period,
+        limit,
+    };
+    admin_listening_by_song_multi_inner(state, claims.0, params).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -673,14 +743,49 @@ pub struct AdminMultiListeningSessionsParams {
     pub song_id: Option<String>,
 }
 
-pub async fn get_admin_listening_sessions_multi(
-    State(state): State<Arc<AppState>>,
-    claims: axum::Extension<crate::auth::Claims>,
-    Query(params): Query<AdminMultiListeningSessionsParams>,
+#[derive(Debug, Deserialize)]
+pub struct AdminListeningSessionsBody {
+    pub user_ids: Vec<String>,
+    #[serde(default = "default_period")]
+    pub period: String,
+    #[serde(default = "default_listening_sessions_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub song_id: Option<String>,
+}
+
+async fn admin_listening_sessions_multi_inner(
+    state: Arc<AppState>,
+    claims: crate::auth::Claims,
+    params: AdminMultiListeningSessionsParams,
 ) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    state
+        .admin_listening_rl
+        .check(&claims.sub)
+        .map_err(|_| AppError::RateLimited)?;
     let ids = parse_user_ids_csv(&params.user_ids)?;
     let sid = params.song_id.as_deref();
+    tracing::info!(
+        target: "aurora_admin_listening",
+        route = "admin_listening_sessions",
+        admin_id = %claims.sub,
+        subject_user_count = ids.len(),
+        period = %params.period,
+        limit = params.limit,
+        song_id = ?params.song_id,
+        "admin aggregate listening-sessions"
+    );
+    tracing::info!(
+        target: "aurora_audit",
+        event = "admin_listening_sessions",
+        admin_id = %claims.sub,
+        subject_user_count = ids.len(),
+        period = %params.period,
+        limit = params.limit,
+        song_id = ?params.song_id,
+        "admin queried aggregate listening sessions"
+    );
     let rows = query_listening_sessions(
         &state.pool,
         &ids,
@@ -690,6 +795,46 @@ pub async fn get_admin_listening_sessions_multi(
     )
     .await?;
     Ok(Json(rows))
+}
+
+pub async fn get_admin_listening_sessions_multi(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    query: Result<Query<AdminMultiListeningSessionsParams>, QueryRejection>,
+) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, Response> {
+    let params = match query {
+        Ok(Query(p)) => p,
+        Err(e) => return Err(crate::error::query_rejection_response(e, state.expose_query_errors)),
+    };
+    admin_listening_sessions_multi_inner(state, claims.0, params)
+        .await
+        .map_err(IntoResponse::into_response)
+}
+
+pub async fn post_admin_listening_sessions_multi(
+    State(state): State<Arc<AppState>>,
+    claims: axum::Extension<crate::auth::Claims>,
+    Json(body): Json<AdminListeningSessionsBody>,
+) -> Result<Json<Vec<super::model::ListeningSessionEntry>>, AppError> {
+    let AdminListeningSessionsBody {
+        user_ids,
+        period,
+        limit,
+        song_id,
+    } = body;
+    let joined = user_ids
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(",");
+    let params = AdminMultiListeningSessionsParams {
+        user_ids: joined,
+        period,
+        limit,
+        song_id,
+    };
+    admin_listening_sessions_multi_inner(state, claims.0, params).await
 }
 
 pub async fn get_listening_time(

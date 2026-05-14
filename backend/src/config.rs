@@ -32,6 +32,15 @@ pub struct Config {
     pub master_secret: String,
     #[serde(default = "default_url_expiry_seconds")]
     pub url_expiry_seconds: u64,
+    /// `development`, `staging`, `production` — affects query parse error detail in API responses.
+    #[serde(default = "default_aurora_environment")]
+    pub aurora_environment: String,
+    /// Optional build identifier (also read from `GIT_SHA` at runtime if unset).
+    #[serde(default)]
+    pub git_sha: Option<String>,
+    /// Max admin aggregate listening requests per admin user per rolling minute.
+    #[serde(default = "default_admin_listening_rpm")]
+    pub admin_listening_rpm: u32,
 }
 
 impl Config {
@@ -96,4 +105,12 @@ fn default_master_secret() -> String {
 
 fn default_url_expiry_seconds() -> u64 {
     3600
+}
+
+fn default_aurora_environment() -> String {
+    "development".into()
+}
+
+fn default_admin_listening_rpm() -> u32 {
+    120
 }

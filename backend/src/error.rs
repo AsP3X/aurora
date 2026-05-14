@@ -1,4 +1,5 @@
 use axum::{
+    extract::rejection::QueryRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -6,6 +7,16 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 use tracing::error;
+
+pub fn query_rejection_response(rejection: QueryRejection, expose_details: bool) -> Response {
+    let message = if expose_details {
+        rejection.to_string()
+    } else {
+        "invalid query parameters".to_string()
+    };
+    let status = StatusCode::BAD_REQUEST;
+    (status, Json(json!({ "error": message, "status": status.as_u16() }))).into_response()
+}
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -23,6 +34,9 @@ pub enum AppError {
 
     #[error("bad request: {0}")]
     BadRequest(String),
+
+    #[error("rate limit exceeded")]
+    RateLimited,
 
     #[error("conflict: {0}")]
     Conflict(String),
@@ -45,6 +59,7 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.as_str()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.as_str()),
+            AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded; try again shortly"),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.as_str()),
             AppError::Internal(e) => {
                 error!("Internal error: {}", e);

@@ -13,6 +13,21 @@ function getToken(): string | null {
   return localStorage.getItem("aurora_token");
 }
 
+/** Thrown by {@link apiFetch} on non-2xx responses (except 401 which redirects). */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly rawBody: string;
+
+  constructor(params: { message: string; status: number; path: string; rawBody: string }) {
+    super(params.message);
+    this.name = "ApiError";
+    this.status = params.status;
+    this.path = params.path;
+    this.rawBody = params.rawBody;
+  }
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`;
   const token = getToken();
@@ -69,17 +84,27 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const raw = await res.text();
-    let parsed: { error?: string } = {};
+    let parsed: { error?: string; message?: string } = {};
     if (raw) {
       try {
-        parsed = JSON.parse(raw) as { error?: string };
+        parsed = JSON.parse(raw) as { error?: string; message?: string };
       } catch {
         /* plain-text or HTML error body */
       }
     }
+    const detail =
+      parsed.error ||
+      parsed.message ||
+      raw?.trim().slice(0, 400) ||
+      `HTTP ${res.status}`;
     console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, raw ? { raw: raw.slice(0, 500) } : {});
     console.groupEnd();
-    throw new Error(parsed.error || raw?.trim().slice(0, 300) || `HTTP ${res.status}`);
+    throw new ApiError({
+      message: detail,
+      status: res.status,
+      path,
+      rawBody: raw ?? "",
+    });
   }
 
   console.log(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`);
@@ -423,22 +448,22 @@ export async function fetchAdminUserListeningBySong(
   return fetchAdminListeningBySong([userId], period, limit);
 }
 
-/** One or more user UUIDs (comma-separated on the wire). Aggregates by song across all users. */
+/** Aggregate listening by song (POST JSON; GET query still supported by the server). */
 export async function fetchAdminListeningBySong(
   userIds: string[],
   period: "today" | "week" | "month" | "all" = "all",
-  limit = 500
+  limit = 500,
+  init: Omit<RequestInit, "method" | "body"> = {}
 ) {
   const ids = [...new Set(userIds.map((id) => String(id).trim()).filter((id) => id.length > 0))];
   if (ids.length === 0) {
     return [] as UserSongListeningRow[];
   }
-  const q = new URLSearchParams({
-    user_ids: ids.join(","),
-    period,
-    limit: String(limit),
-  });
-  return apiFetch(`/admin/listening-by-song?${q.toString()}`) as Promise<UserSongListeningRow[]>;
+  return apiFetch(`/admin/listening-by-song`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: ids, period, limit }),
+    ...init,
+  }) as Promise<UserSongListeningRow[]>;
 }
 
 export async function fetchAdminUserListeningSessions(
@@ -454,15 +479,20 @@ export async function fetchAdminListeningSessions(
   userIds: string[],
   period: "today" | "week" | "month" | "all" = "all",
   limit = 500,
-  songId?: string
+  songId?: string,
+  init: Omit<RequestInit, "method" | "body"> = {}
 ) {
   const ids = [...new Set(userIds.map((id) => String(id).trim()).filter((id) => id.length > 0))];
   if (ids.length === 0) {
     return [] as ListeningSessionRow[];
   }
-  const q = new URLSearchParams({ user_ids: ids.join(","), period, limit: String(limit) });
-  if (songId) q.set("song_id", songId);
-  return apiFetch(`/admin/listening-sessions?${q.toString()}`) as Promise<ListeningSessionRow[]>;
+  const body: Record<string, unknown> = { user_ids: ids, period, limit };
+  if (songId) body.song_id = songId;
+  return apiFetch(`/admin/listening-sessions`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    ...init,
+  }) as Promise<ListeningSessionRow[]>;
 }
 
 export async function updateUserEnabled(userId: string, enabled: boolean) {
