@@ -48,4 +48,38 @@
   .aurora-glow {
     background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
   }
+
+  /* Human: Reusable liquid-glass surface extracted from PlayerBar — cards, tables, dialogs. */
+  /* Agent: CLASS glass-panel; LAYERS blur+gradient+inset shadow+border; ::before outer float shadow. */
+  .glass-panel {
+    @apply relative backdrop-blur-2xl bg-surface-950/35
+           bg-gradient-to-b from-white/[0.12] to-white/[0.02]
+           shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]
+           border border-white/20 rounded-2xl;
+  }
+
+  .glass-panel::before {
+    content: "";
+    @apply absolute -inset-1 rounded-[24px] bg-black/20 blur-xl -z-10 pointer-events-none;
+  }
+
+  /* Human: Pill-shaped glass for floating transport bars and back buttons (PlayerBar radius). */
+  /* Agent: CLASS glass-pill; rounded-[32px]; ::before rounded-[36px] outer shadow. */
+  .glass-pill {
+    @apply relative backdrop-blur-2xl bg-surface-950/35
+           bg-gradient-to-b from-white/[0.12] to-white/[0.02]
+           shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]
+           border border-white/20 rounded-[32px];
+  }
+
+  .glass-pill::before {
+    content: "";
+    @apply absolute -inset-1 rounded-[36px] bg-black/20 blur-xl -z-10 pointer-events-none;
+  }
+
+  /* Human: Flat admin surfaces — no blur; matches pre-glass admin look. */
+  /* Agent: CLASS admin-panel; bg-surface-900 border white/5 rounded-2xl; USED BY admin/* only. */
+  .admin-panel {
+    @apply bg-surface-900 border border-white/5 rounded-2xl;
+  }
 }

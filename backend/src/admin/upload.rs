@@ -165,7 +165,7 @@ fn extract_artwork(path: &Path) -> anyhow::Result<Option<(String, Vec<u8>)>> {
 
 // Human: Drain the storage byte stream into a contiguous buffer for small payloads like artwork or whole songs during commit.
 // Agent: READS StorageStream TryStreamExt; RETURNS Vec<u8>; MAPS stream errors to AppError::Storage string.
-async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, AppError> {
     let chunks: Vec<_> = stream
         .try_collect()
         .await
@@ -613,199 +613,25 @@ pub async fn commit_song(
 
     match result {
         Ok(song_db) => {
-            let song_id_clone = song_id.clone();
-            let staging_id_clone = req.staging_id.clone();
-            let file_format_clone = req.file_format.clone();
-            let hls_key_store = state.hls_key_store.clone();
-            let pool_clone = state.pool.clone();
-            let storage_clone = state.storage.clone();
-            let hls_tmp_dir_clone = hls_tmp_dir.clone();
+            let _ = sqlx::query(
+                "UPDATE songs SET hls_encode_status = 'pending' WHERE id = $1",
+            )
+            .bind(&song_id)
+            .execute(&state.pool)
+            .await;
 
-            // Helper to update conversion progress in the database
-            async fn set_progress(pool: &sqlx::AnyPool, song_id: &str, progress: i32) {
-                let _ = sqlx::query("UPDATE songs SET conversion_progress = $1 WHERE id = $2")
-                    .bind(progress)
-                    .bind(song_id)
-                    .execute(pool)
-                    .await;
-            }
-
-            let duration = req.duration_seconds;
-            tokio::spawn(async move {
-                use crate::hls::encoder::HlsEncoder;
-
-                let song_uuid = match Uuid::parse_str(&song_id_clone) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        tracing::error!(song_id = %song_id_clone, error = %e, "Invalid song_id UUID for HLS encoding");
-                        let _ = tokio::fs::remove_dir_all(&hls_tmp_dir_clone).await;
-                        return;
-                    }
-                };
-
-                let hls_output_dir = hls_tmp_dir_clone
-                    .parent()
-                    .unwrap_or(&hls_tmp_dir_clone)
-                    .join(format!("aurora_hls_out_{}", song_id_clone));
-
-                set_progress(&pool_clone, &song_id_clone, 5).await;
-
-                match hls_key_store.create_key_for_song(song_uuid).await {
-                    Ok((key_id, key)) => {
-                        let (progress_tx, mut progress_rx) = tokio::sync::watch::channel(0i32);
-                        let pool_for_progress = pool_clone.clone();
-                        let song_id_for_progress = song_id_clone.clone();
-                        let progress_handle = tokio::spawn(async move {
-                            loop {
-                                let pct = *progress_rx.borrow_and_update();
-                                // Scale encoder progress (0-100) to 5-50
-                                let scaled = 5 + (pct as f64 * 0.45) as i32;
-                                set_progress(&pool_for_progress, &song_id_for_progress, scaled).await;
-                                if progress_rx.changed().await.is_err() {
-                                    break;
-                                }
-                            }
-                        });
-
-                        let transcode_result = HlsEncoder::transcode(
-                            &tmp_audio,
-                            &hls_output_dir,
-                            &key,
-                            duration,
-                            Some(progress_tx),
-                        )
-                        .await;
-
-                        // Wait a moment for final progress to be flushed
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        drop(progress_handle);
-
-                        match transcode_result {
-                            Ok(output) => {
-                                set_progress(&pool_clone, &song_id_clone, 50).await;
-                                let prefix = format!("songs/{}/", song_id_clone);
-                                let total_steps = 2 + output.segment_count;
-                                let mut current_step = 0usize;
-
-                                let playlist_data =
-                                    match tokio::fs::read(&output.playlist_path).await {
-                                        Ok(data) => data,
-                                        Err(e) => {
-                                            tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS playlist");
-                                            return;
-                                        }
-                                    };
-                                if let Err(e) = storage_clone
-                                    .put(
-                                        &format!("{}stream.m3u8", prefix),
-                                        "application/vnd.apple.mpegurl",
-                                        playlist_data,
-                                    )
-                                    .await
-                                {
-                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS playlist");
-                                    return;
-                                }
-                                current_step += 1;
-
-                                let key_data = match tokio::fs::read(&output.key_path).await {
-                                    Ok(data) => data,
-                                    Err(e) => {
-                                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read HLS key file");
-                                        return;
-                                    }
-                                };
-                                if let Err(e) = storage_clone
-                                    .put(
-                                        &format!("{}key.bin", prefix),
-                                        "application/octet-stream",
-                                        key_data,
-                                    )
-                                    .await
-                                {
-                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to upload HLS key");
-                                    return;
-                                }
-                                current_step += 1;
-
-                                let mut segment_entries =
-                                    match tokio::fs::read_dir(&output.segments_dir).await {
-                                        Ok(entries) => entries,
-                                        Err(e) => {
-                                            tracing::error!(song_id = %song_id_clone, error = %e, "Failed to read segments directory");
-                                            return;
-                                        }
-                                    };
-                                while let Ok(Some(entry)) = segment_entries.next_entry().await {
-                                    let path = entry.path();
-                                    if path.extension().and_then(|e| e.to_str()) != Some("ts") {
-                                        continue;
-                                    }
-                                    let name = path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string();
-                                    let data = match tokio::fs::read(&path).await {
-                                        Ok(d) => d,
-                                        Err(e) => {
-                                            tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to read segment");
-                                            continue;
-                                        }
-                                    };
-                                    if let Err(e) = storage_clone
-                                        .put(
-                                            &format!("{}segments/{}", prefix, name),
-                                            "video/mp2t",
-                                            data,
-                                        )
-                                        .await
-                                    {
-                                        tracing::error!(song_id = %song_id_clone, segment = %name, error = %e, "Failed to upload segment");
-                                    }
-                                    current_step += 1;
-                                    let upload_pct = 50 + ((current_step as f64 / total_steps as f64) * 50.0) as i32;
-                                    set_progress(&pool_clone, &song_id_clone, upload_pct.min(99)).await;
-                                }
-
-                                set_progress(&pool_clone, &song_id_clone, 100).await;
-
-                                if let Err(e) = sqlx::query(
-                                    "UPDATE songs SET hls_ready = true, hls_key_id = $1, segment_count = $2 WHERE id = $3",
-                                )
-                                .bind(key_id.to_string())
-                                .bind(output.segment_count as i32)
-                                .bind(&song_id_clone)
-                                .execute(&pool_clone)
-                                .await
-                                {
-                                    tracing::error!(song_id = %song_id_clone, error = %e, "Failed to update song HLS status");
-                                    return;
-                                }
-
-                                tracing::info!(song_id = %song_id_clone, segment_count = output.segment_count, "HLS encoding completed successfully");
-                            }
-                            Err(e) => {
-                                tracing::error!(song_id = %song_id_clone, error = %e, "HLS encoding failed");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!(song_id = %song_id_clone, error = %e, "Failed to create encryption key for HLS");
-                    }
-                }
-
-                // Clean up staging keys from object storage
-                delete_staging_keys(
-                    storage_clone.as_ref(),
-                    &staging_id_clone,
-                    &file_format_clone,
-                )
-                .await;
-
-                let _ = tokio::fs::remove_dir_all(&hls_tmp_dir_clone).await;
-                let _ = tokio::fs::remove_dir_all(&hls_output_dir).await;
-            });
+            crate::hls::encode_job::spawn_hls_encode_job(
+                state.pool.clone(),
+                state.storage.clone(),
+                state.hls_key_store.clone(),
+                crate::hls::encode_job::HlsEncodeJob {
+                    song_id: song_id.clone(),
+                    tmp_audio: tmp_audio.clone(),
+                    duration_seconds: req.duration_seconds,
+                    staging_id: Some(req.staging_id.clone()),
+                    file_format: Some(req.file_format.clone()),
+                },
+            );
 
             let mut song: crate::songs::model::Song = song_db.into();
             if let Err(e) =
@@ -813,6 +639,12 @@ pub async fn commit_song(
             {
                 tracing::warn!("Failed to populate genres after commit: {}", e);
             }
+
+            let song_id_for_search = song.id.clone();
+            let sync = state.search_sync.clone();
+            tokio::spawn(async move {
+                sync.notify_song_upsert(&song_id_for_search).await;
+            });
 
             tracing::info!(
                 song_id = %song.id,

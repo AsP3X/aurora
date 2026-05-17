@@ -16,6 +16,15 @@ Track and execute improvements one at a time. When you want work started, say wh
 | **IMP-004** | ✅ **Complete** | 2026-05-17 — `redact.rs` helpers, TraceLayer URI scrubbing, auth/upload/Nebula log audit |
 | **IMP-005** | ✅ **Complete** | 2026-05-17 — Auth/upload/HLS `PerKeyRateLimiter`; 429 via `AppError::RateLimited`; env-tunable RPM caps |
 
+### Completion tracker (reliability batch)
+
+| ID | Status | Completed |
+|----|--------|-----------|
+| **IMP-011** | ✅ **Complete** | 2026-05-17 — Transactional playlist reorder with two-phase positions; `playlist_reorder_transaction.rs` |
+| **IMP-012** | ✅ **Complete** | 2026-05-17 — `search_index_queue`, retry worker, admin sync-status/retry-sync; hooks on song CUD |
+| **IMP-013** | ✅ **Complete** | 2026-05-17 — `hls_encode_status`/`hls_encode_error`, `encode_job.rs`, admin retry + library badges |
+| **IMP-014** | ✅ **Complete** | 2026-05-17 — `migration_parity.rs`, `.github/workflows/migrations.yml`, `pnpm test:migrations` |
+
 > **Note:** The security review’s three findings (registration bypass, weak JWT defaults, role escalation) are **not** IMP-001/002/003 one-to-one. They were closed under **IMP-001** (audit + handlers) and **IMP-003** (compose/Nebula secrets). **IMP-002** is still the HLS encryption nonce task.
 
 ---
@@ -131,35 +140,43 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 ### IMP-011 — Transactional playlist reorder
 
-- [ ] **Status**
+**Status:** ✅ Complete (2026-05-17)
+
+- [x] Done
 - **Priority:** Medium
 - **Summary:** Wrap `reorder_songs` position updates in a single DB transaction so partial updates cannot corrupt order.
 - **References:** `backend/src/playlists/handlers.rs` (`reorder_songs`)
-- **Done notes:**
+- **Done notes:** 2026-05-17 — Single `BEGIN`/`COMMIT` with two-phase temp positions (10_000+) to satisfy `UNIQUE (playlist_id, position)`; fixed `Playlist.is_public` Any/SQLite decode; test `playlist_reorder_transaction.rs`.
 
 ### IMP-012 — Search index sync failure policy
 
-- [ ] **Status**
+**Status:** ✅ Complete (2026-05-17)
+
+- [x] Done
 - **Priority:** Medium
 - **Summary:** After IMP-006, define behavior when Meili indexing fails after DB success (retry queue, admin warning, etc.).
-- **Blocked by:** IMP-006 (recommended)
-- **Done notes:**
+- **Blocked by:** IMP-006 (recommended) — indexing + `/search` wired; full product search UX remains IMP-006
+- **Done notes:** 2026-05-17 — `search_index_queue` migration; `SearchIndexer` + `SearchSyncService` (immediate try, DB-backed retry, 30s worker); admin `GET/POST /admin/search/sync-*`; banner on admin library; hooks on song commit/update/delete/toggle.
 
 ### IMP-013 — HLS encode failure visibility
 
-- [ ] **Status**
+**Status:** ✅ Complete (2026-05-17)
+
+- [x] Done
 - **Priority:** Medium
 - **Summary:** Surface encode failures to admins (status badge, retry) instead of silent `hls_ready = false`.
 - **References:** `backend/src/hls/`, admin library UI
-- **Done notes:**
+- **Done notes:** 2026-05-17 — Migration `014` (`hls_encode_status`, `hls_encode_error`); shared `hls/encode_job.rs`; `POST /admin/songs/{id}/hls/retry`; admin library Streaming column + context-menu retry.
 
 ### IMP-014 — SQLite vs Postgres migration parity in CI
 
-- [ ] **Status**
+**Status:** ✅ Complete (2026-05-17)
+
+- [x] Done
 - **Priority:** Medium
 - **Summary:** CI matrix or script that applies both `migrations/sqlite` and `migrations/postgres` cleanly.
 - **References:** `backend/migrations/`
-- **Done notes:**
+- **Done notes:** 2026-05-17 — `backend/tests/migration_parity.rs`; `.github/workflows/migrations.yml` (SQLite + Postgres 16 service); root `pnpm test:migrations`.
 
 ---
 
@@ -209,21 +226,15 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 ## 5. Frontend & UX
 
-### IMP-020 — Admin & player redesign (glass system)
-
-- [ ] **Status**
-- **Priority:** Medium
-- **Summary:** Implement shared `glass-panel` utilities, mobile data cards, and player polish per design spec.
-- **References:** `docs/superpowers/specs/2026-05-12-admin-and-player-redesign-design.md`
-- **Done notes:**
-
 ### IMP-021 — Accessibility pass
 
-- [ ] **Status**
+**Status:** ✅ Complete (2026-05-17)
+
+- [x] Done
 - **Priority:** Medium
 - **Summary:** Dialog focus traps, skip links, labeled admin controls, keyboard paths for player and queue.
 - **References:** `frontend/src/components/`, admin pages
-- **Done notes:**
+- **Done notes:** 2026-05-17 — `useFocusTrap` + `SkipLink`; `#main-content` landmarks; dialog a11y on Glass/Confirm/Entity/User/Upload modals; queue drawer focus trap; global player shortcuts (Space, arrows±seek, Shift+arrows track, Q queue, M mute, Escape); labeled admin/library search and form controls.
 
 ### IMP-022 — Consistent API error / loading UX
 
@@ -341,3 +352,7 @@ These are the highest leverage items if you want fast progress without reading t
 | 2026-05-17 | IMP-001 completed (security audit re-verification) |
 | 2026-05-17 | IMP-003 completed (Docker/Nebula secret hardening with Vuln 2) |
 | 2026-05-17 | IMP-002 completed (HLS random AES-GCM nonce + legacy migration) |
+| 2026-05-17 | IMP-011 completed (transactional playlist reorder) |
+| 2026-05-17 | IMP-012 completed (Meilisearch sync retry queue + admin warnings) |
+| 2026-05-17 | IMP-013 completed (HLS encode failure visibility + admin retry) |
+| 2026-05-17 | IMP-014 completed (SQLite/Postgres migration parity CI) |

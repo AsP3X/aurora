@@ -53,6 +53,10 @@ pub struct AppState {
     pub meili_url: String,
     /// Meilisearch master key — kept server-side only.
     pub meili_master_key: String,
+    /// Optional Meilisearch indexer; absent when URL/key are unset.
+    pub search_indexer: Option<Arc<search::indexer::SearchIndexer>>,
+    /// Coordinates immediate index sync and DB-backed retries after failures.
+    pub search_sync: Arc<search::sync_queue::SearchSyncService>,
 }
 
 fn install_sqlx_drivers() {
@@ -138,17 +142,22 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         window,
     ));
 
-    // Human: Log Meilisearch env so operators know search is configured even though /search is still a stub.
-    // Agent: READS config.meili_*; EMITS info at startup; does not log master key value.
-    if config.meili_url.is_empty() {
-        info!("Meilisearch URL not set; /api/v1/search remains a placeholder");
-    } else {
-        let key_configured = !config.meili_master_key.is_empty();
+    // Human: Log Meilisearch env and start the index retry worker when configured.
+    // Agent: READS config.meili_*; SPAWNS search_sync worker; EMITS info at startup.
+    let search_indexer = search::indexer::SearchIndexer::try_new(
+        &config.meili_url,
+        &config.meili_master_key,
+        pool.clone(),
+    );
+    let search_sync = search::sync_queue::SearchSyncService::new(pool.clone(), search_indexer.clone());
+    if search_indexer.is_some() {
         info!(
             meili_url = %config.meili_url,
-            key_configured,
-            "Meilisearch settings loaded (full-text search not yet implemented)"
+            "Meilisearch indexer ready; search sync retry worker started"
         );
+        search_sync.clone().spawn_worker();
+    } else {
+        info!("Meilisearch URL/key not set; /api/v1/search uses SQL fallback messaging only");
     }
 
     Ok(Arc::new(AppState {
@@ -169,6 +178,8 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         hls_segment_rl,
         meili_url: config.meili_url.clone(),
         meili_master_key: config.meili_master_key.clone(),
+        search_indexer,
+        search_sync,
     }))
 }
 
@@ -249,6 +260,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song).put(admin::handlers::update_song))
         .route("/api/v1/admin/songs/{id}/enabled", axum::routing::put(admin::handlers::toggle_song_enabled))
+        .route(
+            "/api/v1/admin/songs/{id}/hls/retry",
+            post(admin::hls_handlers::retry_hls_encode),
+        )
+        .route(
+            "/api/v1/admin/search/sync-status",
+            get(search::handlers::admin_search_sync_status),
+        )
+        .route(
+            "/api/v1/admin/search/retry-sync",
+            post(search::handlers::admin_search_retry_sync),
+        )
         .route("/api/v1/admin/songs/stage/{id}/artwork", get(admin::upload::get_staged_artwork))
         .route("/api/v1/admin/playlists", get(admin::handlers::list_all_playlists))
         .route("/api/v1/admin/playlists/{id}", axum::routing::delete(admin::handlers::delete_playlist))

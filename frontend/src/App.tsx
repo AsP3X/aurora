@@ -21,6 +21,7 @@ import AdminGroupsPage from "./pages/admin/AdminGroupsPage";
 import AdminLibraryPage from "./pages/admin/AdminLibraryPage";
 import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
+import SkipLink from "./components/SkipLink";
 
 // Human: Application shell — providers, setup gate, route table, and the main nav layout around authenticated pages.
 // Agent: WRAPS BrowserRouter+AuthProvider+PlayerProvider; ROUTES /setup /login / library /admin/*; SETUPGUARD reads setupStatus; LAYOUT hides chrome on dashboard paths.
@@ -79,6 +80,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface-950 text-white relative">
+      <SkipLink />
       {/* Human: DashboardLayout on library pages already provides its own top chrome — skip duplicate header here. */}
       {/* Agent: CONDITIONAL RENDER !isDashboard for header block. */}
       {!isDashboard && (
@@ -156,7 +158,13 @@ function Layout({ children }: { children: React.ReactNode }) {
           )}
         </header>
       )}
-      <main className={`${isDashboard ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !isDashboard && !pathname.startsWith("/player/") ? "pb-32" : ""}`}>{children}</main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className={`${isDashboard ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !isDashboard && !pathname.startsWith("/player/") ? "pb-32" : ""}`}
+      >
+        {children}
+      </main>
       <PlayerBar />
     </div>
   );

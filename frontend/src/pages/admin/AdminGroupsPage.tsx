@@ -1,5 +1,5 @@
-// Human: Manage permission groups — create group, assign permission keys, add/remove members from global user list.
-// Agent: LOAD permissions/groups/users; on selected group fetchGroupPermissions+fetchGroupMembers; SAVE setGroupPermissions.
+// Human: Manage permission groups — glass two-pane layout; list cards pick active group; detail cards edit permissions + members.
+// Agent: LOAD permissions/groups/users; selectedGroup triggers fetchGroupPermissions+fetchGroupMembers; SAVE setGroupPermissions; USES PageHeader AdminGlassCard.
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchPermissions,
@@ -13,6 +13,9 @@ import {
   fetchUsers,
 } from "../../api/client";
 import PermissionManager from "../../components/admin/PermissionManager";
+import PageHeader from "../../components/admin/PageHeader";
+import AdminGlassCard from "../../components/admin/AdminGlassCard";
+import AdminEmptyState from "../../components/admin/AdminEmptyState";
 
 interface Permission {
   id: string;
@@ -55,8 +58,9 @@ export default function AdminGroupsPage() {
     try {
       const data = await fetchPermissions();
       setPermissions(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to load permissions");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to load permissions";
+      setError(message);
     }
   }, []);
 
@@ -64,8 +68,9 @@ export default function AdminGroupsPage() {
     try {
       const data = await fetchGroups();
       setGroups(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to load groups");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to load groups";
+      setError(message);
     }
   }, []);
 
@@ -73,8 +78,9 @@ export default function AdminGroupsPage() {
     try {
       const data = await fetchUsers();
       setUsers(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to load users");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to load users";
+      setError(message);
     }
   }, []);
 
@@ -92,7 +98,10 @@ export default function AdminGroupsPage() {
         setGroupPerms(perms.map((p: Permission) => p.key));
         setGroupMembers(members);
       })
-      .catch((e: any) => setError(e.message || "Failed to load group details"))
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : "Failed to load group details";
+        setError(message);
+      })
       .finally(() => setGroupLoading(false));
   }, [selectedGroup]);
 
@@ -106,8 +115,9 @@ export default function AdminGroupsPage() {
       setNewGroupName("");
       setNewGroupDesc("");
       setSelectedGroup(group.id);
-    } catch (e: any) {
-      setError(e.message || "Failed to create group");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to create group";
+      setError(message);
     } finally {
       setCreatingGroup(false);
     }
@@ -118,8 +128,9 @@ export default function AdminGroupsPage() {
     setSaving(true);
     try {
       await setGroupPermissions(selectedGroup, groupPerms);
-    } catch (e: any) {
-      setError(e.message || "Failed to save group permissions");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to save group permissions";
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -132,8 +143,9 @@ export default function AdminGroupsPage() {
       const members = await fetchGroupMembers(selectedGroup);
       setGroupMembers(members);
       setAddMemberId("");
-    } catch (e: any) {
-      setError(e.message || "Failed to add member");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to add member";
+      setError(message);
     }
   }
 
@@ -142,104 +154,98 @@ export default function AdminGroupsPage() {
     try {
       await removeGroupMember(selectedGroup, userId);
       setGroupMembers((prev) => prev.filter((m) => m.id !== userId));
-    } catch (e: any) {
-      setError(e.message || "Failed to remove member");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to remove member";
+      setError(message);
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Groups</h1>
-        {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            {error}
-          </div>
-        )}
-      </div>
+      <PageHeader title="Groups" error={error || undefined} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Group list + create */}
-        <div className="space-y-4">
-          <form onSubmit={handleCreateGroup} className="space-y-3">
+        {/* Human: Left column — create form + selectable glass list items (mobile stacks above detail). */}
+        {/* Agent: AdminGlassCard WRAPS form+list; BUTTON cards toggle selectedGroup with stronger border when active. */}
+        <AdminGlassCard title="Groups" className="lg:sticky lg:top-6 lg:self-start">
+          <form onSubmit={handleCreateGroup} className="space-y-3 mb-4">
             <input
               type="text"
               placeholder="New group name"
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+              className="w-full px-3 py-2 bg-surface-950/60 border border-white/10 rounded-xl text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
             />
             <input
               type="text"
               placeholder="Description (optional)"
               value={newGroupDesc}
               onChange={(e) => setNewGroupDesc(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+              className="w-full px-3 py-2 bg-surface-950/60 border border-white/10 rounded-xl text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
             />
             <button
               type="submit"
               disabled={creatingGroup || !newGroupName.trim()}
-              className="w-full py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              className="w-full py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
             >
               {creatingGroup ? "Creating..." : "Create Group"}
             </button>
           </form>
 
-          <div className="space-y-1">
+          <div className="space-y-2 max-h-[50vh] lg:max-h-[calc(100vh-18rem)] overflow-y-auto pr-1">
             {groups.map((g) => (
               <button
                 key={g.id}
+                type="button"
                 onClick={() => setSelectedGroup(g.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all ${
+                aria-pressed={selectedGroup === g.id}
+                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all border focus:outline-none focus:ring-2 focus:ring-aurora-500/50 ${
                   selectedGroup === g.id
-                    ? "bg-aurora-500/10 text-aurora-300 border border-aurora-500/20"
-                    : "text-surface-300 hover:bg-white/5 border border-transparent"
+                    ? "bg-aurora-500/10 border-aurora-500/20 text-aurora-300"
+                    : "border-white/10 bg-surface-950/30 text-surface-300 hover:border-white/25 hover:bg-white/[0.03]"
                 }`}
               >
-                <div className="font-medium">{g.name}</div>
+                <div className="font-medium text-white">{g.name}</div>
                 {g.description && <div className="text-xs text-surface-500 truncate">{g.description}</div>}
               </button>
             ))}
             {groups.length === 0 && (
-              <div className="text-sm text-surface-500 px-3 py-2">No groups yet.</div>
+              <p className="text-sm text-surface-500 px-1 py-2">No groups yet.</p>
             )}
           </div>
-        </div>
+        </AdminGlassCard>
 
-        {/* Right: Group detail */}
         <div className="lg:col-span-2 space-y-6">
           {selectedGroup ? (
             groupLoading ? (
-              <div className="text-surface-400 text-sm">Loading...</div>
+              <AdminGlassCard>
+                <div className="text-surface-400 text-sm py-6 text-center">Loading...</div>
+              </AdminGlassCard>
             ) : (
               <>
-                <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
-                  <div className="flex items-center justify-between mb-4">
+                <AdminGlassCard>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <h3 className="text-lg font-semibold text-white">
                       {groups.find((g) => g.id === selectedGroup)?.name}
                     </h3>
                     <button
-                      onClick={handleSaveGroupPermissions}
+                      type="button"
+                      onClick={() => void handleSaveGroupPermissions()}
                       disabled={saving}
-                      className="px-4 py-1.5 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                      className="px-4 py-1.5 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
                     >
                       {saving ? "Saving..." : "Save Permissions"}
                     </button>
                   </div>
-                  <PermissionManager
-                    permissions={permissions}
-                    assignedKeys={groupPerms}
-                    onChange={setGroupPerms}
-                  />
-                </div>
+                  <PermissionManager permissions={permissions} assignedKeys={groupPerms} onChange={setGroupPerms} />
+                </AdminGlassCard>
 
-                <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
-                  <h3 className="text-lg font-semibold text-white mb-4">Members</h3>
-                  <div className="flex gap-2 mb-3">
+                <AdminGlassCard title="Members">
+                  <div className="flex flex-wrap gap-2 mb-3">
                     <select
                       value={addMemberId}
                       onChange={(e) => setAddMemberId(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
+                      className="flex-1 min-w-[200px] px-3 py-2 bg-surface-950/60 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
                     >
                       <option value="">Select user to add...</option>
                       {users
@@ -251,20 +257,25 @@ export default function AdminGroupsPage() {
                         ))}
                     </select>
                     <button
-                      onClick={handleAddMember}
+                      type="button"
+                      onClick={() => void handleAddMember()}
                       disabled={!addMemberId}
-                      className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                      className="px-4 py-2 bg-surface-950/80 hover:bg-surface-900 text-white text-sm font-medium rounded-xl transition-colors border border-white/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
                     >
                       Add
                     </button>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {groupMembers.map((m) => (
-                      <div key={m.id} className="flex items-center justify-between px-3 py-2 bg-surface-950/50 rounded-lg">
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/10 bg-surface-950/40"
+                      >
                         <span className="text-sm text-surface-300">{m.email}</span>
                         <button
-                          onClick={() => handleRemoveMember(m.id)}
-                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+                          type="button"
+                          onClick={() => void handleRemoveMember(m.id)}
+                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-red-500/10 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40"
                         >
                           Remove
                         </button>
@@ -274,13 +285,25 @@ export default function AdminGroupsPage() {
                       <div className="text-sm text-surface-500">No members yet.</div>
                     )}
                   </div>
-                </div>
+                </AdminGlassCard>
               </>
             )
           ) : (
-            <div className="bg-surface-900 border border-white/5 rounded-2xl p-8 text-center text-surface-400 text-sm">
-              Select a group to manage its permissions and members.
-            </div>
+            <AdminGlassCard className="py-6">
+              <AdminEmptyState
+                icon={
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                }
+                title="Select a group"
+                subtitle="Choose a group from the list to edit permissions and members."
+              />
+            </AdminGlassCard>
           )}
         </div>
       </div>

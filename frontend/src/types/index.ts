@@ -27,6 +27,8 @@ export interface Song {
   artwork_key: string | null;
   publisher_id: string | null;
   hls_ready: boolean;
+  hls_encode_status: string | null;
+  hls_encode_error: string | null;
   conversion_progress: number;
   enabled: number;
   created_at: string;

@@ -1,7 +1,8 @@
 // Human: Multi-step admin upload modal — stages file with XHR progress, edits metadata+artwork, commits, then polls HLS readiness.
 // Agent: STATES idle|uploading|editing|committing|processing|complete; POLL fetchSong 2s until hls_ready; NAVIGATE on view.
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useId } from "react";
 import { useNavigate } from "react-router-dom";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import {
   stageSongWithProgress,
   commitSongWithProgress,
@@ -69,6 +70,11 @@ export default function UploadSongDialog({
   const [committedSong, setCommittedSong] = useState<Song | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const fileInputId = useId();
+
+  useFocusTrap(true, panelRef);
 
   const isBusy =
     state === "uploading" || state === "committing" || state === "processing";
@@ -191,15 +197,40 @@ export default function UploadSongDialog({
     onClose();
   }, [committedSong, navigate, onClose]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isBusy) handleClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isBusy, handleClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-surface-700 bg-surface-950 p-6 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (!isBusy && e.target === e.currentTarget) handleClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-surface-700 bg-surface-950 p-6 shadow-2xl outline-none"
+      >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Upload Song</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-white">
+            Upload Song
+          </h2>
           <button
+            type="button"
             onClick={handleClose}
-            className="text-surface-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-surface-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aurora-500/50 rounded-lg p-1"
             disabled={isBusy}
+            aria-label="Close upload dialog"
           >
             ✕
           </button>
@@ -237,7 +268,11 @@ export default function UploadSongDialog({
             >
               Choose File
             </button>
+            <label htmlFor={fileInputId} className="sr-only">
+              Audio file to upload
+            </label>
             <input
+              id={fileInputId}
               ref={fileInputRef}
               type="file"
               accept="audio/*"

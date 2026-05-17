@@ -76,7 +76,7 @@ pub async fn get_playlist(
 
     let is_owner = playlist.user_id == claims.sub;
     let can_view_all = check_permission(&state.pool, &claims.sub, "playlists.view_all").await;
-    if !playlist.is_public && !is_owner && !can_view_all {
+    if !playlist.is_public_bool() && !is_owner && !can_view_all {
         return Err(AppError::Forbidden(
             "you do not have access to this playlist".into(),
         ));
@@ -134,7 +134,10 @@ pub async fn update_playlist(
 
     let name = body.name.unwrap_or(playlist.name);
     let description = body.description.unwrap_or(playlist.description.unwrap_or_default());
-    let is_public = body.is_public.unwrap_or(playlist.is_public);
+    let is_public = body
+        .is_public
+        .map(|v| if v { 1 } else { 0 })
+        .unwrap_or(playlist.is_public);
 
     let updated = sqlx::query_as::<_, Playlist>(
         "UPDATE playlists SET name = $1, description = $2, is_public = $3 WHERE id = $4 RETURNING *"
@@ -271,8 +274,8 @@ pub struct ReorderSongsBody {
     pub song_ids: Vec<String>,
 }
 
-// Human: Reassign contiguous positions according to the client-supplied id list—validates membership before issuing per-row updates.
-// Agent: READS existing song_id set; ERROR if unknown id; LOOP UPDATE positions; NOTE not a single SQL transaction on Any pool.
+// Human: Reassign contiguous positions according to the client-supplied id list inside one DB transaction.
+// Agent: READS existing song_id set; ERROR if unknown id; TX wraps all position UPDATEs; ROLLBACK on any failure.
 pub async fn reorder_songs(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -314,21 +317,32 @@ pub async fn reorder_songs(
         }
     }
 
-    // Reassign positions atomically in a transaction by using a temporary table or
-    // by updating each row individually. Since sqlx::AnyPool doesn't support
-    // native transactions cleanly across backends without type gymnastics,
-    // we do individual updates. For small playlists this is fine.
+    // Human: UNIQUE (playlist_id, position) means we cannot assign final slots in one pass—use high temp slots first.
+    // Agent: TX phase1 offset positions 10_000+; TX phase2 contiguous 1..n; COMMIT rolls back all on failure.
+    let mut tx = state.pool.begin().await?;
+    for (idx, song_id) in body.song_ids.iter().enumerate() {
+        let temp_position = 10_000 + (idx as i32);
+        sqlx::query(
+            "UPDATE playlist_songs SET position = $1 WHERE playlist_id = $2 AND song_id = $3",
+        )
+        .bind(temp_position)
+        .bind(&id_str)
+        .bind(song_id)
+        .execute(&mut *tx)
+        .await?;
+    }
     for (idx, song_id) in body.song_ids.iter().enumerate() {
         let position = (idx as i32) + 1;
         sqlx::query(
-            "UPDATE playlist_songs SET position = $1 WHERE playlist_id = $2 AND song_id = $3"
+            "UPDATE playlist_songs SET position = $1 WHERE playlist_id = $2 AND song_id = $3",
         )
         .bind(position)
         .bind(&id_str)
         .bind(song_id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
 
     Ok(Json(serde_json::json!({"ok": true})))
 }

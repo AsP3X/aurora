@@ -3,6 +3,14 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import type { Song } from "../types";
 import { fetchStreamUrl, fetchSong } from "../api/client";
+import { usePlayerKeyboard } from "../hooks/usePlayerKeyboard";
+
+// Human: Invisible child so keyboard shortcuts share the same provider tree as playback state.
+// Agent: CALLS usePlayerKeyboard; RENDERS null.
+function PlayerKeyboardShortcuts() {
+  usePlayerKeyboard();
+  return null;
+}
 
 interface PlayerState {
   currentSong: Song | null;
@@ -298,6 +306,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         audioRef,
       }}
     >
+      <PlayerKeyboardShortcuts />
       {children}
     </PlayerContext.Provider>
   );
