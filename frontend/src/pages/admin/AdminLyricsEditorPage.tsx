@@ -22,7 +22,8 @@ import {
   getVisibleLineEntries,
   isLyricLineVisibleAtSeek,
   nextVisibleLineIndex,
-  parsePlainLyricsText,
+  parseLyricsImportText,
+  serializeLyricsWithTimestamps,
 } from "../../utils/lyrics";
 
 export default function AdminLyricsEditorPage() {
@@ -34,7 +35,8 @@ export default function AdminLyricsEditorPage() {
   const [song, setSong] = useState<Song | null>(null);
   const [lines, setLines] = useState<LyricLine[]>([{ text: "" }]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [plainImport, setPlainImport] = useState("");
+  const [importText, setImportText] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -247,12 +249,28 @@ export default function AdminLyricsEditorPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedIndex, syncLineAt]);
 
-  function applyPlainImport() {
-    const parsed = parsePlainLyricsText(plainImport);
+  // Human: Replace editor lines from the import textarea (plain or [timestamp] lines).
+  // Agent: CALLS parseLyricsImportText; SETS lines + selectedIndex 0; CLEARS importText.
+  function applyImport() {
+    const parsed = parseLyricsImportText(importText);
     if (parsed.length === 0) return;
     setLines(parsed);
     setSelectedIndex(0);
-    setPlainImport("");
+    setImportText("");
+    setError("");
+  }
+
+  // Human: Copy all lines to the clipboard in import-compatible [m:ss] format.
+  // Agent: CALLS serializeLyricsWithTimestamps; WRITES navigator.clipboard; TOAST copyFeedback 2s.
+  async function handleCopyWithTimestamps() {
+    const text = serializeLyricsWithTimestamps(lines);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback(true);
+      window.setTimeout(() => setCopyFeedback(false), 2000);
+    } catch {
+      setError("Could not copy to clipboard");
+    }
   }
 
   function updateLineText(index: number, text: string) {
@@ -390,23 +408,38 @@ export default function AdminLyricsEditorPage() {
 
           <div>
             <label className="block text-xs font-medium text-surface-400 mb-2">
-              Import plain lyrics
+              Import / export lyrics
             </label>
+            <p className="text-[11px] text-surface-500 mb-2 leading-relaxed">
+              Plain text (one line per row) or synced lines like{" "}
+              <span className="font-mono text-surface-400">[0:12.500] Lyric text</span>. Unsynced lines paste
+              without a timestamp.
+            </p>
             <textarea
-              value={plainImport}
-              onChange={(e) => setPlainImport(e.target.value)}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
               rows={5}
-              placeholder="Paste lyrics, one line per row…"
-              className="w-full rounded-xl bg-surface-900 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/40"
+              placeholder={"[0:12] First line\n[0:45.250] Second line\nPlain line without timestamp"}
+              className="w-full rounded-xl bg-surface-900 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-surface-600 focus:outline-none focus:ring-2 focus:ring-aurora-500/40 font-mono"
             />
-            <GlassButton
-              type="button"
-              className="mt-2 w-full"
-              onClick={applyPlainImport}
-              disabled={!plainImport.trim()}
-            >
-              Apply to lines
-            </GlassButton>
+            <div className="mt-2 flex flex-col gap-2">
+              <GlassButton
+                type="button"
+                className="w-full"
+                onClick={() => void applyImport()}
+                disabled={!importText.trim()}
+              >
+                Import lyrics
+              </GlassButton>
+              <GlassButton
+                type="button"
+                className="w-full"
+                onClick={() => void handleCopyWithTimestamps()}
+                disabled={lines.every((l) => !l.text.trim())}
+              >
+                {copyFeedback ? "Copied!" : "Copy with timestamps"}
+              </GlassButton>
+            </div>
           </div>
         </div>
 

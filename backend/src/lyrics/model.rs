@@ -19,6 +19,12 @@ pub struct SongLyrics {
     pub updated_at: String,
 }
 
+// Human: True when at least one lyric line has non-whitespace text (saved document has content).
+// Agent: PURE fn; ANY non-empty trimmed line → true; USED by admin library lyrics badge.
+pub fn has_lyrics_content(lines: &[LyricLine]) -> bool {
+    lines.iter().any(|l| !l.text.trim().is_empty())
+}
+
 // Human: True when every non-empty line has a non-negative start_ms (fully synced for karaoke display).
 // Agent: PURE fn; IGNORES blank lines; REQUIRES start_ms Some for remaining lines.
 pub fn is_synced(lines: &[LyricLine]) -> bool {
