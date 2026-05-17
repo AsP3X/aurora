@@ -504,36 +504,41 @@ pub async fn update_song(
 
     let mut tx = state.pool.begin().await?;
 
+    enum SongUpdateBind {
+        Text(String),
+        Int(i32),
+    }
+
     let mut sets: Vec<String> = Vec::new();
-    let mut binds: Vec<String> = Vec::new();
+    let mut binds: Vec<SongUpdateBind> = Vec::new();
 
     if let Some(v) = body.title {
         sets.push(format!("title = ${}", sets.len() + 2));
-        binds.push(v);
+        binds.push(SongUpdateBind::Text(v));
     }
     if let Some(v) = body.artist {
         sets.push(format!("artist = ${}", sets.len() + 2));
-        binds.push(v);
+        binds.push(SongUpdateBind::Text(v));
     }
     if let Some(v) = body.album {
         sets.push(format!("album = ${}", sets.len() + 2));
-        binds.push(v);
+        binds.push(SongUpdateBind::Text(v));
     }
     if let Some(v) = body.album_artist {
         sets.push(format!("album_artist = ${}", sets.len() + 2));
-        binds.push(v);
+        binds.push(SongUpdateBind::Text(v));
     }
     if let Some(v) = body.track_number {
         sets.push(format!("track_number = ${}", sets.len() + 2));
-        binds.push(v.to_string());
+        binds.push(SongUpdateBind::Int(v));
     }
     if let Some(v) = body.year {
         sets.push(format!("year = ${}", sets.len() + 2));
-        binds.push(v.to_string());
+        binds.push(SongUpdateBind::Int(v));
     }
     if let Some(v) = body.studio {
         sets.push(format!("studio = ${}", sets.len() + 2));
-        binds.push(v);
+        binds.push(SongUpdateBind::Text(v));
     }
     if should_clear_artwork {
         sets.push(format!("artwork_key = ${}", sets.len() + 2));
@@ -546,7 +551,10 @@ pub async fn update_song(
         );
         let mut query = sqlx::query_as::<_, crate::songs::model::SongDb>(&sql).bind(&id);
         for b in &binds {
-            query = query.bind(b);
+            query = match b {
+                SongUpdateBind::Text(v) => query.bind(v),
+                SongUpdateBind::Int(v) => query.bind(v),
+            };
         }
         if should_clear_artwork {
             query = query.bind(new_artwork_key.clone());
