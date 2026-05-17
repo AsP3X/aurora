@@ -1,3 +1,5 @@
+// Human: Standalone `<audio>` that plays an HLS master playlist with Bearer auth on segment requests (or native Safari HLS).
+// Agent: EFFECT on playlistUrl; USES hls.js attachMedia+loadSource OR audio.src; CLEANUP destroys HLS; CALLS onError on fatal.
 import { useEffect, useRef } from "react";
 import Hls from "hls.js";
 
@@ -11,6 +13,8 @@ interface HlsPlayerProps {
   preload?: string;
 }
 
+// Human: Encapsulates browser differences — Chrome needs hls.js; Safari can play `application/vnd.apple.mpegurl` directly.
+// Agent: PROPS playlistUrl + audio callbacks; REFS audio+hls; DEP [playlistUrl, onError].
 export default function HlsPlayer({
   playlistUrl,
   onTimeUpdate,
@@ -23,6 +27,8 @@ export default function HlsPlayer({
   const audioRef = useRef<HTMLAudioElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
+  // Human: Rebuild the pipeline whenever the playlist URL changes so we never append stale HLS state.
+  // Agent: DESTROY prior Hls; xhrSetup adds Authorization; ERROR fatal triggers onError; Safari fallback sets src.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !playlistUrl) return;

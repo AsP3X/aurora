@@ -1,6 +1,10 @@
+// Human: Slide-over queue editor — shows current track, reorder targets via `playSongs`, clear/remove controls.
+// Agent: READS queueOpen; RENDERS backdrop+drawer; CALLS playSongs(queue,i), removeFromQueue, clearQueue.
 import { usePlayer } from "../context/PlayerContext";
 import ArtworkImage from "./ArtworkImage";
 
+// Human: Compact mm:ss helper for list duration cells in the drawer.
+// Agent: PURE; FLOOR minutes and seconds.
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -19,17 +23,21 @@ export default function QueueDrawer() {
     playSongs,
   } = usePlayer();
 
+  // Human: PlayerBar toggles `queueOpen` — render nothing when closed to avoid trapping focus or hit targets.
+  // Agent: EARLY RETURN when !queueOpen.
   if (!queueOpen) return null;
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Human: Click-away closes the drawer — sits under the panel but above main content. */}
+      {/* Agent: onClick setQueueOpen(false); z-50 backdrop */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
         onClick={() => setQueueOpen(false)}
       />
 
-      {/* Drawer */}
+      {/* Human: Fixed right sheet listing queue rows; row click jumps playback via `playSongs`. */}
+      {/* Agent: max-w-md panel; MAP queue; highlight currentIndex; remove button per row */}
       <div className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-surface-950 border-l border-white/10 z-50 flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">

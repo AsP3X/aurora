@@ -1,3 +1,5 @@
+// Human: Show artwork from the API when available; otherwise render a deterministic initial-based placeholder tile.
+// Agent: EFFECT fetchArtworkUrl per songId; STATE url+hasError; FALLBACK stringToHslColor(title+artist).
 import { useEffect, useState } from "react";
 import { fetchArtworkUrl } from "../api/client";
 import { stringToHslColor } from "../utils/color";
@@ -9,10 +11,14 @@ interface ArtworkImageProps {
   className?: string;
 }
 
+// Human: `songId` drives cache key; `title`/`artist` improve alt text and placeholder color entropy.
+// Agent: PROPS songId, title, optional artist; LAZY loads img; onError flips to placeholder.
 export default function ArtworkImage({ songId, title, artist = "", className = "" }: ArtworkImageProps) {
   const [hasError, setHasError] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
 
+  // Human: Each new `songId` refetches presigned artwork — reset so we never flash the previous cover.
+  // Agent: CANCELS stale responses; CALLS fetchArtworkUrl; SETS hasError on failure.
   useEffect(() => {
     let cancelled = false;
     setHasError(false);

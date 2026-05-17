@@ -7,19 +7,23 @@ Self-hosted music streaming server with a web player UI.
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable)
-- [Node.js](https://nodejs.org/) (20+) with `npm`
+- [Node.js](https://nodejs.org/) (20+) with [pnpm](https://pnpm.io/) (repo enforces pnpm via `packageManager`)
 - (Optional) [Docker](https://docker.com/) for PostgreSQL + Meilisearch
 
 ### Install dependencies
 
+From the repository root:
+
 ```bash
-npm install
+pnpm install
 ```
+
+This installs root tooling and the frontend workspace. The API is Rust (`backend/`); run `cargo build` there if you want to verify the backend separately.
 
 ### Start everything
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 This starts both services concurrently:
@@ -31,10 +35,10 @@ This starts both services concurrently:
 
 ```bash
 # API only (Rust + Axum)
-npm run dev:backend
+pnpm run dev:backend
 
 # Web only (Vite + React)
-npm run dev:frontend
+pnpm run dev:frontend
 ```
 
 ### Start with Docker (Postgres + Meilisearch)
@@ -46,7 +50,7 @@ docker compose up --build
 Then in another terminal:
 
 ```bash
-npm run dev:frontend
+pnpm run dev:frontend
 ```
 
 The backend will auto-detect Postgres via `DATABASE_URL` when running inside Docker. For local dev it defaults to SQLite (`sqlite:aurora.db`).

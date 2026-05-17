@@ -1,8 +1,12 @@
+// Human: Wrap ffmpeg invocation and stderr parsing so uploads can background-transcode masters into AES-128 HLS with progress telemetry.
+// Agent: SPAWNS ffmpeg subprocess; WRITES key_info + bin; EMITS HlsOutput paths; parse_ffmpeg_progress maps stderr time= to percent.
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+// Human: Paths ffmpeg populated plus how many transport segments landed for later upload accounting.
+// Agent: CONSUMED by upload task to read playlist/key/segments and set songs.segment_count; CONTAINS PathBuf triple + usize count.
 pub struct HlsOutput {
     pub playlist_path: PathBuf,
     pub key_path: PathBuf,
@@ -13,6 +17,8 @@ pub struct HlsOutput {
 pub struct HlsEncoder;
 
 impl HlsEncoder {
+    // Human: Shell out to ffmpeg to AES-128 encrypt AAC HLS segments and capture coarse progress by parsing stderr timecodes.
+    // Agent: SPAWNS ffmpeg with hls_key_info_file; OPTIONAL watch::Sender progress; COUNTS .ts files after success; WRITES temp key+playlist+segments dirs.
     pub async fn transcode(
         input_path: &Path,
         output_dir: &Path,
@@ -113,6 +119,8 @@ impl HlsEncoder {
     }
 }
 
+// Human: Translate ffmpeg status lines into integer percent complete by comparing parsed `time=` against known track duration.
+// Agent: READS stderr line + duration_seconds; PARSES HH:MM:SS.xx; RETURNS 0-100; NONE when pattern missing or duration zero.
 fn parse_ffmpeg_progress(line: &str, duration: f64) -> Option<i32> {
     // ffmpeg stderr output includes lines like:
     // size=    256kB time=00:00:15.23 bitrate= ...

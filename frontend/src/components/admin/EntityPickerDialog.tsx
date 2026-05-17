@@ -1,3 +1,5 @@
+// Human: Modal fuzzy picker over known string values — supports single pick or multi with Enter-to-create new tokens.
+// Agent: Fuse.js search; RESET on first open; multiSelect toggles local selection then onMultiSelect on Done; Escape closes.
 import { useState, useEffect, useRef, useMemo } from "react";
 import Fuse from "fuse.js";
 
@@ -32,6 +34,8 @@ export default function EntityPickerDialog({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const wasOpenRef = useRef(false);
+  // Human: When dialog opens, reset query/selection and focus the filter input for fast keyboard flows.
+  // Agent: TRACKS wasOpenRef edge; syncs localSelected from props; TIMEOUT focus input.
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       setQuery("");

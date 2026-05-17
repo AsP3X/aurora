@@ -20,6 +20,8 @@ use crate::{
     AppState,
 };
 
+// Human: Library song routes (faceted search, metadata), ticket-signed media URLs, playback history writes, and user/admin listening analytics over `playback_history`.
+// Agent: READS songs + playback_history; USES stream_ticket for tokenized GETs; REQUIRES library.view / history.view / stats.view; admin aggregate paths USE admin_listening_rl + tracing audit targets.
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
     #[serde(default)]
@@ -48,6 +50,8 @@ pub struct ValuesParams {
 }
 
 fn default_values_limit() -> i64 { 50 }
+
+// --- Library discovery (filters & faceted values) ---
 
 pub async fn list_values(
     State(state): State<Arc<AppState>>,
@@ -119,6 +123,8 @@ pub async fn album_song_count(
     Ok(Json(serde_json::json!({ "count": row.0 })))
 }
 
+// --- Library listing & song detail ---
+
 fn sanitize_order_by(order_by: Option<String>) -> &'static str {
     match order_by.as_deref() {
         Some("created_at") => "created_at DESC",
@@ -183,6 +189,8 @@ pub async fn get_song(
     }
 }
 
+// --- Progressive streaming & artwork URLs (JWT auth at issue time) ---
+
 pub async fn get_stream_url(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -241,6 +249,8 @@ pub async fn get_artwork_url(
     Ok(Json(serde_json::json!({ "url": artwork_url })))
 }
 
+// --- Ticket-gated full-file stream / artwork bytes ---
+
 pub async fn stream_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
@@ -297,6 +307,8 @@ pub async fn get_artwork(
 
     Ok((headers, axum::body::Body::from_stream(stream)).into_response())
 }
+
+// --- Playback history (append, patch, list) ---
 
 #[derive(Debug, serde::Deserialize)]
 pub struct LogHistoryBody {
@@ -391,6 +403,8 @@ pub async fn list_history(
 
     Ok(Json(entries))
 }
+
+// --- Listening analytics helpers (dialect-aware SQL, shared by user + admin aggregates) ---
 
 fn period_clause(dialect: &super::date_dialect::Dialect, period: &str) -> Option<String> {
     match period {
@@ -502,6 +516,8 @@ async fn query_user_listening_by_song(
     Ok(q.fetch_all(pool).await?)
 }
 
+// --- Per-user listening breakdowns (songs & sessions) ---
+
 pub async fn get_me_listening_by_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -512,6 +528,8 @@ pub async fn get_me_listening_by_song(
     let rows = query_user_listening_by_song(&state.pool, &ids, &params.period, params.limit).await?;
     Ok(Json(rows))
 }
+
+// --- Admin-visible listening for individual users ---
 
 pub async fn get_admin_user_listening_by_song(
     State(state): State<Arc<AppState>>,
@@ -543,6 +561,8 @@ pub struct AdminListeningBySongBody {
     pub limit: i64,
 }
 
+// Human: Shared guard/audit path for multi-user analytics—rate limits admins and logs structured audit events without embedding user emails.
+// Agent: REQUIRES admin; CALLS admin_listening_rl; READS user_ids CSV; EMITS tracing aurora_admin_listening + aurora_audit targets.
 async fn admin_listening_by_song_multi_inner(
     state: Arc<AppState>,
     claims: crate::auth::Claims,
@@ -595,6 +615,8 @@ pub async fn get_admin_listening_by_song_multi(
         .await
         .map_err(IntoResponse::into_response)
 }
+
+// --- Admin aggregate listening (many subjects per request, GET + POST + sessions variants) ---
 
 pub async fn post_admin_listening_by_song_multi(
     State(state): State<Arc<AppState>>,

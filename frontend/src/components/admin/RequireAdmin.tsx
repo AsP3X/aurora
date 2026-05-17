@@ -1,3 +1,5 @@
+// Human: Hard stop for non-admins — relies on permission list containing `admin.access` from the backend.
+// Agent: READS can("admin.access"); RETURNS denial UI or children unchanged.
 import { useAuth } from "../../context/AuthContext";
 
 export default function RequireAdmin({ children }: { children: React.ReactNode }) {

@@ -1,3 +1,5 @@
+// Human: Small SQL dialect fragments for playback_history analytics so the same Rust code emits valid SQLite and Postgres predicates.
+// Agent: READS pool via sqlite_version() probe; RETURNS Dialect struct with strftime vs EXTRACT snippets; NO writes.
 use sqlx::AnyPool;
 
 pub struct Dialect {
@@ -8,6 +10,8 @@ pub struct Dialect {
     pub date_gte_month_start: &'static str,
 }
 
+// Human: Detect sqlite vs postgres once per call and pick matching date_trunc / strftime expressions for listening stats routes.
+// Agent: ATTEMPTS SELECT sqlite_version(); BRANCHES Dialect literals; FALLBACK postgres when probe None/fails.
 pub async fn get(pool: &AnyPool) -> Dialect {
     let is_sqlite: Option<(String,)> = sqlx::query_as("SELECT sqlite_version()")
         .fetch_optional(pool)

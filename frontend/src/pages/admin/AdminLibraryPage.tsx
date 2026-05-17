@@ -1,3 +1,5 @@
+// Human: Admin music table — search/paginate songs, context actions, inline edit w/ artwork crop, upload modal, delete confirm.
+// Agent: fetchAdminSongs offset+query; ContextMenu actions; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled.
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchAdminSongs,

@@ -1,3 +1,5 @@
+// Human: Button that opens `EntityPickerDialog` for a single string value (artist/album/etc.) with clear affordance.
+// Agent: LOCAL open state; onChange from picker; entityType prop currently unused in JSX (reserved for future copy).
 import { useState } from "react";
 import EntityPickerDialog from "./EntityPickerDialog";
 

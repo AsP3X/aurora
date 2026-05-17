@@ -1,3 +1,6 @@
+// Human: Shared TypeScript shapes for API JSON — users, songs, playlists, and auth responses.
+// Agent: DOMAIN TYPES only; CONSUMED by pages/components and `api/client` responses; no runtime logic.
+
 export interface User {
   id: string;
   email: string;

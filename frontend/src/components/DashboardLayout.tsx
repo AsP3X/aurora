@@ -1,3 +1,5 @@
+// Human: Library-mode shell — fixed sidebar with playlists + nav, top search slot, and “mini player” from last history entry.
+// Agent: LOADS fetchPlaylists+fetchHistory on pathname; CLOSES mobile sidebar on route change; CHILDREN in scroll main; topbarExtra slot.
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { fetchPlaylists, fetchHistory, createPlaylist } from "../api/client";
@@ -29,7 +31,8 @@ export default function DashboardLayout({
     duration_seconds: number;
   } | null>(null);
 
-  /* Load sidebar data */
+  // Human: Refresh sidebar playlists and “last played” card whenever navigation changes so lists feel current.
+  // Agent: EFFECT [pathname]; PARALLEL fetchPlaylists+fetchHistory; DERIVES lastPlayed from hist[0].
   useEffect(() => {
     let mounted = true;
     Promise.all([
@@ -52,11 +55,14 @@ export default function DashboardLayout({
     return () => { mounted = false; };
   }, [pathname]);
 
-  /* Close sidebar on route change (mobile) */
+  // Human: Mobile drawer should not stay open after navigating — otherwise it obscures the new page.
+  // Agent: EFFECT [pathname]; SETS sidebarOpen false.
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
 
+  // Human: Inline “New playlist” form posts to API then prepends the created row for instant sidebar feedback.
+  // Agent: handleSubmit; CALLS createPlaylist; UPDATES playlists state; RESETS form fields.
   async function handleCreatePlaylist(e: React.FormEvent) {
     e.preventDefault();
     if (!newPlaylistName.trim()) return;
@@ -249,8 +255,8 @@ export default function DashboardLayout({
   );
 }
 
-/* ─── Sidebar sub-components ─── */
-
+// Human: Nav row in sidebar — `disabled` renders a static “Soon” placeholder instead of a link.
+// Agent: NavItem; CONDITIONAL disabled div vs Link; highlights when `active` prop true.
 function SidebarNavItem({
   to,
   label,
@@ -288,6 +294,8 @@ function SidebarNavItem({
   );
 }
 
+// Human: Single playlist shortcut row in the sidebar list — navigates to `/playlist/:id`.
+// Agent: Link; DISPLAYS avatar placeholder icon + name.
 function SidebarPlaylistItem({ playlist }: { playlist: Playlist }) {
   return (
     <Link
@@ -304,6 +312,8 @@ function SidebarPlaylistItem({ playlist }: { playlist: Playlist }) {
   );
 }
 
+// Human: Footer teaser that deep-links to the last history entry’s full player — purely navigational, no playback start.
+// Agent: Link /player/:id; USES ArtworkImage for thumb.
 function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; artist: string; artwork_key: string | null; duration_seconds: number } | null }) {
   if (!lastPlayed) {
     return (

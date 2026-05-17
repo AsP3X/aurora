@@ -1,0 +1,56 @@
+---
+description: >-
+  Mandatory inline comments (human + optional AI-digestible line) on Rust and
+  TypeScript/TSX in this repo
+globs: "**/*.{rs,ts,tsx}"
+alwaysApply: true
+---
+
+# Inline documentation (required)
+
+**Applies to `*.rs`, `*.ts`, and `*.tsx` only** (not `Cargo.toml`, `package.json`, lockfiles, CI, env samples, or other configs unless the user asks for the same style there).
+
+**All new or modified code in these files must include clean, human-readable inline comments.** Where behavior is non-trivial, **each such comment must also include an `// Agent:` line** (see below; in TSX **inside JSX**, use a separate `{/* Agent: ... */}` line with the same intent) so Cursor and other agents can parse intent quickly—**unless** that line would be redundant. Documentation is **not optional**—do not ship blocks of logic with no explanation.
+
+## What to comment
+
+- **Every non-trivial module, function, hook, or component**: Briefly state **purpose** and, where helpful, **inputs/outputs** or side effects (HTTP handlers, DB queries, cache keys, auth checks, `useEffect` dependencies, server actions vs client components, channels/tasks in Rust).
+- **Non-obvious logic**: Explain **why** something is done, not what the syntax already shows. Include edge cases, ordering constraints, or framework/runtime quirks (e.g. React Strict Mode double effects, Vite HMR vs production bundles, `async` drop order and cancellation in Rust).
+- **Sections in longer files**: Short header comments before logical blocks (e.g. routing, validation, UI state, migrations logic) so a human can scan the file.
+- **Magic numbers, flags, and workarounds**: Name the intent or link to a design constraint in plain language.
+
+## AI-oriented line (when applicable)
+
+**Each inline comment that documents non-trivial behavior must also include one separate comment line** that states the same idea in **dense, agent-digestible language**—only **omit** this line when it would add no value (e.g. purely obvious or redundant with the human line).
+
+Use a **fixed prefix** so tools and models can spot it:
+
+- **Rust and TypeScript (outside JSX):** `// Human:` and `// Agent:`
+- **TSX inside JSX:** `/* Human: ... */` and `/* Agent: ... */` each wrapped in braces as its own line, e.g. `{/* Human: ... */}` then `{/* Agent: ... */}`
+
+On the **Agent** line, prefer **structured, scannable phrasing**: contracts (pre/post), inputs/outputs, HTTP status paths, DB tables touched, cache invalidation, env vars read, state mutations, invariants, failure modes, or dependencies on other modules. Example shape (adapt to context):
+
+```ts
+// Human: We reject the upload early if the magic bytes do not match a supported image format.
+// Agent: READS file header bytes; RETURNS 415 on mismatch; WRITES nothing; CALLS validateImageMagicBytes.
+```
+
+```rust
+// Human: We spawn a bounded worker so a burst of jobs cannot exhaust file descriptors.
+// Agent: MUTATES worker pool; REQUIRES semaphore permits; READS config.max_workers; EMITS tasks to channel.
+```
+
+The **human** line stays conversational; the **Agent** line stays factual and keyword-oriented for fast retrieval in later Cursor sessions.
+
+## Style
+
+- Use full sentences or clear phrases in the **human** line; avoid cryptic abbreviations there. The **Agent** line may use compact tokens (`READS`, `WRITES`, `EMITS`, `REQUIRES`, `CALLS`, `HTTP`, `DB`).
+- Place comments **above** the code they describe (or end-of-line only for very short clarifications).
+- In Rust, keep **`///` rustdoc** for public API summaries where the project already uses it; use **`// Human:` / `// Agent:`** next to non-trivial implementation details (do not fold dense Agent tokens into user-facing doc comments).
+- Keep comments **up to date** when behavior changes—stale comments are treated as bugs.
+
+## Out of scope
+
+- Do not comment every single obvious line (e.g. trivial pass-through getters). **Do** comment anything another developer (or future you) would need to understand to edit safely.
+
+If implementation would otherwise be left undocumented, **add the comments first**, then keep the code aligned with them.

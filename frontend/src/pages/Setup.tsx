@@ -1,3 +1,5 @@
+// Human: First-run wizard (admin user, instance options, media path) — completes with JWT via `setup` API.
+// Agent: MULTI-STEP state; VALIDATES per step; CALLS setup(); setAuth; REPLACE navigate "/".
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { setup } from "../api/client";
@@ -20,6 +22,8 @@ export default function Setup() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Human: Step 1 validates account fields client-side before advancing the wizard.
+  // Agent: RETURNS error string or null; CHECKS email regex + password length + match.
   function validateStep1(): string | null {
     if (!email.trim()) return "Email is required";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Invalid email address";
@@ -38,6 +42,8 @@ export default function Setup() {
     return null;
   }
 
+  // Human: Linear wizard navigation with inline validation errors surfaced in the shared `error` banner.
+  // Agent: next() advances step when validators pass; back() decreases step with floor 1.
   const next = () => {
     setError("");
     if (step === 1) {
@@ -56,6 +62,8 @@ export default function Setup() {
     setStep((s) => Math.max(s - 1, 1) as Step);
   };
 
+  // Human: Final step posts full payload — successful setup logs the admin in immediately.
+  // Agent: validateStep3; CALLS setup API; setAuth; navigate("/", replace).
   async function handleSubmit() {
     setError("");
     const err = validateStep3();

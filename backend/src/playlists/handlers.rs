@@ -1,3 +1,5 @@
+// Human: User playlist CRUD with ownership checks plus optional permission overrides (`playlists.view_all`, `playlists.update`, etc.).
+// Agent: READS/WRITES playlists + playlist_songs; check_permission gates non-owner access; RETURNS nested songs with genres hydrated.
 use axum::{
     extract::{Path, State},
     Json,
@@ -9,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     permissions::check_permission,
-    playlists::model::Playlist,
+    playlists::model::{Playlist, PlaylistSong},
     AppState,
 };
 
@@ -19,6 +21,8 @@ pub struct CreatePlaylist {
     pub description: Option<String>,
 }
 
+// Human: Return every playlist owned by the caller ordered by recency—no public cross-user listing here.
+// Agent: READS playlists WHERE user_id = claims.sub; NO permission join; RETURNS Vec<Playlist>.
 pub async fn list_playlists(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -33,6 +37,8 @@ pub async fn list_playlists(
     Ok(Json(playlists))
 }
 
+// Human: Create an empty playlist shell the caller owns; songs are added via later endpoints.
+// Agent: INSERT playlists RETURNING *; BINDS random UUID id; REQUIRES auth middleware only.
 pub async fn create_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -53,6 +59,8 @@ pub async fn create_playlist(
     Ok(Json(playlist))
 }
 
+// Human: Fetch playlist metadata plus ordered song rows, enforcing either public visibility, ownership, or `playlists.view_all`.
+// Agent: READS playlist row; MAY 403; JOIN songs via playlist_songs ordered by position; hydrates genres.
 pub async fn get_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -100,6 +108,8 @@ pub struct UpdatePlaylist {
     pub is_public: Option<bool>,
 }
 
+// Human: Patch textual fields and visibility with owner-or-`playlists.update` authorization using coalescing defaults from the existing row.
+// Agent: UPDATE playlists; REQUIRES owner or permission; RETURNS refreshed Playlist.
 pub async fn update_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -139,6 +149,8 @@ pub async fn update_playlist(
     Ok(Json(updated))
 }
 
+// Human: Hard-delete a playlist and rely on FK cascades/triggers to drop join rows—guarded like update for non-owners.
+// Agent: DELETE playlists WHERE id; REQUIRES owner or playlists.delete permission; HTTP 404 if row missing.
 pub async fn delete_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -173,6 +185,8 @@ pub struct AddSongBody {
     pub song_id: String,
 }
 
+// Human: Append a song to the tail by allocating max(position)+1 with the same auth gates as updates.
+// Agent: INSERT playlist_songs; VALIDATES playlist exists + auth; RETURNS inserted PlaylistSong row JSON.
 pub async fn add_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -205,19 +219,23 @@ pub async fn add_song(
     let position = max_pos.unwrap_or(0) + 1;
     let ps_id = Uuid::new_v4().to_string();
 
-    sqlx::query(
-        "INSERT INTO playlist_songs (id, playlist_id, song_id, position) VALUES ($1, $2, $3, $4)"
+    // Human: Persist the join row and return it so clients can show position without another round trip.
+    // Agent: WRITES playlist_songs; RETURNS PlaylistSong via RETURNING; HTTP 200 { ok, entry }.
+    let entry = sqlx::query_as::<_, PlaylistSong>(
+        "INSERT INTO playlist_songs (id, playlist_id, song_id, position) VALUES ($1, $2, $3, $4) RETURNING *",
     )
     .bind(&ps_id)
     .bind(&id_str)
     .bind(&body.song_id)
     .bind(position)
-    .execute(&state.pool)
+    .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(serde_json::json!({"ok": true})))
+    Ok(Json(serde_json::json!({"ok": true, "entry": entry})))
 }
 
+// Human: Remove a single song association without reshuffling remaining positions (gaps allowed in this schema).
+// Agent: DELETE playlist_songs scoped to playlist + song UUID; REQUIRES owner or playlists.delete-style permission path.
 pub async fn remove_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -253,6 +271,8 @@ pub struct ReorderSongsBody {
     pub song_ids: Vec<String>,
 }
 
+// Human: Reassign contiguous positions according to the client-supplied id list—validates membership before issuing per-row updates.
+// Agent: READS existing song_id set; ERROR if unknown id; LOOP UPDATE positions; NOTE not a single SQL transaction on Any pool.
 pub async fn reorder_songs(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,

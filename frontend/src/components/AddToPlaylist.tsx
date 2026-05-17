@@ -1,3 +1,5 @@
+// Human: Dropdown anchored to a custom trigger — lists playlists and POSTs addSongToPlaylist for the given song.
+// Agent: OPEN fetches playlists; mousedown-outside closes; CALLS onAdded optional after success.
 import { useState, useEffect, useRef } from "react";
 import { fetchPlaylists, addSongToPlaylist } from "../api/client";
 import type { Playlist, Song } from "../types";
@@ -17,6 +19,8 @@ export default function AddToPlaylist({
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Human: Each time the popover opens, refresh playlist names so new lists appear without a full page reload.
+  // Agent: EFFECT [open]; fetchPlaylists when open true.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -25,6 +29,8 @@ export default function AddToPlaylist({
       .finally(() => setLoading(false));
   }, [open]);
 
+  // Human: Click-away dismiss — uses capture-phase mousedown on document while open.
+  // Agent: EFFECT [open]; LISTENS mousedown; CHECKS contains target.
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -37,6 +43,8 @@ export default function AddToPlaylist({
     }
   }, [open]);
 
+  // Human: After a successful membership POST, close UI and let parent invalidate lists if needed.
+  // Agent: addSongToPlaylist; SETS open false; INVOKES onAdded?.
   async function handleAdd(playlistId: string) {
     setAddingTo(playlistId);
     try {
@@ -50,6 +58,8 @@ export default function AddToPlaylist({
 
   return (
     <div ref={containerRef} className="relative">
+      {/* Human: children render the visible trigger; stopPropagation avoids parent cards interpreting click as play. */}
+      {/* Agent: TOGGLE open on button click */}
       <button
         onClick={(e) => {
           e.stopPropagation();

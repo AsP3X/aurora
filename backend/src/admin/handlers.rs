@@ -1,3 +1,5 @@
+// Human: Admin REST surface: searchable song views, destructive deletes, playlist management, settings, and user/role maintenance guarded by `require_admin_access`.
+// Agent: READS/WRITES songs, playlists, app_settings, users, group_memberships; MULTIPART update_song; SQL ORDER BY whitelist via sanitize_order_by.
 use axum::{
     extract::{FromRequest, Path as AxumPath, Query, State},
     Json,
@@ -28,6 +30,8 @@ pub struct ListParams {
 
 fn default_limit() -> i64 { 50 }
 
+// Human: Only allow predictable ORDER BY fragments so dynamic SQL cannot pivot into arbitrary column injection.
+// Agent: READS Option<String>; RETURNS static ORDER BY clause fragment; IGNORES unknown values → title ordering.
 fn sanitize_order_by(order_by: Option<String>) -> &'static str {
     match order_by.as_deref() {
         Some("created_at") => "created_at DESC",
@@ -37,6 +41,10 @@ fn sanitize_order_by(order_by: Option<String>) -> &'static str {
     }
 }
 
+// --- Admin song library ---
+
+// Human: Paginated admin song search with optional text filter and safe `order_by` mapping, then hydrates genre arrays like public list endpoints.
+// Agent: REQUIRES require_admin_access; READS songs; CALLS populate_genres; DYNAMIC SQL ORDER BY whitelist only.
 pub async fn list_admin_songs(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -66,6 +74,8 @@ pub async fn list_admin_songs(
     Ok(Json(songs))
 }
 
+// Human: Best-effort object delete for optional blobs so failed primary deletes do not leave orphan keys in logs only.
+// Agent: CALLS Storage::delete; LOGS warn on failure; NO AppError propagation.
 async fn delete_storage_key(storage: &dyn crate::storage::Storage, key: &str) {
     if let Err(e) = storage.delete(key).await {
         tracing::warn!(key = %key, error = %e, "Failed to delete storage key");
@@ -101,6 +111,8 @@ pub async fn delete_song(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// --- Admin playlists & aggregates ---
+
 #[derive(Debug, serde::Serialize, sqlx::FromRow)]
 pub struct AdminPlaylist {
     pub id: String,
@@ -113,6 +125,8 @@ pub struct AdminPlaylist {
     pub song_count: i64,
 }
 
+// Human: Cross-user playlist overview for support: owner email plus derived song counts per playlist.
+// Agent: READS playlists JOIN users; GROUP BY; REQUIRES admin; RETURNS AdminPlaylist rows sorted recent-first.
 pub async fn list_all_playlists(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -199,6 +213,8 @@ pub struct AppSetting {
     pub updated_at: String,
 }
 
+// Human: Merge persisted keys with documented defaults so fresh installs still expose registration toggles in the admin UI.
+// Agent: READS app_settings; MERGES HashMap defaults; SORTS keys; HTTP requires admin via require_admin_access caller.
 pub async fn list_settings(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -282,6 +298,8 @@ pub struct UpdateRole {
     pub role: String,
 }
 
+// Human: Promote or demote roles while keeping the fixed Admin group membership row in sync with the new role.
+// Agent: READS users.role; WRITES users; INSERT/DELETE group_memberships admin group UUID; HTTP 400 blocks self edits.
 pub async fn update_user_role(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -377,6 +395,8 @@ pub struct UpdateSongBody {
     pub remove_artwork: Option<bool>,
 }
 
+// Human: Accept JSON or multipart (metadata + optional artwork) so admins can patch tags and cover art in one request shape.
+// Agent: READS Content-Type; BUILDS dynamic UPDATE + binds; REWRITES song_genres; Storage put/delete for artwork_key rotation.
 pub async fn update_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,

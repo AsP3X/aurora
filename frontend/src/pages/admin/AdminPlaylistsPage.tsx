@@ -1,3 +1,5 @@
+// Human: All playlists across users — read-only listing with admin delete confirmation.
+// Agent: fetchAdminPlaylists on mount; deleteAdminPlaylist removes row.
 import { useState, useEffect, useCallback } from "react";
 import { fetchAdminPlaylists, deleteAdminPlaylist } from "../../api/client";
 import ConfirmModal from "../../components/admin/ConfirmModal";

@@ -1,3 +1,5 @@
+// Human: Blocking centered dialog for destructive confirmations — labels configurable, ignores clicks while loading.
+// Agent: PROPS title/message/onConfirm/onCancel/loading; RENDERS fixed overlay; confirm button red.
 export default function ConfirmModal({
   title,
   message,

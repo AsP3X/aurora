@@ -1,5 +1,7 @@
 import type { Song, SongDraft, Playlist } from "../types";
 
+// Human: Resolve API root from Vite env or same host on port 3000 for local dev.
+// Agent: READS VITE_API_URL; RETURNS /api/v1 base URL string.
 function getApiBase(): string {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
@@ -9,11 +11,17 @@ function getApiBase(): string {
 
 const API_BASE = getApiBase();
 
+// Human: Verbose API tracing only in Vite dev — production builds stay quiet in the console.
+// Agent: READS import.meta.env.DEV; GATES console.group/log/warn/error in apiFetchResponse.
+const API_DEBUG = import.meta.env.DEV;
+
 function getToken(): string | null {
   return localStorage.getItem("aurora_token");
 }
 
-/** Thrown by {@link apiFetch} on non-2xx responses (except 401 which redirects). */
+type ApiErrorPayload = { error?: string; message?: string; status?: number };
+
+/** Thrown by {@link apiFetch}, {@link apiFetchForm}, and upload helpers on failure. */
 export class ApiError extends Error {
   readonly status: number;
   readonly path: string;
@@ -28,7 +36,49 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch(path: string, options: RequestInit = {}) {
+// Human: Pull a user-visible message from Aurora's `{ error, status }` JSON or plain-text bodies.
+// Agent: PARSES raw body; PREFERS error then message; FALLBACK HTTP status label.
+function parseApiErrorMessage(raw: string, status: number): string {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ApiErrorPayload;
+      if (parsed.error) return parsed.error;
+      if (parsed.message) return parsed.message;
+    } catch {
+      const trimmed = raw.trim();
+      if (trimmed) return trimmed.slice(0, 400);
+    }
+  }
+  return `HTTP ${status}`;
+}
+
+// Human: Build a typed ApiError after the server responded with a non-success status.
+// Agent: CALLS parseApiErrorMessage; RETURNS ApiError with path/status/rawBody for UI.
+export function apiErrorFromResponse(path: string, status: number, raw: string): ApiError {
+  return new ApiError({
+    message: parseApiErrorMessage(raw, status),
+    status,
+    path,
+    rawBody: raw,
+  });
+}
+
+// Human: Session expired — clear token and send the user to login (same behavior as apiFetch).
+// Agent: WRITES localStorage remove; NAVIGATES /login; THROWS ApiError 401 (never returns).
+function clearAuthAndRedirect(path: string): never {
+  localStorage.removeItem("aurora_token");
+  window.location.href = "/login";
+  throw new ApiError({
+    message: "Unauthorized",
+    status: 401,
+    path,
+    rawBody: "",
+  });
+}
+
+// Human: Shared fetch wrapper: auth header, 401 handling, and consistent error parsing.
+// Agent: EMITS fetch to API_BASE+path; ON 401 clearAuthAndRedirect; ON !ok apiErrorFromResponse.
+async function apiFetchResponse(path: string, options: RequestInit = {}): Promise<Response> {
   const url = `${API_BASE}${path}`;
   const token = getToken();
   const method = options.method || "GET";
@@ -58,60 +108,136 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
       : "[Blob/FormData]"
     : undefined;
 
-  console.group(`[API] ${method} ${path}`);
-  console.log("Request:", { method, url, headers: Object.keys(headers), body: reqBody });
+  if (API_DEBUG) {
+    console.group(`[API] ${method} ${path}`);
+    console.log("Request:", { method, url, headers: Object.keys(headers), body: reqBody });
+  }
 
   let res: Response;
   try {
     res = await fetch(url, { ...options, headers });
   } catch (err) {
     const elapsed = (performance.now() - start).toFixed(1);
-    console.error("Network error:", err);
-    console.groupEnd();
-    throw new Error(`Network error after ${elapsed}ms: ${err instanceof Error ? err.message : String(err)}`);
+    if (API_DEBUG) {
+      console.error("Network error:", err);
+      console.groupEnd();
+    }
+    throw new ApiError({
+      message: `Network error after ${elapsed}ms: ${err instanceof Error ? err.message : String(err)}`,
+      status: 0,
+      path,
+      rawBody: "",
+    });
   }
 
   const elapsed = (performance.now() - start).toFixed(1);
   const ok = res.ok ? "OK" : "ERR";
 
   if (res.status === 401) {
-    console.warn(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) — Unauthorized, redirecting to login`);
-    console.groupEnd();
-    localStorage.removeItem("aurora_token");
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
+    if (API_DEBUG) {
+      console.warn(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) — Unauthorized, redirecting to login`);
+      console.groupEnd();
+    }
+    clearAuthAndRedirect(path);
   }
 
   if (!res.ok) {
     const raw = await res.text();
-    let parsed: { error?: string; message?: string } = {};
-    if (raw) {
-      try {
-        parsed = JSON.parse(raw) as { error?: string; message?: string };
-      } catch {
-        /* plain-text or HTML error body */
-      }
+    if (API_DEBUG) {
+      console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, raw ? { raw: raw.slice(0, 500) } : {});
+      console.groupEnd();
     }
-    const detail =
-      parsed.error ||
-      parsed.message ||
-      raw?.trim().slice(0, 400) ||
-      `HTTP ${res.status}`;
-    console.error(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`, raw ? { raw: raw.slice(0, 500) } : {});
-    console.groupEnd();
-    throw new ApiError({
-      message: detail,
-      status: res.status,
-      path,
-      rawBody: raw ?? "",
-    });
+    throw apiErrorFromResponse(path, res.status, raw);
   }
 
-  console.log(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`);
-  console.groupEnd();
+  if (API_DEBUG) {
+    console.log(`[API] ${method} ${path} → ${res.status} (${elapsed}ms) ${ok}`);
+    console.groupEnd();
+  }
 
+  return res;
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
+  const res = await apiFetchResponse(path, options);
   if (res.status === 204) return null;
   return res.json();
+}
+
+// Human: GET (or other) that returns raw text — used for HLS m3u8 playlist bodies.
+// Agent: CALLS apiFetchResponse; READS res.text(); THROWS ApiError on failure.
+async function apiFetchText(path: string, options: RequestInit = {}): Promise<string> {
+  const res = await apiFetchResponse(path, options);
+  return res.text();
+}
+
+// Human: Multipart upload endpoints (stage/commit/artwork PUT) share JSON success and error envelopes.
+// Agent: POST/PUT FormData via apiFetchResponse; PARSES JSON body; RETURNS typed T.
+async function apiFetchForm<T>(path: string, form: FormData, method: "POST" | "PUT" = "POST"): Promise<T> {
+  const res = await apiFetchResponse(path, { method, body: form });
+  return res.json() as Promise<T>;
+}
+
+// Human: XMLHttpRequest upload with progress events; same error shape as fetch helpers.
+// Agent: XHR upload to API_BASE+path; ON 401 clearAuthAndRedirect; ON error apiErrorFromResponse.
+function xhrUploadForm<T>(
+  path: string,
+  form: FormData,
+  method: "POST" | "PUT",
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const token = getToken();
+    const url = `${API_BASE}${path}`;
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      const raw = xhr.responseText ?? "";
+      if (xhr.status === 401) {
+        clearAuthAndRedirect(path);
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(raw) as T);
+        } catch {
+          reject(
+            new ApiError({
+              message: "Invalid JSON response",
+              status: xhr.status,
+              path,
+              rawBody: raw,
+            }),
+          );
+        }
+        return;
+      }
+      reject(apiErrorFromResponse(path, xhr.status, raw));
+    };
+
+    xhr.onerror = () =>
+      reject(
+        new ApiError({
+          message: "Network error",
+          status: 0,
+          path,
+          rawBody: "",
+        }),
+      );
+
+    xhr.send(form);
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -165,13 +291,7 @@ export async function fetchStreamUrl(id: string) {
 }
 
 export async function fetchPlaylistUrl(id: string): Promise<string> {
-  const token = getToken();
-  const url = `${API_BASE}/songs/${id}/playlist`;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.text();
+  return apiFetchText(`/songs/${id}/playlist`);
 }
 
 export async function fetchArtworkUrl(id: string): Promise<string | null> {
@@ -558,23 +678,7 @@ export async function updateAdminSong(
       form.append("artwork", artworkBlob, "artwork.jpg");
     }
 
-    const token = getToken();
-    const url = `${API_BASE}/admin/songs/${id}`;
-    const res = await fetch(url, {
-      method: "PUT",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
-    if (res.status === 401) {
-      localStorage.removeItem("aurora_token");
-      window.location.href = "/login";
-      throw new Error("Unauthorized");
-    }
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody.error || `HTTP ${res.status}`);
-    }
-    return res.json() as Promise<Song>;
+    return apiFetchForm<Song>(`/admin/songs/${id}`, form, "PUT");
   }
 
   return apiFetch(`/admin/songs/${id}`, {
@@ -648,75 +752,19 @@ export async function fetchAlbumSongCount(album: string): Promise<number> {
 export async function stageSong(file: File) {
   const form = new FormData();
   form.append("audio", file);
-
-  const token = getToken();
-  const url = `${API_BASE}/admin/songs/stage`;
-
-  console.log("[stageSong] sending file:", {
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    formDataEntries: Array.from(form.keys()),
-  });
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
-
-  console.log("[stageSong] response:", {
-    status: res.status,
-    statusText: res.statusText,
-    headers: Object.fromEntries(res.headers.entries()),
-  });
-
-  if (res.status === 401) {
-    localStorage.removeItem("aurora_token");
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    console.error("[stageSong] error body:", body);
-    throw new Error(body.error || `HTTP ${res.status}`);
-  }
-
-  return res.json() as Promise<import("../types").SongDraft>;
+  return apiFetchForm<import("../types").SongDraft>("/admin/songs/stage", form, "POST");
 }
 
 export async function commitSong(draft: import("../types").SongDraft, artworkBlob?: Blob) {
   const form = new FormData();
   form.append(
     "metadata",
-    new Blob([JSON.stringify(draft)], { type: "application/json" })
+    new Blob([JSON.stringify(draft)], { type: "application/json" }),
   );
   if (artworkBlob) {
     form.append("artwork", artworkBlob, "artwork.jpg");
   }
-
-  const token = getToken();
-  const url = `${API_BASE}/admin/songs/commit`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
-
-  if (res.status === 401) {
-    localStorage.removeItem("aurora_token");
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
-  }
-
-  return res.json() as Promise<import("../types").Song>;
+  return apiFetchForm<Song>("/admin/songs/commit", form, "POST");
 }
 
 export function stagedArtworkUrl(stagingId: string) {
@@ -725,111 +773,25 @@ export function stagedArtworkUrl(stagingId: string) {
 
 export function stageSongWithProgress(
   file: File,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
 ): Promise<SongDraft> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append("audio", file);
-
-    const token = getToken();
-    const url = `${API_BASE}/admin/songs/stage`;
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    if (token) {
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    }
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 401) {
-        localStorage.removeItem("aurora_token");
-        window.location.href = "/login";
-        reject(new Error("Unauthorized"));
-        return;
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          reject(new Error("Invalid JSON response"));
-        }
-      } else {
-        let errBody: { error?: string } = {};
-        try {
-          errBody = JSON.parse(xhr.responseText);
-        } catch {
-          /* ignore parse error */
-        }
-        reject(new Error(errBody.error || `HTTP ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Network error"));
-    xhr.send(form);
-  });
+  const form = new FormData();
+  form.append("audio", file);
+  return xhrUploadForm<SongDraft>("/admin/songs/stage", form, "POST", onProgress);
 }
 
 export function commitSongWithProgress(
   draft: SongDraft,
   artworkBlob: Blob | undefined,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
 ): Promise<Song> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append(
-      "metadata",
-      new Blob([JSON.stringify(draft)], { type: "application/json" })
-    );
-    if (artworkBlob) {
-      form.append("artwork", artworkBlob, "artwork.jpg");
-    }
-
-    const token = getToken();
-    const url = `${API_BASE}/admin/songs/commit`;
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    if (token) {
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    }
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 401) {
-        localStorage.removeItem("aurora_token");
-        window.location.href = "/login";
-        reject(new Error("Unauthorized"));
-        return;
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          reject(new Error("Invalid JSON response"));
-        }
-      } else {
-        let errBody: { error?: string } = {};
-        try {
-          errBody = JSON.parse(xhr.responseText);
-        } catch {
-          /* ignore parse error */
-        }
-        reject(new Error(errBody.error || `HTTP ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Network error"));
-    xhr.send(form);
-  });
+  const form = new FormData();
+  form.append(
+    "metadata",
+    new Blob([JSON.stringify(draft)], { type: "application/json" }),
+  );
+  if (artworkBlob) {
+    form.append("artwork", artworkBlob, "artwork.jpg");
+  }
+  return xhrUploadForm<Song>("/admin/songs/commit", form, "POST", onProgress);
 }

@@ -1,3 +1,5 @@
+// Human: Square 1:1 crop UI for artwork — draws to canvas max 1200px and emits JPEG blob for upload forms.
+// Agent: react-image-crop; onImageLoad seeds center crop; generateCroppedImage uses canvas+toBlob 0.92 quality JPEG.
 import { useState, useRef, useCallback } from "react";
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
@@ -19,6 +21,8 @@ export default function ArtworkCropper({
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const imgRef = useRef<HTMLImageElement | null>(null);
 
+  // Human: When image dimensions are known, start with a centered square crop filling most of the frame.
+  // Agent: onLoad; makeAspectCrop 90% width aspect 1; DERIVES initial PixelCrop for completedCrop.
   const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const { width, height } = e.currentTarget;
     const crop = centerCrop(
@@ -37,6 +41,8 @@ export default function ArtworkCropper({
     imgRef.current = e.currentTarget;
   }, []);
 
+  // Human: Rasterize crop using natural image pixel ratio — caps output to 1200px square max to bound upload size.
+  // Agent: canvas drawImage scaled; toBlob image/jpeg; CALLS onCropComplete(blob).
   const generateCroppedImage = useCallback(async () => {
     if (!imgRef.current || !completedCrop) return;
     const canvas = document.createElement("canvas");

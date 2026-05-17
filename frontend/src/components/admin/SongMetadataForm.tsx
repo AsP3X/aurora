@@ -1,3 +1,5 @@
+// Human: Form backing admin upload/edit metadata — hydrates entity picklists from API and auto-suggests track numbers for albums.
+// Agent: fetchValues per entity type; EFFECT on draft.album sets track_number via fetchAlbumSongCount; MERGES artist lists for pickers.
 import { useState, useEffect, useRef } from "react";
 import type { SongDraft } from "../../types";
 import EntityField from "./EntityField";
@@ -25,6 +27,8 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
     studio: [],
   });
 
+  // Human: Reload autocomplete corpora when a new staged upload id appears (fresh draft lifecycle).
+  // Agent: EFFECT [draft.staging_id]; PARALLEL fetchValues; POPULATES existingValues record.
   useEffect(() => {
     let cancelled = false;
 
@@ -58,11 +62,15 @@ export default function SongMetadataForm({ draft, onChange }: SongMetadataFormPr
 
   const onChangeRef = useRef(onChange);
   const draftRef = useRef(draft);
+  // Human: Mirror props into refs so album auto-numbering reads the latest draft without widening effect deps.
+  // Agent: NO DEPS ARRAY — updates refs every render; SKIPS exhaustive-deps intentionally.
   useEffect(() => {
     onChangeRef.current = onChange;
     draftRef.current = draft;
   });
 
+  // Human: When album name changes, either clear track number for singles or suggest next index for multi-track albums.
+  // Agent: EFFECT [draft.album]; USES draftRef for onChange calls; fetchAlbumSongCount; WRITES track_number.
   useEffect(() => {
     let cancelled = false;
 

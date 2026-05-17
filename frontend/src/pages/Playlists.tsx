@@ -1,3 +1,5 @@
+// Human: CRUD list for user playlists — inline create form, hover actions for edit/delete.
+// Agent: MOUNT fetchPlaylists; create/update/delete CALLS API; LOCAL state mirrors server rows.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -9,6 +11,8 @@ import {
 import DashboardLayout from "../components/DashboardLayout";
 import type { Playlist } from "../types";
 
+// Human: Relative created date for playlist cards — locale aware short form.
+// Agent: PURE toLocaleDateString en-US.
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
@@ -27,12 +31,16 @@ export default function Playlists() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Human: Load once on page entry — errors surface as empty list + loading ends in finally.
+  // Agent: fetchPlaylists; SETS playlists; setLoading false in finally.
   useEffect(() => {
     fetchPlaylists()
       .then(setPlaylists)
       .finally(() => setLoading(false));
   }, []);
 
+  // Human: Create flow resets form state and collapses the panel on success.
+  // Agent: handleCreate; CALLS createPlaylist; PREPENDS playlist to state array.
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -48,6 +56,8 @@ export default function Playlists() {
     }
   }
 
+  // Human: Inline edit mode seeds text fields from the selected playlist row.
+  // Agent: COPIES name/description/is_public into edit* state; SETS editingId.
   function startEdit(playlist: Playlist) {
     setEditingId(playlist.id);
     setEditName(playlist.name);
@@ -55,6 +65,8 @@ export default function Playlists() {
     setEditPublic(playlist.is_public);
   }
 
+  // Human: Persist inline edits — PATCH shape includes optional description and public flag.
+  // Agent: updatePlaylist; MAPS local list with returned object; CLEARS editingId.
   async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingId) return;
@@ -74,6 +86,8 @@ export default function Playlists() {
     }
   }
 
+  // Human: Hard delete with optimistic removal after API success.
+  // Agent: deletePlaylist; FILTERS local state by id.
   async function handleDelete(id: string) {
     setDeletingId(id);
     try {

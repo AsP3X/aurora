@@ -1,3 +1,5 @@
+// Human: Admin home dashboard — server-wide totals plus cross-user listening KPIs with refresh on mount.
+// Agent: loadStats callback; fetchAdminStats+fetchAdminListeningStats; QUICK ACTIONS useNavigate to admin subroutes.
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchAdminStats, fetchAdminListeningStats } from "../../api/client";

@@ -1,3 +1,5 @@
+// Human: Multi-step admin upload modal — stages file with XHR progress, edits metadata+artwork, commits, then polls HLS readiness.
+// Agent: STATES idle|uploading|editing|committing|processing|complete; POLL fetchSong 2s until hls_ready; NAVIGATE on view.
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -71,6 +73,8 @@ export default function UploadSongDialog({
   const isBusy =
     state === "uploading" || state === "committing" || state === "processing";
 
+  // Human: Stage binary on server — progress callback wired to the same bar reused during commit upload.
+  // Agent: stageSongWithProgress; SETS draft+imageSrc from has_artwork; TRANSITIONS to editing/idle on result.
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -97,6 +101,8 @@ export default function UploadSongDialog({
     []
   );
 
+  // Human: User replaced embedded art locally — reset crop blob until they apply a fresh square crop.
+  // Agent: FileReader readAsDataURL; SETS imageSrc; CLEARS croppedBlob.
   const handleReplaceArtwork = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -106,6 +112,8 @@ export default function UploadSongDialog({
     reader.readAsDataURL(file);
   }, []);
 
+  // Human: Apply square crop produces the blob submitted on commit — preview swaps to object URL immediately.
+  // Agent: SETS croppedBlob; REVOKES prior object URL implicitly by overwrite; sets imageSrc to blob URL.
   const handleCropComplete = useCallback((blob: Blob) => {
     setCroppedBlob(blob);
     setImageSrc(URL.createObjectURL(blob));
@@ -116,6 +124,8 @@ export default function UploadSongDialog({
     setCroppedBlob(null);
   }, []);
 
+  // Human: Persist staged audio + metadata + optional cropped JPEG — then move to processing state while HLS transcodes.
+  // Agent: commitSongWithProgress; onSuccess(song); SET state processing; REUSES upload progress for PUTs.
   const handleCommit = useCallback(async () => {
     if (!draft) return;
     if (!draft.title.trim() || !draft.artist.trim()) {
@@ -140,7 +150,8 @@ export default function UploadSongDialog({
     }
   }, [draft, croppedBlob, onSuccess]);
 
-  // Poll for hls_ready and conversion_progress during processing
+  // Human: After commit succeeds, poll until `hls_ready` so the success screen reflects real streaming availability.
+  // Agent: EFFECT [state, committedSong]; INTERVAL 2s fetchSong; SET processingProgress; state complete at 100%.
   useEffect(() => {
     if (state !== "processing" || !committedSong) return;
     let cancelled = false;

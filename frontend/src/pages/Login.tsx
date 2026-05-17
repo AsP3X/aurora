@@ -1,3 +1,5 @@
+// Human: Email/password gate — toggles between login and public registration based on server setting and local UI state.
+// Agent: CALLS fetchPublicRegistrationSetting; SUBMIT login/register; flushSync setAuth; NAVIGATE "/".
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -16,12 +18,16 @@ export default function Login() {
   const { setAuth } = useAuth();
   const navigate = useNavigate();
 
+  // Human: Hide the register tab when the instance disables open signup — failures default to permissive to avoid locking UI.
+  // Agent: EFFECT mount; READS allow_public_registration; CATCH sets true.
   useEffect(() => {
     fetchPublicRegistrationSetting()
       .then((data) => setRegistrationEnabled(data.allow_public_registration))
       .catch(() => setRegistrationEnabled(true));
   }, []);
 
+  // Human: Register path shows a short success message before navigation; `flushSync` forces token available to route guards immediately.
+  // Agent: handleSubmit; CALLS login|register; flushSync setAuth; navigate("/"); SETS error message on ApiError.
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");

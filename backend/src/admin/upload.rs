@@ -1,3 +1,5 @@
+// Human: Multipart ingest path that stages audio in object storage, probes tags via Lofty on a temp file, then commits rows and kicks off async HLS packaging.
+// Agent: WRITES staging/* + uploads/* keys; READS metadata with lofty; SPawns background HLSEncoder job; REQUIRES require_admin_access on HTTP entrypoints.
 use axum::extract::{Multipart, State};
 use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
@@ -61,6 +63,8 @@ struct ExtractedMetadata {
     sample_rate_hz: Option<i32>,
 }
 
+// Human: Read duration, bitrate, and textual tags from an on-disk audio path so staging can propose a draft before commit.
+// Agent: READS path via lofty read_from_path; RETURNS ExtractedMetadata; FALLBACK to filename stem when tags missing; BLOCKING from stage_song via spawn_blocking.
 fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
     use lofty::prelude::*;
     use lofty::tag::ItemKey;
@@ -131,6 +135,8 @@ fn extract_metadata(path: &Path) -> anyhow::Result<ExtractedMetadata> {
     })
 }
 
+// Human: Pull the first embedded picture (if any) and normalize to a small extension bucket for storage keys.
+// Agent: READS lofty tag pictures; RETURNS Option<(ext, bytes)>; NONE when tag or images missing.
 fn extract_artwork(path: &Path) -> anyhow::Result<Option<(String, Vec<u8>)>> {
     use lofty::prelude::*;
 
@@ -157,6 +163,8 @@ fn extract_artwork(path: &Path) -> anyhow::Result<Option<(String, Vec<u8>)>> {
     Ok(None)
 }
 
+// Human: Drain the storage byte stream into a contiguous buffer for small payloads like artwork or whole songs during commit.
+// Agent: READS StorageStream TryStreamExt; RETURNS Vec<u8>; MAPS stream errors to AppError::Storage string.
 async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, AppError> {
     let chunks: Vec<_> = stream
         .try_collect()
@@ -165,6 +173,8 @@ async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, AppError> {
     Ok(chunks.into_iter().flat_map(|b| b.to_vec()).collect())
 }
 
+// Human: Probe staging bucket for known artwork file names so commit can copy forward without client re-upload.
+// Agent: READS Storage::exists staging/.../artwork.{jpg,png,...}; RETURNS key + mime tuple; USED by commit + get_staged_artwork.
 async fn find_staged_artwork_key(
     storage: &dyn crate::storage::Storage,
     staging_id: &str,
@@ -179,6 +189,8 @@ async fn find_staged_artwork_key(
     None
 }
 
+// Human: After successful ingest, remove staging audio/artwork objects so temp prefixes do not accumulate forever.
+// Agent: CALLS Storage::delete staging paths; LOGS warn on failure; NO AppError — best effort hygiene.
 async fn delete_staging_keys(
     storage: &dyn crate::storage::Storage,
     staging_id: &str,
@@ -195,13 +207,15 @@ async fn delete_staging_keys(
     }
 }
 
+// Human: Accept the `audio` multipart part, enforce extension/MIME allowlist, write temp for Lofty, then upload bytes to `staging/{uuid}/audio.*`.
+// Agent: WRITES temp dir + staging object; RETURNS SongDraft JSON; DELETES temp tree after metadata pass; LOGS multipart field metadata.
 pub async fn stage_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<SongDraft>, AppError> {
     let start = std::time::Instant::now();
-    tracing::info!(user_id = %claims.sub, email = %claims.email, "stage_song started");
+    tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "stage_song started");
 
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
@@ -382,13 +396,15 @@ pub async fn stage_song(
     Ok(axum::Json(draft))
 }
 
+// Human: Finalize a staged object: copy audio into `uploads/`, insert `songs` + genre rows, spawn background ffmpeg HLS, and clean staging keys on success path.
+// Agent: WRITES songs row; SPawns tokio task HlsEncoder + storage uploads; ON DB failure DELETES uploaded objects; UPDATES conversion_progress during job.
 pub async fn commit_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<crate::songs::model::Song>, AppError> {
     let start = std::time::Instant::now();
-    tracing::info!(user_id = %claims.sub, email = %claims.email, "commit_song started");
+    tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "commit_song started");
 
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
 
@@ -817,6 +833,8 @@ pub async fn commit_song(
     }
 }
 
+// Human: Let the admin UI preview embedded art before commit by streaming whichever staged artwork object exists.
+// Agent: REQUIRES admin; READS staging artwork key via find_staged_artwork_key; RETURNS bytes + CONTENT_TYPE; HTTP 404 if absent.
 pub async fn get_staged_artwork(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,

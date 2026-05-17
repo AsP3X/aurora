@@ -1,3 +1,5 @@
+// Human: Operator table for accounts — inline role toggles, enable/disable, per-user permission matrix modal, delete confirm.
+// Agent: LOAD users+permissions; fetchUserPermissions when editing; CALLS updateUserRole/updateUserEnabled/setUserPermissions/deleteUser.
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchUsers,

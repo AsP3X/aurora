@@ -1,3 +1,5 @@
+// Human: Re-export JWT helpers and implement the Axum layer that turns a `Bearer` token into `Claims` after JWT decode plus live account checks.
+// Agent: READS Authorization header; CALLS decode_token; READS users.enabled FROM DB; INSERTS Claims into request extensions; HTTP 401/403 paths.
 use axum::{
     extract::{Request, State},
     http::header,
@@ -12,6 +14,8 @@ use crate::{error::AppError, AppState};
 
 pub mod handlers;
 
+// Human: Parse Bearer JWT, verify expiry, confirm the user row still exists and is enabled, then attach claims for downstream handlers.
+// Agent: READS JWT + sqlite/postgres users; REQUIRES enabled=1; MUTATES Request extensions with Claims; CALLS next.run on success.
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     mut request: Request,

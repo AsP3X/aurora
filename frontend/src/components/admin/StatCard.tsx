@@ -1,3 +1,5 @@
+// Human: Small metric tile with colored icon well — used on admin overview dashboard rows.
+// Agent: PRESENTATIONAL; PROPS label value icon colorClass.
 export default function StatCard({
   label,
   value,

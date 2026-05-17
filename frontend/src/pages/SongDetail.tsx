@@ -1,3 +1,5 @@
+// Human: Read-only song “vinyl page” with play/queue/add-to-playlist — polls conversion progress until HLS is ready.
+// Agent: fetchSong+fetchPlayCount; POLL fetchSong every 3s until hls_ready; playSong then navigate /player/:id.
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
@@ -6,6 +8,8 @@ import ArtworkImage from "../components/ArtworkImage";
 import AddToPlaylist from "../components/AddToPlaylist";
 import type { Song } from "../types";
 
+// Human: Duration display supports hours for very long tracks (audiobooks, mixes).
+// Agent: PURE h:mm:ss when hours>0 else m:ss.
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -39,6 +43,8 @@ export default function SongDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Human: Initial load merges song payload with best-effort play counts — count failures degrade to zero.
+  // Agent: PARALLEL fetchSong+fetchPlayCount; SETS song+playCount; cancellation safe.
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -64,7 +70,8 @@ export default function SongDetail() {
     };
   }, [id]);
 
-  // Poll for conversion progress when song is still processing
+  // Human: While Aurora converts sources to HLS, poll periodically so the progress bar and status chips update.
+  // Agent: INTERVAL 3s fetchSong until hls_ready; CLEARS interval inside poll when ready; DEP [song?.hls_ready,id].
   useEffect(() => {
     if (!song || song.hls_ready) return;
     let cancelled = false;
@@ -89,6 +96,8 @@ export default function SongDetail() {
     };
   }, [song?.hls_ready, id]);
 
+  // Human: Start playback in global player then deep-link to the immersive player route for controls.
+  // Agent: CALLS playSong; NAVIGATES `/player/:id`.
   function handlePlay() {
     if (!song) return;
     playSong(song);

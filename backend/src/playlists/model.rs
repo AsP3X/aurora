@@ -11,8 +11,9 @@ pub struct Playlist {
     pub created_at: String,
 }
 
+// Human: One row in playlist_songs linking a track to a playlist with sort position.
+// Agent: READS/WRITES playlist_songs; USED by add_song RETURNING and reorder validation.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct PlaylistSong {
     pub id: String,
     pub playlist_id: String,

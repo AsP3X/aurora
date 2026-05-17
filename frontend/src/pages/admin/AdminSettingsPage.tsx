@@ -1,3 +1,5 @@
+// Human: Key/value instance settings editor — supports add row + inline edit with `updateAdminSetting` upsert semantics.
+// Agent: loadSettings; handleSave PATCH value; handleAdd POST new key; TABLE UI with timestamps.
 import { useState, useEffect, useCallback } from "react";
 import { fetchAdminSettings, updateAdminSetting } from "../../api/client";
 

@@ -1,3 +1,5 @@
+// Human: Canonical HTTP errors and JSON bodies for `/api/v1`, plus helpers for consistent query parsing failures.
+// Agent: EMITS `{ error, status }` JSON; MAPS AppError variants to HTTP status; LOGS internals only in tracing; READS expose_details for query_rejection_response.
 use axum::{
     extract::rejection::QueryRejection,
     http::StatusCode,
@@ -8,6 +10,8 @@ use serde_json::json;
 use thiserror::Error;
 use tracing::error;
 
+// Human: When Axum rejects query deserialization, return the same `{ error, status }` JSON as other 400s, optionally hiding parse text outside dev.
+// Agent: READS QueryRejection; READS expose_details; HTTP 400; RETURNS Json body AppError-compatible shape.
 pub fn query_rejection_response(rejection: QueryRejection, expose_details: bool) -> Response {
     let message = if expose_details {
         rejection.to_string()
@@ -18,6 +22,8 @@ pub fn query_rejection_response(rejection: QueryRejection, expose_details: bool)
     (status, Json(json!({ "error": message, "status": status.as_u16() }))).into_response()
 }
 
+// Human: Typed API failures handlers map into HTTP status + public message strings; several variants wrap lower-level errors from SQLx or anyhow.
+// Agent: Database/Internal/Storage variants carry inner error for logs; IntoResponse strips details from JSON; RateLimited → 429.
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("database error: {0}")]
@@ -48,6 +54,8 @@ pub enum AppError {
     Storage(String),
 }
 
+// Human: Map each failure variant to a safe client string while logging richer context for server-side triage only.
+// Agent: EMITS JSON error envelope; CALLS tracing::error on Database/Internal/Storage; NEVER leaks SQL/stack in response body.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {

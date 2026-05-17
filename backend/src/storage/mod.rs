@@ -1,3 +1,5 @@
+// Human: Abstract object storage access (stream GET, existence checks, PUT/DELETE, and presigned URL helpers) with a filesystem-backed dev implementation.
+// Agent: DEFINES Storage trait + LocalStorage; TYPE StorageStream pinned byte stream; nebula module adds HTTP gateway backend; CALLERS in admin upload + song streaming.
 use std::path::PathBuf;
 use bytes::Bytes;
 use futures_util::Stream;
@@ -9,6 +11,8 @@ pub mod nebula;
 
 pub type StorageStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
 
+// Human: All concrete backends must be Send + `'static` so they can live inside `Arc<dyn Storage>` on AppState across async handlers.
+// Agent: async_trait methods get_stream/exists/delete/put + presigned_url + presigned_segment_url; IMPLEMENTORS LocalStorage + NebulaStorage.
 #[async_trait::async_trait]
 pub trait Storage: Send + Sync + 'static {
     async fn get_stream(
@@ -32,6 +36,8 @@ pub struct LocalStorage {
     pub base_dir: PathBuf,
 }
 
+// Human: Map logical storage keys to `<base_dir>/<key>` files, creating parent folders on write—good for single-node dev.
+// Agent: READS/WRITES tokio::fs under base_dir; presigned_* bail unsupported; MIME from mime_guess on get_stream.
 #[async_trait::async_trait]
 impl Storage for LocalStorage {
     async fn get_stream(

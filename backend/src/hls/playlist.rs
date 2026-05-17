@@ -1,3 +1,5 @@
+// Human: Stitch `#EXTM3U` manifests either from synthetic segment lists (Nebula mode) or by re-reading ffmpeg output on disk.
+// Agent: PURE string builder generate(); scan_local_output READS stream.m3u8; NO network.
 use std::path::Path;
 
 pub struct PlaylistGenerator;
@@ -9,6 +11,8 @@ impl PlaylistGenerator {
     /// - `segment_files`: List of segment filenames (e.g., `["segments/0000.ts", ...]`)
     /// - `segment_durations`: Duration of each segment in seconds
     /// - `key_uri`: The URI where the AES key can be fetched
+    // Human: Build a VOD-style HLS playlist that points at relative segment URLs under the API-owned `base_url` with AES-128 metadata.
+    // Agent: READS parallel slices segments+durations; DEFAULTS missing duration to 4.0; EMITS string ending with ENDLIST newline.
     pub fn generate(
         base_url: &str,
         segment_files: &[String],
@@ -37,6 +41,8 @@ impl PlaylistGenerator {
     }
 
     /// Scans a local HLS output directory and returns segment filenames + durations.
+    // Human: Parse ffmpeg-written `stream.m3u8` so local-storage mode can rebuild manifests without trusting synthetic segment counts alone.
+    // Agent: READS playlist_path file; PAIRS #EXTINF durations with following non-# lines; RETURNS (files, durs) vectors.
     pub fn scan_local_output(playlist_path: &Path) -> anyhow::Result<(Vec<String>, Vec<f64>)> {
         let content = std::fs::read_to_string(playlist_path)?;
         let mut files = Vec::new();

@@ -1,3 +1,5 @@
+// Human: Library grid tile with context menu — left click plays (optionally as part of a list), right click adds to queue/playlist.
+// Agent: OPTIONAL songs+index enables playSongs; CONTEXT MENU loads playlists on demand; CLAMPS menu position to viewport.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
@@ -26,6 +28,8 @@ export default function SongCard({
   const menuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // Human: Primary click plays either a single song or the surrounding list starting at `index` (library search uses the latter).
+  // Agent: BRANCH songs+index vs playSong(song).
   function handleClick() {
     if (songs && index !== undefined) {
       playSongs(songs, index);
@@ -34,6 +38,8 @@ export default function SongCard({
     }
   }
 
+  // Human: Right-click opens a fixed custom menu at cursor — browser default menu suppressed.
+  // Agent: preventDefault; RESETS playlist submenu; STORES clientX/Y; SETS menuOpen true.
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     setShowPlaylists(false);
@@ -41,7 +47,8 @@ export default function SongCard({
     setMenuOpen(true);
   }
 
-  // Close menu on outside click or Escape
+  // Human: Dismiss the menu on outside mouse down or Escape — standard overlay pattern without a focus trap.
+  // Agent: EFFECT [menuOpen]; DOCUMENT listeners mousedown+keydown; CLEANUP removes.
   useEffect(() => {
     if (!menuOpen) return;
     function onMouseDown(e: MouseEvent) {
@@ -66,6 +73,8 @@ export default function SongCard({
     setMenuOpen(false);
   }
 
+  // Human: Second-level picker loads playlists lazily only when user chooses “Add to playlist”.
+  // Agent: stopPropagation; fetchPlaylists; SETS showPlaylists+loading flags.
   async function handleOpenPlaylists(e: React.MouseEvent) {
     e.stopPropagation();
     setShowPlaylists(true);
@@ -95,7 +104,8 @@ export default function SongCard({
     setMenuOpen(false);
   }
 
-  // Clamp menu position so it stays inside viewport
+  // Human: Keep floating menu from spilling past the viewport edge — dimensions differ for playlist subview.
+  // Agent: useCallback READS menuPos+showPlaylists; RETURNS {left,top} clamped with guessed menu size.
   const menuStyle = useCallback(() => {
     const menuWidth = showPlaylists ? 224 : 192;
     const menuHeight = showPlaylists ? 280 : 160;
@@ -106,6 +116,8 @@ export default function SongCard({
 
   return (
     <>
+      {/* Human: Whole tile is the play target — hover reveals centered play affordance on artwork. */}
+      {/* Agent: onClick handleClick; onContextMenu opens menu; cardRef currently unused beyond future hit tests */}
       <div
         ref={cardRef}
         onClick={handleClick}
@@ -135,6 +147,8 @@ export default function SongCard({
         </div>
       </div>
 
+      {/* Human: Portal-like fixed menu — positioned with computed style; contains either root actions or playlist picker. */}
+      {/* Agent: CONDITIONAL menuOpen; ref menuRef for outside-click detection; style menuStyle() */}
       {menuOpen && (
         <div
           ref={menuRef}

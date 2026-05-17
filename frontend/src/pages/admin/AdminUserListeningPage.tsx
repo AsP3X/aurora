@@ -1,3 +1,5 @@
+// Human: Cross-user listening analytics — multi-select users via dialog, URL sync, expandable sessions like user Stats.
+// Agent: useSearchParams sync; ABORT in-flight session fetches; fetchAdminListeningBySong+fetchAdminListeningSessions; Period tabs.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {

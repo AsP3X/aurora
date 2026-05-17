@@ -19,6 +19,7 @@ pub mod hls;
 pub mod permissions;
 pub mod playlists;
 pub mod rate_limit;
+pub mod redact;
 pub mod search;
 pub mod setup;
 pub mod songs;
@@ -43,6 +44,10 @@ pub struct AppState {
     pub expose_query_errors: bool,
     pub git_sha: String,
     pub admin_listening_rl: Arc<rate_limit::PerKeyRateLimiter>,
+    /// Meilisearch base URL (search route is still a stub until SDK is wired).
+    pub meili_url: String,
+    /// Meilisearch master key — kept server-side only.
+    pub meili_master_key: String,
 }
 
 fn install_sqlx_drivers() {
@@ -111,6 +116,19 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         Duration::from_secs(60),
     ));
 
+    // Human: Log Meilisearch env so operators know search is configured even though /search is still a stub.
+    // Agent: READS config.meili_*; EMITS info at startup; does not log master key value.
+    if config.meili_url.is_empty() {
+        info!("Meilisearch URL not set; /api/v1/search remains a placeholder");
+    } else {
+        let key_configured = !config.meili_master_key.is_empty();
+        info!(
+            meili_url = %config.meili_url,
+            key_configured,
+            "Meilisearch settings loaded (full-text search not yet implemented)"
+        );
+    }
+
     Ok(Arc::new(AppState {
         pool,
         storage,
@@ -123,6 +141,8 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         expose_query_errors,
         git_sha,
         admin_listening_rl,
+        meili_url: config.meili_url.clone(),
+        meili_master_key: config.meili_master_key.clone(),
     }))
 }
 
