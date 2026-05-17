@@ -64,6 +64,54 @@ function hlsEncodeBadge(song: Song): { label: string; className: string; title?:
   };
 }
 
+// Human: Admin library lyrics column — whether text exists and whether timestamps are complete.
+// Agent: READS song.has_lyrics, song.lyrics_synced; RETURNS two badge configs for DataTable.
+function lyricsStatusBadges(song: Song): {
+  added: { label: string; className: string; title: string };
+  synced: { label: string; className: string; title: string };
+} {
+  if (!song.has_lyrics) {
+    return {
+      added: {
+        label: "None",
+        className: "bg-surface-700 text-surface-400 border-white/10",
+        title: "No lyrics saved for this song",
+      },
+      synced: {
+        label: "—",
+        className: "bg-surface-800/80 text-surface-500 border-white/5",
+        title: "Sync status applies after lyrics are added",
+      },
+    };
+  }
+  if (song.lyrics_synced) {
+    return {
+      added: {
+        label: "Added",
+        className: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        title: "Lyrics text is saved",
+      },
+      synced: {
+        label: "Synced",
+        className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        title: "All lines have timestamps for karaoke playback",
+      },
+    };
+  }
+  return {
+    added: {
+      label: "Added",
+      className: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+      title: "Lyrics text is saved",
+    },
+    synced: {
+      label: "Unsynced",
+      className: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      title: "Some lines are missing timestamps — open Edit lyrics to sync",
+    },
+  };
+}
+
 export default function AdminLibraryPage() {
   const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
@@ -400,6 +448,23 @@ export default function AdminLibraryPage() {
       },
     },
     {
+      key: "lyrics",
+      header: "Lyrics",
+      render: (song) => {
+        const badges = lyricsStatusBadges(song);
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            <span title={badges.added.title} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${badges.added.className}`}>
+              {badges.added.label}
+            </span>
+            <span title={badges.synced.title} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${badges.synced.className}`}>
+              {badges.synced.label}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
       headerClassName: "text-right",
@@ -478,6 +543,11 @@ export default function AdminLibraryPage() {
         onRowContextMenu={handleContextMenu}
         renderMobileCard={(song) => {
           const badge = hlsEncodeBadge(song);
+          const lyricsSummary = song.has_lyrics
+            ? song.lyrics_synced
+              ? "Lyrics synced"
+              : "Lyrics unsynced"
+            : "No lyrics";
           return (
             <MobileDataCard
               leading={
@@ -491,7 +561,7 @@ export default function AdminLibraryPage() {
               primary={song.title}
               secondary={`${!song.enabled ? "Disabled · " : ""}${song.artist} · ${song.album || "—"} · ${formatDuration(
                 song.duration_seconds,
-              )} · ${song.file_format.toUpperCase()} · ${badge.label}`}
+              )} · ${song.file_format.toUpperCase()} · ${badge.label} · ${lyricsSummary}`}
               trailing={
                 <button
                   type="button"

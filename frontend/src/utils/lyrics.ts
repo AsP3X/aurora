@@ -97,6 +97,79 @@ export function parsePlainLyricsText(text: string): LyricLine[] {
     });
 }
 
+// Human: Timestamp prefix on one import line — [m:ss], [m:ss.sss], or LRC-style [mm:ss.xx].
+// Agent: REGEX; GROUPS minutes, seconds, optional fraction, lyric text; USED by parseLyricsImportText.
+const LRC_IMPORT_LINE = /^\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]\s?(.*)$/;
+
+// Human: Turn bracket timestamp parts into milliseconds for round-trip import/export.
+// Agent: PURE; 2-digit frac → centiseconds×10; 3-digit → ms; ELSE plain m:ss.
+function timestampPartsToMs(minutes: number, seconds: number, frac?: string): number {
+  let ms = (minutes * 60 + seconds) * 1000;
+  if (!frac) return ms;
+  if (frac.length === 2) return ms + parseInt(frac, 10) * 10;
+  if (frac.length === 3) return ms + parseInt(frac, 10);
+  return ms + parseInt(frac.padEnd(3, "0").slice(0, 3), 10);
+}
+
+// Human: Export-friendly timestamp — includes .mmm when sub-second precision matters.
+// Agent: INPUT ms; OUTPUT "m:ss" or "m:ss.sss"; PAIRED with serializeLyricsWithTimestamps.
+export function formatLyricTimeForExport(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const remainder = Math.max(0, ms % 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  const base = `${m}:${s.toString().padStart(2, "0")}`;
+  if (remainder === 0) return base;
+  return `${base}.${remainder.toString().padStart(3, "0")}`;
+}
+
+// Human: Serialize all editor lines for clipboard export — synced rows get [timestamp] prefixes.
+// Agent: MAPS LyricLine[]; JOIN \\n; UNSYNCED lines export as plain text only.
+export function serializeLyricsWithTimestamps(lines: LyricLine[]): string {
+  return lines
+    .map((line) => {
+      if (line.start_ms != null && line.start_ms >= 0) {
+        return `[${formatLyricTimeForExport(line.start_ms)}] ${line.text}`;
+      }
+      return line.text;
+    })
+    .join("\n");
+}
+
+// Human: Drop trailing blank spacer rows after import (plain or timestamped).
+// Agent: FILTER; KEEPS line if text, start_ms, or later non-empty row exists.
+function trimTrailingBlankImportLines(lines: LyricLine[]): LyricLine[] {
+  return lines.filter((line, i, arr) => {
+    if (line.text.length > 0 || line.start_ms != null) return true;
+    return arr.slice(i + 1).some((l) => l.text.length > 0 || l.start_ms != null);
+  });
+}
+
+// Human: Import pasted lyrics — auto-detects [m:ss] lines vs plain one-line-per-row text.
+// Agent: IF any LRC_IMPORT_LINE match → parse timestamps; ELSE parsePlainLyricsText.
+export function parseLyricsImportText(text: string): LyricLine[] {
+  const rawLines = text.split(/\r?\n/);
+  const hasTimestamps = rawLines.some((line) => LRC_IMPORT_LINE.test(line.trimEnd()));
+
+  if (!hasTimestamps) {
+    return parsePlainLyricsText(text);
+  }
+
+  const parsed = rawLines.map((raw) => {
+    const trimmed = raw.trimEnd();
+    const match = trimmed.match(LRC_IMPORT_LINE);
+    if (match) {
+      const minutes = parseInt(match[1], 10);
+      const seconds = parseInt(match[2], 10);
+      const start_ms = timestampPartsToMs(minutes, seconds, match[3]);
+      return { text: match[4], start_ms };
+    }
+    return { text: trimmed };
+  });
+
+  return trimTrailingBlankImportLines(parsed);
+}
+
 export interface LyricSeekMarker {
   timeSeconds: number;
   label: string;

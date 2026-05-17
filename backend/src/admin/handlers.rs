@@ -70,6 +70,7 @@ pub async fn list_admin_songs(
 
     let mut songs: Vec<crate::songs::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
     crate::songs::model::populate_genres(&state.pool, &mut songs).await?;
+    crate::songs::model::populate_lyrics_status(&state.pool, &mut songs).await?;
 
     Ok(Json(songs))
 }

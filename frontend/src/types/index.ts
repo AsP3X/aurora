@@ -32,6 +32,12 @@ export interface Song {
   hls_encode_status: string | null;
   hls_encode_error: string | null;
   conversion_progress: number;
+  // Human: Admin library table — lyrics row exists with non-empty text.
+  // Agent: FROM populate_lyrics_status on GET /admin/songs; DEFAULT false when omitted.
+  has_lyrics?: boolean;
+  // Human: Admin library table — all non-empty lines have start_ms (karaoke-ready).
+  // Agent: lyrics_synced; ONLY meaningful when has_lyrics is true.
+  lyrics_synced?: boolean;
   enabled: number;
   created_at: string;
   updated_at: string;

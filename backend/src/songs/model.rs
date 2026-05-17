@@ -57,6 +57,14 @@ pub struct Song {
     pub hls_encode_status: Option<String>,
     pub hls_encode_error: Option<String>,
     pub conversion_progress: i32,
+    // Human: Admin library overview — whether a song_lyrics row has non-empty text (optional on public list).
+    // Agent: SERIALIZED bool; DEFAULT false; POPULATED by populate_lyrics_status for admin list only.
+    #[serde(default)]
+    pub has_lyrics: bool,
+    // Human: Admin library overview — whether all non-empty lines have timestamps (karaoke-ready).
+    // Agent: SERIALIZED bool; DEFAULT false; REQUIRES has_lyrics; SET via is_synced after JSON parse.
+    #[serde(default)]
+    pub lyrics_synced: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -88,10 +96,62 @@ impl From<SongDb> for Song {
             hls_encode_status: db.hls_encode_status,
             hls_encode_error: db.hls_encode_error,
             conversion_progress: db.conversion_progress.unwrap_or(0),
+            has_lyrics: false,
+            lyrics_synced: false,
             created_at: db.created_at,
             updated_at: db.updated_at,
         }
     }
+}
+
+// Human: Batch-load song_lyrics JSON for admin table badges (added vs synced).
+// Agent: READS song_lyrics IN chunk; PARSES lines_json; MUTATES Song.has_lyrics + lyrics_synced.
+pub async fn populate_lyrics_status(
+    pool: &sqlx::AnyPool,
+    songs: &mut [Song],
+) -> Result<(), sqlx::Error> {
+    use crate::lyrics::model::{has_lyrics_content, is_synced, LyricLine};
+
+    if songs.is_empty() {
+        return Ok(());
+    }
+
+    const BATCH_SIZE: usize = 900;
+    let ids: Vec<&str> = songs.iter().map(|s| s.id.as_str()).collect();
+    let mut status_map: HashMap<String, (bool, bool)> = HashMap::new();
+
+    for chunk in ids.chunks(BATCH_SIZE) {
+        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("${}", i)).collect();
+        let sql = format!(
+            "SELECT song_id, lines_json FROM song_lyrics WHERE song_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut query = sqlx::query_as::<_, (String, String)>(&sql);
+        for id in chunk {
+            query = query.bind(id);
+        }
+        let rows = query.fetch_all(pool).await?;
+        for (song_id, json) in rows {
+            let lines: Vec<LyricLine> = match serde_json::from_str(&json) {
+                Ok(lines) => lines,
+                Err(e) => {
+                    tracing::warn!(song_id = %song_id, error = %e, "corrupt lyrics JSON; treating as no lyrics");
+                    continue;
+                }
+            };
+            let has = has_lyrics_content(&lines);
+            status_map.insert(song_id, (has, has && is_synced(&lines)));
+        }
+    }
+
+    for song in songs.iter_mut() {
+        if let Some((has, synced)) = status_map.remove(&song.id) {
+            song.has_lyrics = has;
+            song.lyrics_synced = synced;
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn populate_genres(
