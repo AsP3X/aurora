@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { usePlayer } from "../context/PlayerContext";
+import { resolveTrackDuration } from "../lib/playbackDuration";
 
 // Human: Global transport shortcuts when focus is not in a text field — space play/pause, arrows seek/skip, Q queue.
 // Agent: LISTENS window keydown; IGNORES INPUT/TEXTAREA/SELECT/contenteditable; REQUIRES currentSong; CALLS player actions.
@@ -48,8 +49,8 @@ export function usePlayerKeyboard() {
           if (e.shiftKey) {
             playNext();
           } else {
-            const max = duration || currentSong.duration_seconds;
-            seek(Math.min(max, progress + 5));
+            const max = resolveTrackDuration(duration, currentSong.duration_seconds);
+            seek(max > 0 ? Math.min(max, progress + 5) : progress + 5);
           }
           break;
         case "q":
