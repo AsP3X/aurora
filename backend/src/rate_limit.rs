@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use axum::http::HeaderMap;
+
+use crate::error::AppError;
+
 /// Fixed-window-ish limiter: at most `max_per_window` hits per `window` per key.
 pub struct PerKeyRateLimiter {
     inner: Mutex<HashMap<String, Vec<Instant>>>,
@@ -34,5 +38,62 @@ impl PerKeyRateLimiter {
         }
         v.push(now);
         Ok(())
+    }
+}
+
+// Human: Map a failed limiter check into the canonical API 429 envelope.
+// Agent: CALLS PerKeyRateLimiter::check; RETURNS AppError::RateLimited on Err.
+pub fn enforce(limiter: &PerKeyRateLimiter, key: &str) -> Result<(), AppError> {
+    limiter.check(key).map_err(|_| AppError::RateLimited)
+}
+
+// Human: Prefer reverse-proxy forwarded headers, then fall back when the app is reached directly.
+// Agent: READS X-Forwarded-For, X-Real-IP; RETURNS first IP or "unknown"; USED for auth rate-limit keys.
+pub fn client_ip_from_headers(headers: &HeaderMap) -> String {
+    if let Some(value) = headers.get("x-forwarded-for") {
+        if let Ok(text) = value.to_str() {
+            if let Some(first) = text.split(',').map(str::trim).find(|s| !s.is_empty()) {
+                return first.to_string();
+            }
+        }
+    }
+    if let Some(value) = headers.get("x-real-ip") {
+        if let Ok(text) = value.to_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enforce_returns_rate_limited_when_bucket_full() {
+        let rl = PerKeyRateLimiter::new(2, Duration::from_secs(60));
+        assert!(enforce(&rl, "k").is_ok());
+        assert!(enforce(&rl, "k").is_ok());
+        assert!(matches!(enforce(&rl, "k"), Err(AppError::RateLimited)));
+    }
+
+    #[test]
+    fn client_ip_prefers_forwarded_for_first_hop() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.1, 10.0.0.1".parse().unwrap(),
+        );
+        assert_eq!(client_ip_from_headers(&headers), "203.0.113.1");
+    }
+
+    #[test]
+    fn client_ip_falls_back_to_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", "198.51.100.2".parse().unwrap());
+        assert_eq!(client_ip_from_headers(&headers), "198.51.100.2");
     }
 }

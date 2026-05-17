@@ -29,7 +29,15 @@ pub async fn auth_middleware(
 
     let token = auth_header.ok_or(AppError::Unauthorized)?;
 
-    let claims = decode_token(token, &state.jwt_secret).map_err(|_| AppError::Unauthorized)?;
+    let claims = decode_token(token, &state.jwt_secret).map_err(|_| {
+        // Human: Decode failures are expected for bad clients; log only a redacted token prefix at debug.
+        // Agent: EMITS debug with bearer_token_for_log; RETURNS Unauthorized; NO JWT body in logs.
+        tracing::debug!(
+            token_redacted = %crate::redact::bearer_token_for_log(token),
+            "JWT decode failed in auth middleware"
+        );
+        AppError::Unauthorized
+    })?;
 
     if chrono::Utc::now().timestamp() > claims.exp {
         return Err(AppError::Unauthorized);

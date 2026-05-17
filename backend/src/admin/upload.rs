@@ -218,6 +218,7 @@ pub async fn stage_song(
     tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "stage_song started");
 
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    crate::rate_limit::enforce(&state.upload_rl, &claims.sub)?;
 
     let mut audio_bytes: Option<Vec<u8>> = None;
     let mut ext = String::new();
@@ -230,7 +231,12 @@ pub async fn stage_song(
         let name = field.name().unwrap_or("").to_string();
         let filename = field.file_name().unwrap_or("unknown").to_string();
         let content_type = field.content_type().map(|ct| ct.to_string());
-        tracing::info!(field_name = %name, field_filename = %filename, field_content_type = ?content_type, "multipart field received");
+        tracing::info!(
+            field_name = %name,
+            field_filename_redacted = %crate::redact::filename_for_log(&filename),
+            field_content_type = ?content_type,
+            "multipart field received"
+        );
         if name == "audio" && audio_bytes.is_none() {
             ext = Path::new(&filename)
                 .extension()
@@ -260,7 +266,12 @@ pub async fn stage_song(
             tracing::info!(extracted_ext = %ext, "extension extracted");
             let allowed = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wma", "wav"];
             if !allowed.contains(&ext.as_str()) {
-                tracing::warn!(ext = %ext, filename = %filename, content_type = ?content_type, "unsupported audio format");
+                tracing::warn!(
+                    ext = %ext,
+                    filename_redacted = %crate::redact::filename_for_log(&filename),
+                    content_type = ?content_type,
+                    "unsupported audio format"
+                );
                 return Err(AppError::BadRequest(format!(
                     "Unsupported audio format: {} (filename: {}). Allowed: {:?}",
                     ext, filename, allowed
@@ -407,6 +418,7 @@ pub async fn commit_song(
     tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "commit_song started");
 
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    crate::rate_limit::enforce(&state.upload_rl, &claims.sub)?;
 
     let mut metadata_json = String::new();
     let mut artwork_bytes: Option<Vec<u8>> = None;

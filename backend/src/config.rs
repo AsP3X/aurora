@@ -43,6 +43,18 @@ pub struct Config {
     /// Max admin aggregate listening requests per admin user per rolling minute.
     #[serde(default = "default_admin_listening_rpm")]
     pub admin_listening_rpm: u32,
+    /// Max login attempts per client IP per rolling minute.
+    #[serde(default = "default_auth_login_rpm")]
+    pub auth_login_rpm: u32,
+    /// Max registration attempts per client IP per rolling minute.
+    #[serde(default = "default_auth_register_rpm")]
+    pub auth_register_rpm: u32,
+    /// Max admin upload stage/commit requests per user id per rolling minute.
+    #[serde(default = "default_upload_rpm")]
+    pub upload_rpm: u32,
+    /// Max HLS segment fetches per user+song per rolling minute.
+    #[serde(default = "default_hls_segment_rpm")]
+    pub hls_segment_rpm: u32,
 }
 
 impl Config {
@@ -115,4 +127,20 @@ fn default_aurora_environment() -> String {
 
 fn default_admin_listening_rpm() -> u32 {
     120
+}
+
+fn default_auth_login_rpm() -> u32 {
+    15
+}
+
+fn default_auth_register_rpm() -> u32 {
+    5
+}
+
+fn default_upload_rpm() -> u32 {
+    20
+}
+
+fn default_hls_segment_rpm() -> u32 {
+    480
 }

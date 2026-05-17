@@ -1,4 +1,4 @@
-use nebula_os::{config, server, storage};
+use nebula_os::{config, secrets, server, storage};
 
 use anyhow::Result;
 use axum::serve;
@@ -14,6 +14,10 @@ async fn main() -> Result<()> {
         .init();
 
     let cfg = config::NosConfig::from_env()?;
+    secrets::validate_jwt_secret(&cfg.jwt_secret)?;
+    if let Some(ref signing) = cfg.signing_secret {
+        secrets::validate_signing_secret(signing)?;
+    }
     tracing::info!(?cfg, "Configuration loaded");
 
     let storage = storage::engine::StorageEngine::new(&cfg.meta_path, &cfg.data_dir).await?;

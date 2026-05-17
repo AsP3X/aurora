@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::info;
+use tracing::{info, Level};
 
 pub mod admin;
 pub mod auth;
@@ -20,6 +20,7 @@ pub mod permissions;
 pub mod playlists;
 pub mod rate_limit;
 pub mod redact;
+pub mod secrets;
 pub mod search;
 pub mod setup;
 pub mod songs;
@@ -44,6 +45,10 @@ pub struct AppState {
     pub expose_query_errors: bool,
     pub git_sha: String,
     pub admin_listening_rl: Arc<rate_limit::PerKeyRateLimiter>,
+    pub auth_login_rl: Arc<rate_limit::PerKeyRateLimiter>,
+    pub auth_register_rl: Arc<rate_limit::PerKeyRateLimiter>,
+    pub upload_rl: Arc<rate_limit::PerKeyRateLimiter>,
+    pub hls_segment_rl: Arc<rate_limit::PerKeyRateLimiter>,
     /// Meilisearch base URL (search route is still a stub until SDK is wired).
     pub meili_url: String,
     /// Meilisearch master key — kept server-side only.
@@ -55,6 +60,7 @@ fn install_sqlx_drivers() {
 }
 
 pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
+    secrets::validate_startup_secrets(config)?;
     install_sqlx_drivers();
     let pool = db::init_pool(&config.database_url).await?;
     info!("Database connected and migrations applied");
@@ -110,10 +116,26 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let rpm = config.admin_listening_rpm.max(1) as usize;
+    let window = Duration::from_secs(60);
     let admin_listening_rl = Arc::new(rate_limit::PerKeyRateLimiter::new(
-        rpm,
-        Duration::from_secs(60),
+        config.admin_listening_rpm.max(1) as usize,
+        window,
+    ));
+    let auth_login_rl = Arc::new(rate_limit::PerKeyRateLimiter::new(
+        config.auth_login_rpm.max(1) as usize,
+        window,
+    ));
+    let auth_register_rl = Arc::new(rate_limit::PerKeyRateLimiter::new(
+        config.auth_register_rpm.max(1) as usize,
+        window,
+    ));
+    let upload_rl = Arc::new(rate_limit::PerKeyRateLimiter::new(
+        config.upload_rpm.max(1) as usize,
+        window,
+    ));
+    let hls_segment_rl = Arc::new(rate_limit::PerKeyRateLimiter::new(
+        config.hls_segment_rpm.max(1) as usize,
+        window,
     ));
 
     // Human: Log Meilisearch env so operators know search is configured even though /search is still a stub.
@@ -141,6 +163,10 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         expose_query_errors,
         git_sha,
         admin_listening_rl,
+        auth_login_rl,
+        auth_register_rl,
+        upload_rl,
+        hls_segment_rl,
         meili_url: config.meili_url.clone(),
         meili_master_key: config.meili_master_key.clone(),
     }))
@@ -243,7 +269,19 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .merge(upload_routes)
         .with_state(state)
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        // Human: Scrub ticket/signature query params from request spans so tower_http=debug stays safe.
+        // Agent: TraceLayer make_span_with CALLS redact::uri_for_log on each request URI.
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
+                tracing::span!(
+                    Level::DEBUG,
+                    "request",
+                    method = %request.method(),
+                    uri = %crate::redact::uri_for_log(request.uri()),
+                    version = ?request.version(),
+                )
+            }),
+        )
 }
 
 pub async fn run() -> anyhow::Result<()> {
@@ -255,27 +293,7 @@ pub async fn run() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env()?;
-
-    let known_weak_secrets = [
-        "change-me-in-production",
-        "change-me-in-production-jwt-secret",
-    ];
-    if known_weak_secrets.contains(&config.jwt_secret.as_str()) {
-        anyhow::bail!(
-            "JWT_SECRET is set to a known weak default ({}). Please set a strong, random JWT_SECRET environment variable.",
-            config.jwt_secret
-        );
-    }
-    if config.signing_secret == "change-me-in-production" {
-        anyhow::bail!(
-            "SIGNING_SECRET is set to a known weak default. Please set a strong, random SIGNING_SECRET environment variable."
-        );
-    }
-    if config.master_secret == "change-me-in-production" {
-        anyhow::bail!(
-            "MASTER_SECRET is set to a known weak default. Please set a strong, random MASTER_SECRET environment variable."
-        );
-    }
+    secrets::validate_startup_secrets(&config)?;
 
     let state = create_app_state(&config).await?;
 
