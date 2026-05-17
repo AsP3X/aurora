@@ -21,6 +21,7 @@ import AdminGroupsPage from "./pages/admin/AdminGroupsPage";
 import AdminLibraryPage from "./pages/admin/AdminLibraryPage";
 import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
+import AdminLyricsEditorPage from "./pages/admin/AdminLyricsEditorPage";
 import SkipLink from "./components/SkipLink";
 
 // Human: Application shell — providers, setup gate, route table, and the main nav layout around authenticated pages.
@@ -313,6 +314,7 @@ function AppRoutes() {
           <Route path="listening" element={<AdminUserListeningPage />} />
           <Route path="groups" element={<AdminGroupsPage />} />
           <Route path="library" element={<AdminLibraryPage />} />
+          <Route path="library/:songId/lyrics" element={<AdminLyricsEditorPage />} />
           <Route path="playlists" element={<AdminPlaylistsPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
         </Route>

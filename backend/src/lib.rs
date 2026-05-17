@@ -16,6 +16,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod hls;
+pub mod lyrics;
 pub mod permissions;
 pub mod playlists;
 pub mod rate_limit;
@@ -204,6 +205,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/songs/album-song-count", get(songs::handlers::album_song_count))
         .route("/api/v1/songs/{id}", get(songs::handlers::get_song))
         .route("/api/v1/songs/{id}/play-count", get(songs::handlers::get_play_count))
+        .route("/api/v1/songs/{id}/lyrics", get(lyrics::handlers::get_song_lyrics))
         .route("/api/v1/songs/{id}/stream-url", get(songs::handlers::get_stream_url))
         .route("/api/v1/songs/{id}/artwork-url", get(songs::handlers::get_artwork_url))
         .route("/api/v1/songs/{id}/playlist", get(hls::handlers::get_playlist))
@@ -260,6 +262,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/users/{id}", axum::routing::delete(admin::handlers::delete_user))
         .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song).put(admin::handlers::update_song))
+        .route(
+            "/api/v1/admin/songs/{id}/lyrics",
+            get(lyrics::handlers::admin_get_song_lyrics)
+                .put(lyrics::handlers::admin_put_song_lyrics)
+                .delete(lyrics::handlers::admin_delete_song_lyrics),
+        )
         .route("/api/v1/admin/songs/{id}/enabled", axum::routing::put(admin::handlers::toggle_song_enabled))
         // Human: Admin-only HLS retry and Meilisearch backlog controls (library reliability).
         // Agent: POST hls/retry; GET search/sync-status; POST search/retry-sync; REQUIRE auth middleware layer.
