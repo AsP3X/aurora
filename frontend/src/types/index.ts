@@ -26,6 +26,8 @@ export interface Song {
   sample_rate_hz: number | null;
   artwork_key: string | null;
   publisher_id: string | null;
+  // Human: HLS pipeline state from the API — ready flag, status string, admin error text, and 0–100 progress.
+  // Agent: MIRRORS songs.hls_* + conversion_progress; DRIVES AdminLibraryPage badges and retry menu.
   hls_ready: boolean;
   hls_encode_status: string | null;
   hls_encode_error: string | null;

@@ -78,6 +78,10 @@ export default function Setup() {
         allow_public_registration: allowPublicRegistration,
         music_dir: musicDir.trim(),
       });
+      if (!res.token) {
+        setError("Setup did not return a session token.");
+        return;
+      }
       setAuth(res.token, res.user);
       navigate("/", { replace: true });
     } catch (e: any) {

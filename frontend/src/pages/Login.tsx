@@ -1,9 +1,15 @@
-// Human: Email/password gate — toggles between login and public registration based on server setting and local UI state.
-// Agent: CALLS fetchPublicRegistrationSetting; SUBMIT login/register; flushSync setAuth; NAVIGATE "/".
+// Human: Email/password gate — toggles between login and public registration based on server settings and local UI state.
+// Agent: READS registration+activation settings; SUBMIT login/register; SKIPS setAuth when pending_activation; NAVIGATE "/" on token.
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { login, register, fetchPublicRegistrationSetting } from "../api/client";
+import {
+  login,
+  register,
+  fetchPublicRegistrationSetting,
+  fetchPublicActivationSetting,
+  ApiError,
+} from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import NetworkBackground from "../components/NetworkBackground";
 
@@ -15,19 +21,26 @@ export default function Login() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  const [activationRequired, setActivationRequired] = useState(false);
   const { setAuth } = useAuth();
   const navigate = useNavigate();
 
   // Human: Hide the register tab when the instance disables open signup — failures default to permissive to avoid locking UI.
-  // Agent: EFFECT mount; READS allow_public_registration; CATCH sets true.
+  // Agent: EFFECT mount; READS allow_public_registration + require_account_activation; CATCH keeps safe defaults.
   useEffect(() => {
-    fetchPublicRegistrationSetting()
-      .then((data) => setRegistrationEnabled(data.allow_public_registration))
-      .catch(() => setRegistrationEnabled(true));
+    Promise.all([fetchPublicRegistrationSetting(), fetchPublicActivationSetting()])
+      .then(([reg, act]) => {
+        setRegistrationEnabled(reg.allow_public_registration);
+        setActivationRequired(act.require_account_activation);
+      })
+      .catch(() => {
+        setRegistrationEnabled(true);
+        setActivationRequired(false);
+      });
   }, []);
 
-  // Human: Register path shows a short success message before navigation; `flushSync` forces token available to route guards immediately.
-  // Agent: handleSubmit; CALLS login|register; flushSync setAuth; navigate("/"); SETS error message on ApiError.
+  // Human: Register may return no token when admin approval is required; login uses flushSync so route guards see the JWT immediately.
+  // Agent: handleSubmit; CALLS login|register; ON pending_activation SHOW success+stay; ELSE flushSync setAuth navigate("/"); MAPS 403 activation errors.
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -36,16 +49,41 @@ export default function Login() {
     try {
       const fn = isRegister ? register : login;
       const res = await fn(email, password);
+
+      if (isRegister && (res.pending_activation || !res.token)) {
+        setSuccess(
+          activationRequired
+            ? "Account created. An administrator must approve your account before you can sign in."
+            : "Account created. Your account is not active yet — contact an administrator.",
+        );
+        setIsRegister(false);
+        setPassword("");
+        return;
+      }
+
+      const token = res.token;
+      if (!token) {
+        setError("Sign-in failed: no session token was returned.");
+        return;
+      }
+
       if (isRegister) {
         setSuccess("Account created successfully! Signing you in...");
         await new Promise((resolve) => setTimeout(resolve, 1200));
       }
       flushSync(() => {
-        setAuth(res.token, res.user);
+        setAuth(token, res.user);
       });
       navigate("/");
-    } catch (err: any) {
-      setError(err.message || "Authentication failed");
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 403 && !isRegister) {
+        setError(
+          "Your account is not activated yet. Please wait for an administrator to approve your account.",
+        );
+      } else {
+        const message = err instanceof Error ? err.message : "Authentication failed";
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +108,11 @@ export default function Login() {
             {isRegister ? "Create your account" : "Welcome back"}
           </h1>
           <p className="text-sm text-surface-400 text-center mb-8">
-            {isRegister ? "Start your music journey today" : "Sign in to access your library"}
+            {isRegister
+              ? activationRequired
+                ? "Create an account — an admin will approve it before you can listen"
+                : "Start your music journey today"
+              : "Sign in to access your library"}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">

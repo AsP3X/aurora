@@ -62,6 +62,8 @@ impl SearchSyncService {
         }
     }
 
+    // Human: Replace any prior queue row for this song so upsert/delete never stack conflicting operations.
+    // Agent: DELETE BY song_id then INSERT fresh row; next_retry_at +30s; attempts reset to 0.
     async fn enqueue(&self, song_id: &str, operation: &str, error: &str) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM search_index_queue WHERE song_id = $1")
             .bind(song_id)
@@ -157,6 +159,8 @@ impl SearchSyncService {
                         .await?;
                         continue;
                     }
+                    // Human: Exponential backoff caps at one hour so a down Meili does not hot-loop the API.
+                    // Agent: delay = 30 * 2^attempts (max 2^6) capped 3600s; WRITES next_retry_at.
                     let delay_secs = (30_i64 * (1_i64 << attempts.min(6))).min(3600);
                     let next_retry =
                         (Utc::now() + ChronoDuration::seconds(delay_secs)).to_rfc3339();

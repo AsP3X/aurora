@@ -62,6 +62,8 @@ pub struct Song {
 }
 
 impl From<SongDb> for Song {
+    // Human: Normalize nullable HLS columns to API defaults (not ready → false, no progress → 0).
+    // Agent: MAPS hls_ready Option→bool unwrap_or false; conversion_progress Option→i32 unwrap_or 0.
     fn from(db: SongDb) -> Self {
         Self {
             id: db.id,

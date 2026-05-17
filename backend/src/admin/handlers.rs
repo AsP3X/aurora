@@ -82,6 +82,8 @@ async fn delete_storage_key(storage: &dyn crate::storage::Storage, key: &str) {
     }
 }
 
+// Human: Remove song blobs and DB row, then drop the Meilisearch document off the hot path.
+// Agent: DELETE storage file_key+artwork; DELETE songs; SPAWN notify_song_delete; HTTP 200 { ok }.
 pub async fn delete_song(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -108,6 +110,8 @@ pub async fn delete_song(
         .execute(&state.pool)
         .await?;
 
+    // Human: Index delete can lag; spawn so the admin DELETE response is not blocked on Meilisearch RTT.
+    // Agent: tokio::spawn notify_song_delete; ON Meili failure sync_queue enqueues retry.
     let song_id = id.clone();
     let sync = state.search_sync.clone();
     tokio::spawn(async move {
@@ -298,6 +302,23 @@ pub async fn get_public_registration_setting(
 
     let enabled = value.map(|(v,)| v == "true").unwrap_or(true);
     Ok(Json(serde_json::json!({ "allow_public_registration": enabled })))
+}
+
+// Human: Expose whether new sign-ups start disabled so the login/register UI can set expectations without admin auth.
+// Agent: READS app_settings require_account_activation; RETURNS JSON boolean; NO JWT; DEFAULT false when unset.
+pub async fn get_public_activation_setting(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let value: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM app_settings WHERE key = 'require_account_activation'",
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let required = value.map(|(v,)| v == "true").unwrap_or(false);
+    Ok(Json(
+        serde_json::json!({ "require_account_activation": required }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -582,6 +603,8 @@ pub async fn update_song(
     let mut song: crate::songs::model::Song = song_db.into();
     crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
 
+    // Human: Re-index after metadata edit so search matches the committed library row.
+    // Agent: tokio::spawn notify_song_upsert; QUEUES on Meili failure via search_index_queue.
     let song_id = song.id.clone();
     let sync = state.search_sync.clone();
     tokio::spawn(async move {
@@ -615,6 +638,8 @@ pub async fn toggle_song_enabled(
     let mut song: crate::songs::model::Song = song_db.into();
     crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
 
+    // Human: Enabled flag is indexed for filtering — refresh Meili without blocking the toggle response.
+    // Agent: tokio::spawn notify_song_upsert after UPDATE songs.enabled RETURNING.
     let song_id = song.id.clone();
     let sync = state.search_sync.clone();
     tokio::spawn(async move {

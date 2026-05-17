@@ -10,7 +10,9 @@ import {
   updateUserRole,
   updateUserEnabled,
   deleteUser,
+  fetchAdminSettings,
 } from "../../api/client";
+import AdminGlassCard from "../../components/admin/AdminGlassCard";
 import PermissionManager from "../../components/admin/PermissionManager";
 import ConfirmModal from "../../components/admin/ConfirmModal";
 import PageHeader from "../../components/admin/PageHeader";
@@ -52,6 +54,8 @@ export default function AdminUsersPage() {
 
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [activationRequired, setActivationRequired] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -78,7 +82,29 @@ export default function AdminUsersPage() {
   useEffect(() => {
     loadUsers();
     loadPermissions();
+    fetchAdminSettings()
+      .then((settings) => {
+        const row = settings.find((s) => s.key === "require_account_activation");
+        setActivationRequired(row?.value === "true");
+      })
+      .catch(() => setActivationRequired(false));
   }, [loadUsers, loadPermissions]);
+
+  // Human: One-click approve for disabled accounts when operators are clearing the activation queue.
+  // Agent: CALLS updateUserEnabled(userId, true); OPTIMISTIC users map; SETS approvingId during request.
+  async function handleApprove(userId: string) {
+    setApprovingId(userId);
+    setError("");
+    try {
+      await updateUserEnabled(userId, true);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, enabled: true } : u)));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to approve user";
+      setError(message);
+    } finally {
+      setApprovingId(null);
+    }
+  }
 
   useEffect(() => {
     if (!editingPermissionsFor) return;
@@ -188,8 +214,8 @@ export default function AdminUsersPage() {
     },
     {
       key: "enabled",
-      header: "Enabled",
-      render: (u) => <EnabledPill enabled={u.enabled} />,
+      header: activationRequired ? "Status" : "Enabled",
+      render: (u) => <EnabledPill enabled={u.enabled} activationRequired={activationRequired} />,
     },
     {
       key: "actions",
@@ -198,6 +224,9 @@ export default function AdminUsersPage() {
       className: "text-right",
       render: (u) => (
         <UserRowActions
+          showApprove={!u.enabled}
+          approving={approvingId === u.id}
+          onApprove={() => void handleApprove(u.id)}
           onEdit={() => {
             setEditingUser(u.id);
             setEditRole(u.role);
@@ -214,7 +243,24 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Users" error={error || undefined} />
+      <PageHeader
+        title="Users"
+        subtitle={
+          activationRequired
+            ? "New registrations stay inactive until you approve them below."
+            : undefined
+        }
+        error={error || undefined}
+      />
+
+      {activationRequired && (
+        <AdminGlassCard padding="md" className="border-amber-500/20 bg-amber-500/5">
+          <p className="text-sm text-amber-200/90">
+            Account activation is required for this instance. Users who register appear as inactive until you
+            enable them (Approve or Edit → Enabled).
+          </p>
+        </AdminGlassCard>
+      )}
 
       <DataTable<User>
         columns={columns}
@@ -229,14 +275,17 @@ export default function AdminUsersPage() {
               </div>
             }
             primary={u.email}
-            secondary={`${u.role} · ${u.enabled ? "Enabled" : "Disabled"}`}
+            secondary={`${u.role} · ${statusLabel(u.enabled, activationRequired)}`}
             trailing={
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <div className="flex flex-wrap justify-end gap-1">
                   <RolePill role={u.role} />
-                  <EnabledPill enabled={u.enabled} />
+                  <EnabledPill enabled={u.enabled} activationRequired={activationRequired} />
                 </div>
                 <UserRowActions
+                  showApprove={!u.enabled}
+                  approving={approvingId === u.id}
+                  onApprove={() => void handleApprove(u.id)}
                   onEdit={() => {
                     setEditingUser(u.id);
                     setEditRole(u.role);
@@ -276,7 +325,7 @@ export default function AdminUsersPage() {
           </div>
           <div className="flex items-center gap-3">
             <span id="admin-edit-user-enabled-label" className="text-xs text-surface-400">
-              Enabled
+              {activationRequired ? "Active (approved)" : "Enabled"}
             </span>
             <button
               type="button"
@@ -293,7 +342,7 @@ export default function AdminUsersPage() {
                 }`}
               />
             </button>
-            <EnabledPill enabled={editEnabled} />
+            <EnabledPill enabled={editEnabled} activationRequired={activationRequired} />
           </div>
         </div>
         <div className="flex flex-wrap gap-3 justify-end mt-6">
@@ -404,36 +453,79 @@ function RolePill({ role }: { role: string }) {
   );
 }
 
-// Human: Enabled state pill — icon reinforces green/red beyond color alone.
-// Agent: PROPS enabled boolean; RETURNS Yes/No labels with check/shield-off style stroke icon.
-function EnabledPill({ enabled }: { enabled: boolean }) {
+// Human: Short label for list rows — “Pending” when activation mode is on and the account is inactive.
+// Agent: PURE statusLabel(enabled, activationRequired); RETURNS Active|Pending approval|Disabled string.
+function statusLabel(enabled: boolean, activationRequired: boolean): string {
+  if (enabled) return "Active";
+  return activationRequired ? "Pending approval" : "Disabled";
+}
+
+// Human: Enabled state pill — icon reinforces green/amber/red beyond color alone.
+// Agent: PROPS enabled + activationRequired; LABEL Active|Pending|Disabled; VISUAL emerald/amber/red borders.
+function EnabledPill({
+  enabled,
+  activationRequired = false,
+}: {
+  enabled: boolean;
+  activationRequired?: boolean;
+}) {
+  const pending = !enabled && activationRequired;
+  const label = enabled ? "Active" : pending ? "Pending" : "Disabled";
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border ${
         enabled
           ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-          : "bg-red-500/10 text-red-300 border-red-500/20"
+          : pending
+            ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+            : "bg-red-500/10 text-red-300 border-red-500/20"
       }`}
     >
       {enabled ? (
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
         </svg>
+      ) : pending ? (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
       ) : (
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       )}
-      {enabled ? "Yes" : "No"}
+      {label}
     </span>
   );
 }
 
-// Human: Compact edit/delete controls reused in desktop Actions column and mobile trailing slot.
-// Agent: PROPS onEdit onDelete; RENDERS text buttons with aurora/red accents + focus rings.
-function UserRowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+// Human: Compact row actions — quick Approve for inactive users plus edit/delete.
+// Agent: PROPS showApprove approving onApprove onEdit onDelete; CALLS onApprove when Approve clicked.
+function UserRowActions({
+  showApprove,
+  approving,
+  onApprove,
+  onEdit,
+  onDelete,
+}: {
+  showApprove: boolean;
+  approving: boolean;
+  onApprove: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div className="flex items-center justify-end gap-2">
+      {showApprove && (
+        <button
+          type="button"
+          onClick={onApprove}
+          disabled={approving}
+          className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-emerald-500/10 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+        >
+          {approving ? "…" : "Approve"}
+        </button>
+      )}
       <button
         type="button"
         onClick={onEdit}

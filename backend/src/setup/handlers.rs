@@ -150,7 +150,8 @@ pub async fn setup(
     let permissions = get_user_permission_keys(&state.pool, &user_id).await;
 
     Ok(Json(AuthResponse {
-        token,
+        token: Some(token),
+        pending_activation: false,
         user: UserDto {
             id: user_id,
             email: body.email,

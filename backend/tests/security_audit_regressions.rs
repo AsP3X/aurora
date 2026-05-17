@@ -293,3 +293,103 @@ async fn register_succeeds_when_public_registration_enabled() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+// Human: IMP-008 — new accounts start disabled when require_account_activation is true and must not receive a JWT.
+// Agent: POST register; READS users.enabled; ASSERT token absent + pending_activation in JSON body.
+#[tokio::test]
+async fn register_creates_disabled_user_without_token_when_activation_required() {
+    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true'), ('require_account_activation', 'true')",
+    )
+    .execute(&state.pool)
+    .await
+    .expect("insert settings");
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/register")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "email": "pending@example.com",
+                "password": "password12345"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    assert!(parsed.get("token").is_none() || parsed["token"].is_null());
+    assert_eq!(parsed["pending_activation"], true);
+    assert_eq!(parsed["user"]["enabled"], false);
+
+    let enabled: Option<(i64,)> = sqlx::query_as(
+        "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE email = $1",
+    )
+    .bind("pending@example.com")
+    .fetch_optional(&state.pool)
+    .await
+    .expect("enabled query");
+    assert_eq!(enabled.map(|(e,)| e), Some(0));
+}
+
+// Human: IMP-008 — disabled accounts cannot sign in until an admin enables them.
+// Agent: INSERT disabled user; POST login; EXPECT 403; UPDATE enabled; POST login; EXPECT 200 + token.
+#[tokio::test]
+async fn login_blocked_until_account_enabled() {
+    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+
+    let user_id = "55555555-5555-5555-5555-555555555555";
+    let ph = hash_password("password12345").unwrap();
+
+    sqlx::query(
+        "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'listener', 0)",
+    )
+    .bind(user_id)
+    .bind("inactive@example.com")
+    .bind(&ph)
+    .execute(&state.pool)
+    .await
+    .expect("insert user");
+
+    let login_req = || {
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/auth/login")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "email": "inactive@example.com",
+                    "password": "password12345"
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    };
+
+    let blocked = app.clone().oneshot(login_req()).await.unwrap();
+    assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+
+    sqlx::query("UPDATE users SET enabled = true WHERE id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .expect("enable user");
+
+    let ok = app.oneshot(login_req()).await.unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(ok.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    assert!(parsed["token"].is_string());
+}
