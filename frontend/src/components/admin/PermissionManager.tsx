@@ -1,3 +1,5 @@
+// Human: Grouped checkbox grid editing explicit permission keys — optional read-only mode for display-only matrices.
+// Agent: DERIVES categories from data; TOGGLES keys via onChange(newKeys).
 interface Permission {
   id: string;
   key: string;

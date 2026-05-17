@@ -1,3 +1,5 @@
+// Human: Simple trail Home / Admin / current section based on pathname mapping (falls back to “Admin”).
+// Agent: READS useLocation; labelMap lookup; STATIC links to / and /admin.
 import { Link, useLocation } from "react-router-dom";
 
 const labelMap: Record<string, string> = {

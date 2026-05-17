@@ -1,3 +1,5 @@
+// Human: Permission keys via direct user grants and group membership (SQL checks, not ORM models for joins).
+// Agent: READS user_permissions, group_permissions, group_memberships; EXPOSES check_permission and require_* helpers.
 use std::collections::HashSet;
 
 use serde::Serialize;
@@ -24,33 +26,6 @@ pub struct Group {
     pub description: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-}
-
-#[derive(Debug, FromRow, Serialize)]
-#[allow(dead_code)]
-pub struct GroupPermission {
-    pub id: String,
-    pub group_id: String,
-    pub permission_id: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, FromRow, Serialize)]
-#[allow(dead_code)]
-pub struct UserPermission {
-    pub id: String,
-    pub user_id: String,
-    pub permission_id: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, FromRow, Serialize)]
-#[allow(dead_code)]
-pub struct GroupMembership {
-    pub id: String,
-    pub user_id: String,
-    pub group_id: String,
-    pub created_at: String,
 }
 
 pub async fn check_permission(pool: &AnyPool, user_id: &str, permission_key: &str) -> bool {

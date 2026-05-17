@@ -1,3 +1,5 @@
+// Human: Generic right-click style menu — fixed position, closes on outside click, Escape, or any scroll.
+// Agent: PROPS items+x+y; EFFECT registers mousedown/keydown/capture scroll; CLAMPS to viewport using estimated size.
 import { useEffect, useRef } from "react";
 
 export interface ContextMenuItem {
@@ -18,6 +20,8 @@ interface ContextMenuProps {
 export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
+  // Human: Treat scroll as “cancel” so the menu does not float detached from the row that opened it.
+  // Agent: DOCUMENT mousedown (outside) + key Escape + capture-phase window scroll all invoke onClose.
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -42,7 +46,8 @@ export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) 
     };
   }, [onClose]);
 
-  // Clamp to viewport
+  // Human: Rough size estimate avoids menus spawning clipped off-screen near viewport edges.
+  // Agent: COMPUTES left/top via Math.min against innerWidth/innerHeight.
   const menuWidth = 180;
   const menuHeight = items.length * 36 + 8;
   const left = Math.min(x, window.innerWidth - menuWidth - 8);

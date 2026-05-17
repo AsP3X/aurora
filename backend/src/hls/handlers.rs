@@ -1,3 +1,5 @@
+// Human: Authenticated endpoints that synthesize `.m3u8` playlists, serve AES-128 keys, and proxy `.ts` segments for local storage mode.
+// Agent: REQUIRES library.view; BRANCHES Nebula vs local via presigned_segment_url probe; READS songs.hls_ready + segment_count; Body streaming responses.
 use axum::{
     extract::{Path, State},
 
@@ -15,6 +17,8 @@ use crate::{
 
 use super::playlist::PlaylistGenerator;
 
+// Human: Produce either inline presigned single-bitrate playlist fallback or a rebuilt AES HLS manifest referencing app routes.
+// Agent: READS songs row; MAY EMIT simple EXT-X-STREAM-INF; OTHERWISE builds segment list + PlaylistGenerator::generate; CACHE_CONTROL no-store.
 pub async fn get_playlist(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -83,6 +87,8 @@ pub async fn get_playlist(
     ).into_response())
 }
 
+// Human: Serve the raw 16-byte AES key referenced by the EXT-X-KEY URI after permission checks.
+// Agent: READS hls_key_store blob; HTTP 404 if missing; RETURNS application/octet-stream bytes.
 pub async fn get_key(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -103,6 +109,8 @@ pub async fn get_key(
     ).into_response())
 }
 
+// Human: Segment proxy for non-presigned storage modes—validates filename characters then streams from object storage or disk fallback.
+// Agent: READS Storage::get_stream songs/{id}/segments/*; FALLBACK tokio::File under staging_dir; REJECTS weird segment_name; REQUIRES library.view.
 pub async fn get_segment(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,

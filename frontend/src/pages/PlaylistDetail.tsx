@@ -1,3 +1,5 @@
+// Human: Single playlist editor — reorder locally, persist order, add songs via multi-select dialog, play/shuffle integration with PlayerContext.
+// Agent: fetchPlaylist on id; add dialog loads up to 10k songs; fuzzy filter; CALLS reorderPlaylistSongs on save order; playSongs for rows.
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
@@ -14,12 +16,16 @@ import DashboardLayout from "../components/DashboardLayout";
 import ArtworkImage from "../components/ArtworkImage";
 import type { Song, Playlist } from "../types";
 
+// Human: Compact mm:ss for table duration cells.
+// Agent: PURE floor division.
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Human: Per-row play control that starts the playlist at a specific index without triggering the row click twice.
+// Agent: stopPropagation on click; CALLS playSongs(songs, index).
 function PlayButton({ index, songs }: { index: number; songs: Song[] }) {
   const { playSongs } = usePlayer();
 
@@ -44,6 +50,8 @@ interface SongOption {
   duration_seconds: number;
 }
 
+// Human: Very light “search” — every query word must appear somewhere in title/artist/album; score used for ordering add dialog.
+// Agent: SPLIT query words; INCREMENTS score per substring hit; RETURNS integer score.
 function fuzzyScore(query: string, song: SongOption): number {
   const q = query.trim().toLowerCase();
   if (!q) return 1;
@@ -56,6 +64,8 @@ function fuzzyScore(query: string, song: SongOption): number {
   return score;
 }
 
+// Human: Page component coordinating playlist metadata, ordered tracks, add-songs UX, and destructive actions.
+// Agent: ROUTE param id; STATE for edit/add modals; CALLS fetchPlaylist/reorder/add/remove APIs; USES playSongs+addToQueue.
 export default function PlaylistDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -81,6 +91,8 @@ export default function PlaylistDetail() {
   const [addingSongs, setAddingSongs] = useState(false);
   const addSearchRef = useRef<HTMLInputElement>(null);
 
+  // Human: Whenever the playlist id changes, reload header + track list from the API.
+  // Agent: fetchPlaylist(id); SETS playlist+songs; loading gate.
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -94,7 +106,8 @@ export default function PlaylistDetail() {
 
   const totalDuration = songs.reduce((sum, s) => sum + s.duration_seconds, 0);
 
-  /* Load library songs when dialog opens */
+  // Human: Opening the add dialog pulls a large slice of the library once — filtered client-side for snappy typing.
+  // Agent: WHEN showAddDialog; fetchSongs limit 10000; MAP to SongOption; SETS librarySongs.
   useEffect(() => {
     if (!showAddDialog) return;
     setAddDialogLoading(true);
@@ -113,7 +126,8 @@ export default function PlaylistDetail() {
       .finally(() => setAddDialogLoading(false));
   }, [showAddDialog]);
 
-  /* Focus search when dialog opens */
+  // Human: Focus the add dialog search field shortly after open for keyboard-first workflows.
+  // Agent: TIMEOUT 100ms focus; CLEANUP clears timeout.
   useEffect(() => {
     if (showAddDialog) {
       const t = setTimeout(() => addSearchRef.current?.focus(), 100);
@@ -123,6 +137,8 @@ export default function PlaylistDetail() {
 
   const existingIds = useMemo(() => new Set(songs.map((s) => s.id)), [songs]);
 
+  // Human: Build the add-dialog list — excludes songs already in playlist; empty search still shows all addable via score 1.
+  // Agent: USEMEMO; FILTER existingIds; fuzzyScore+sort; DROP score 0 rows (inactive when search impossible match).
   const filteredOptions = useMemo(() => {
     const scored = librarySongs
       .filter((s) => !existingIds.has(s.id))

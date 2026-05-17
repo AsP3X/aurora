@@ -1,0 +1,44 @@
+---
+description: >-
+  HTTP error JSON, logging vs client messages, and tracing for backend and
+  frontend API client
+alwaysApply: true
+---
+
+# API responses, errors, and logging
+
+This project’s HTTP API contract and observability patterns are **fixed by convention**. Follow them for **`backend/`** (Rust / Axum) and **`frontend/src/api/**`** when parsing or surfacing API failures.
+
+## Canonical error JSON (Rust `/api/v1`)
+
+- **Error HTTP bodies** must be JSON matching **`AppError`** and **`query_rejection_response`** in `backend/src/error.rs`:
+  `{ "error": string, "status": number }`
+  The `error` field is a **single user-facing string** (not a nested object). Status code matches HTTP status; `status` in the body duplicates the numeric code for clients that read the payload only.
+- **Handlers** should return **`Result<..., AppError>`** (or `Result<Json<...>, AppError>`) and build failures via **`AppError`** variants (`NotFound`, `Unauthorized`, `Forbidden`, `BadRequest`, etc.) or `?` where `From` is implemented. **Do not** introduce alternate error shapes (plain text bodies, `{ "message": "..." }` only, or `{ "error": { "code", "message" } }`) for the same API surface unless the user explicitly approves a breaking contract change—and then **update** `frontend/src/api/client.ts` in the same work.
+- **Query parsing**: use **`query_rejection_response`** so 400s stay consistent. In production, `AURORA_ENVIRONMENT=production` hides detailed query parse text (see `README.md`).
+
+## What clients see vs what logs contain
+
+- **Responses**: `error` text must stay **safe for end users**—no stack traces, SQL fragments, internal hostnames, tokens, or secrets in JSON bodies.
+- **Server logs**: use **`tracing`** (`error!` / `warn!` / `info!` as appropriate). For database and infrastructure failures, **log the real error** in tracing events; map to **generic** user-facing strings in `AppError::into_response` (same pattern as `AppError::Database` and `AppError::Internal` in `error.rs`).
+- **Do not** log credentials, JWTs, stream tickets, or full third-party error payloads unless scrubbed.
+
+## Request logging
+
+- HTTP request tracing uses **`tower_http::TraceLayer`** on the Axum router (`create_router` in `backend/src/lib.rs`). **Preserve** sensible request/response logging when changing middleware.
+- Log verbosity is controlled by **`RUST_LOG`** / `tracing_subscriber` env filter (default `info,tower_http=debug`). Do not bypass this with ad-hoc `println!` in request paths.
+
+## Success and non-JSON edge cases
+
+- **Success JSON** remains whatever the route already returns; do not silently change shapes without a deliberate migration.
+- For **204**, redirects, audio/HLS streams, and file payloads, keep behavior explicit at the handler—still avoid leaking internals in headers.
+
+## Frontend alignment
+
+- **`frontend/src/api/client.ts`** throws **`ApiError`** on non-2xx responses. It parses JSON and uses **`parsed.error`** or **`parsed.message`**, then falls back to raw body text. If you change the Rust error schema, **update `apiFetch` and `ApiError` consumers** in the same change set.
+
+## Anti-patterns
+
+- Mixing **`{ "error", "status" }`** JSON with **plain-text** error bodies on the same `/api/v1` prefix.
+- Returning **500** with detailed internal causes in the JSON **`error`** string.
+- Logging **PII** (full emails, passwords) at **error** level in hot paths; use redaction or lower verbosity where needed.

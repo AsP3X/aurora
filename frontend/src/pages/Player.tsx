@@ -1,3 +1,5 @@
+// Human: Full-screen now-playing view — loads song by route id if needed and mirrors PlayerContext transport.
+// Agent: fetchSong+playSong when id differs; SYNCs audio element time to context on visit; BOTTOM BAR controls queue/shuffle when queue length > 0.
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
@@ -34,6 +36,8 @@ export default function Player() {
   const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
 
+  // Human: Tooltip math for seek preview — identical approach to PlayerBar’s hover percent.
+  // Agent: onMouseMove/Leave handlers; SETS hoverPercent from clientX/width.
   function handleProgressMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -45,8 +49,8 @@ export default function Player() {
     setHoverPercent(null);
   }
 
-  // Load song if not currently playing
-  // eslint-disable-next-line react-hooks/set-state-in-effect
+  // Human: When opening `/player/:id` for a different track than what is loaded, fetch full metadata and start it via context.
+  // Agent: EFFECT [id, currentSong, playSong]; CANCELS on id change; SETS loading around fetchSong.
   useEffect(() => {
     if (!id) return;
     if (currentSong?.id === id) {
@@ -67,7 +71,8 @@ export default function Player() {
     return () => { cancelled = true; };
   }, [id, currentSong, playSong]);
 
-  // Sync progress from audio element when visiting player page
+  // Human: If the global `<audio>` advanced while user was elsewhere, re-read element state when landing on this page.
+  // Agent: EFFECT [currentSong]; READS audioRef currentTime/duration/buffered; WRITES context setters.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;

@@ -1,3 +1,5 @@
+// Human: Personal listening analytics — period tabs drive all API queries; expandable per-song session drilldown.
+// Agent: STATE period; PARALLEL fetch on period change; toggleSongSessions lazy-loads fetchListeningSessions; CHARTS from habits payload.
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -12,7 +14,8 @@ import {
 } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 
-/* ─── Helpers ─── */
+// Human: Compact duration for chart labels — omits seconds when hours present for readability.
+// Agent: PURE helper for BarChart formatter inputs.
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -33,8 +36,8 @@ function formatDurationLong(seconds: number) {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/* ─── Sub-components ─── */
-
+// Human: Reusable KPI tile on the stats page (distinct from admin StatCard component).
+// Agent: PRESENTATIONAL label/value/sub copy.
 function StatCard({
   label,
   value,
@@ -53,6 +56,8 @@ function StatCard({
   );
 }
 
+// Human: Horizontal bar chart with filled width proportional to max — optional formatter for bar label text.
+// Agent: MAP items; width pct from value/max; MIN width 1% for visibility.
 function BarChart({
   data,
   max,
@@ -109,8 +114,6 @@ function formatSessionListened(seconds: number | null) {
   return formatDurationLong(seconds);
 }
 
-/* ─── Page ─── */
-
 export default function StatsPage() {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "all">("all");
   const [loading, setLoading] = useState(false);
@@ -148,6 +151,8 @@ export default function StatsPage() {
   const [sessionsBySong, setSessionsBySong] = useState<Record<string, ListeningSessionRow[]>>({});
   const [sessionsLoadingId, setSessionsLoadingId] = useState<string | null>(null);
 
+  // Human: Changing period refetches everything and collapses any open per-song session tables (fresh data contract).
+  // Agent: EFFECT [period]; RESETS expansion cache; Promise.all listening endpoints; WRITES aggregate state.
   useEffect(() => {
     setExpandedSongId(null);
     setSessionsBySong({});
@@ -171,6 +176,8 @@ export default function StatsPage() {
     });
   }, [period]);
 
+  // Human: Lazy-load session rows for a single song the first time its accordion opens (cached in `sessionsBySong`).
+  // Agent: TOGGLE expandedSongId; FETCH fetchListeningSessions(period,500,songId); STORES per-song array.
   async function toggleSongSessions(songId: string) {
     if (expandedSongId === songId) {
       setExpandedSongId(null);
@@ -189,6 +196,8 @@ export default function StatsPage() {
     }
   }
 
+  // Human: Normalize habit peaks into 24 hour buckets for the chart even when some hours are empty.
+  // Agent: USEMEMO from habits.peak_hours; FILLS buckets 0-23.
   const hourData = useMemo(() => {
     const buckets = Array.from({ length: 24 }, (_, i) => ({ label: `${i}`, value: 0 }));
     habits?.peak_hours.forEach((h) => {
@@ -197,6 +206,8 @@ export default function StatsPage() {
     return buckets;
   }, [habits]);
 
+  // Human: Weekday chart uses fixed Sun–Sat ordering with API `day` indices mapping into labels.
+  // Agent: USEMEMO from habits.day_of_week; MERGES into DAYS array.
   const dayData = useMemo(() => {
     const buckets = DAYS.map((d) => ({ label: d, value: 0 }));
     habits?.day_of_week.forEach((d) => {

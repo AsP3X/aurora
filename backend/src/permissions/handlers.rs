@@ -1,3 +1,5 @@
+// Human: Admin-only HTTP for RBAC primitives—permissions catalog, groups, memberships, and direct user grants with transactional bulk replace endpoints.
+// Agent: ALL routes call require_admin_access first; WRITES group_permissions, user_permissions, group_memberships; READS permissions + groups tables.
 use axum::{
     extract::{Path, State},
     Json,
@@ -33,6 +35,10 @@ pub struct AddMember {
     pub user_id: String,
 }
 
+// --- Permission catalog ---
+
+// Human: Enumerate every defined permission row for admin UIs building checkboxes.
+// Agent: READS permissions ORDER BY category,key; REQUIRES admin; RETURNS Vec<Permission>.
 pub async fn list_permissions(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -46,6 +52,10 @@ pub async fn list_permissions(
     Ok(Json(permissions))
 }
 
+// --- Groups ---
+
+// Human: List distinct permission groups used to bucket grants in the admin console.
+// Agent: READS groups table sorted by name; NO joins; REQUIRES admin.
 pub async fn list_groups(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -57,6 +67,8 @@ pub async fn list_groups(
     Ok(Json(groups))
 }
 
+// Human: Insert a named group container that later receives permission rows via join table inserts.
+// Agent: INSERT groups; CONFLICT unique name → 409; RETURNS Group row; REQUIRES admin.
 pub async fn create_group(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -159,6 +171,8 @@ pub async fn revoke_group_permission(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// Human: Wipe and rebuild the group's permission set atomically so UI "save" reflects exact checkbox state.
+// Agent: TX DELETE group_permissions; INSERT validated keys; ERRORS on first bad key before commit.
 pub async fn replace_group_permissions(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -197,6 +211,10 @@ pub async fn replace_group_permissions(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// --- Group membership ---
+
+// Human: Show which accounts belong to a group so admins can audit inherited grants.
+// Agent: READS users JOIN group_memberships; RETURNS JSON rows id/email/role; REQUIRES admin.
 pub async fn list_group_members(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -258,6 +276,10 @@ pub async fn remove_group_member(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// --- Direct user grants ---
+
+// Human: List only permissions granted directly on a user row, excluding group-derived rights.
+// Agent: READS user_permissions join permissions; REQUIRES admin; DISTINCT ordering by category/key.
 pub async fn list_user_permissions(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -323,6 +345,8 @@ pub async fn revoke_user_permission(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// Human: Transactionally replace the per-user shadow permission list with validated keys—mirrors group bulk replace semantics.
+// Agent: TX delete user_permissions; INSERT loop; RETURNS 400 on unknown key before commit.
 pub async fn replace_user_permissions(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -361,6 +385,8 @@ pub async fn replace_user_permissions(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// Human: Return the merged key list (groups + direct grants) using the same helper as `/auth/me` permission hydration.
+// Agent: CALLS get_user_permission_keys; RETURNS string keys only; REQUIRES admin viewing chosen user_id.
 pub async fn get_user_effective_permissions(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -371,6 +397,8 @@ pub async fn get_user_effective_permissions(
     Ok(Json(keys))
 }
 
+// Human: Lightweight directory of accounts for admin pickers without exposing password material.
+// Agent: READS users id/email/role/enabled newest first; MAPS to JSON objects inline; REQUIRES admin.
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
@@ -393,6 +421,8 @@ pub struct UpdateEnabled {
     pub enabled: bool,
 }
 
+// Human: Toggle login eligibility for another user but block self-lockout mistakes from the same JWT.
+// Agent: UPDATE users.enabled; HTTP 400 if claims.sub target; REQUIRES admin.
 pub async fn update_user_enabled(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,

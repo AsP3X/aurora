@@ -22,8 +22,13 @@ import AdminLibraryPage from "./pages/admin/AdminLibraryPage";
 import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 
+// Human: Application shell — providers, setup gate, route table, and the main nav layout around authenticated pages.
+// Agent: WRAPS BrowserRouter+AuthProvider+PlayerProvider; ROUTES /setup /login / library /admin/*; SETUPGUARD reads setupStatus; LAYOUT hides chrome on dashboard paths.
+
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   const { pathname } = useLocation();
+  // Human: Treat child paths as active for section tabs (e.g. `/playlist/…` highlights Playlists).
+  // Agent: active = path exact match OR (to not "/" AND pathname.startsWith(to)).
   const active = pathname === to || (to !== "/" && pathname.startsWith(to));
   return (
     <Link
@@ -42,6 +47,8 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
+// Human: Same active styling as `NavLink`, but block layout for the mobile drawer and optional close handler.
+// Agent: REUSES prefix active rule; FORWARDS onClick to close overlay when link used.
 function MobileNavLink({ to, onClick, children }: { to: string; onClick?: () => void; children: React.ReactNode }) {
   const { pathname } = useLocation();
   const active = pathname === to || (to !== "/" && pathname.startsWith(to));
@@ -60,6 +67,8 @@ function MobileNavLink({ to, onClick, children }: { to: string; onClick?: () => 
   );
 }
 
+// Human: Standard chrome for non-dashboard routes: top nav, optional bottom padding when PlayerBar is visible.
+// Agent: HIDES header on library/playlists/playlist detail; ADDS pb when currentSong and not player page; RENDERS PlayerBar globally.
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, can } = useAuth();
   const { currentSong } = usePlayer();
@@ -70,6 +79,8 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface-950 text-white relative">
+      {/* Human: DashboardLayout on library pages already provides its own top chrome — skip duplicate header here. */}
+      {/* Agent: CONDITIONAL RENDER !isDashboard for header block. */}
       {!isDashboard && (
         <header className="sticky top-0 z-50 border-b border-white/10 backdrop-blur-2xl bg-white/5">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -151,6 +162,8 @@ function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Human: Block protected pages until auth is resolved — show spinner, redirect guests to `/login`.
+// Agent: READS token+loading; RETURNS Navigate /login when no token after load; WRAPS children in Layout when ok.
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
   if (loading) {
@@ -167,6 +180,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+// Human: Like RequireAuth but without Layout — admin area uses its own full-screen shell (AdminLayout).
+// Agent: SAME gate as RequireAuth; RETURNS children fragment only.
 function RequireAuthNoLayout({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
   if (loading) {
@@ -183,12 +198,16 @@ function RequireAuthNoLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Human: First-run wizard gate — if the API says setup is incomplete, only `/setup` is reachable until finished.
+// Agent: CALLS setupStatus; ON ERROR assumes setup complete; NAVIGATES between /setup and / or /login; DEPENDS token for re-fetch.
 function SetupGuard({ children }: { children: React.ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { token } = useAuth();
 
+  // Human: Load setup completion whenever token changes (e.g. after setup finishes and JWT appears).
+  // Agent: CALLS setupStatus; SETS setupComplete; CATCH sets true; cancellation guard on unmount.
   useEffect(() => {
     let cancelled = false;
     setupStatus()
@@ -201,6 +220,8 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [token]);
 
+  // Human: Keep URL aligned with setup state — bounce users away from `/setup` once done, or force setup until complete.
+  // Agent: READS setupComplete pathname token; NAVIGATES replace to /setup or / or /login.
   useEffect(() => {
     if (setupComplete === null) return;
 
@@ -236,6 +257,8 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Human: Dev-oriented navigation trace — logs each pathname change with timestamp and current user role/email.
+// Agent: EFFECT on location+user; WRITES console.group with path and user label.
 function NavigationLogger() {
   const location = useLocation();
   const { user } = useAuth();
@@ -253,6 +276,8 @@ function NavigationLogger() {
   return null;
 }
 
+// Human: Declarative route table — every leaf is wrapped with SetupGuard; admin subtree nests under `/admin/*`.
+// Agent: DEFINES Routes + nested admin Route; USES RequireAdmin inside AdminLayout outlet.
 function AppRoutes() {
   return (
     <>
@@ -288,6 +313,8 @@ function AppRoutes() {
   );
 }
 
+// Human: Root providers — router wraps auth, auth wraps player, so any route can read both contexts.
+// Agent: BrowserRouter → AuthProvider → PlayerProvider → AppRoutes.
 export default function App() {
   return (
     <BrowserRouter>

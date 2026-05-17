@@ -1,3 +1,5 @@
+// Human: Admin area chrome — top bar, collapsible sidebar, and nested route outlet below breadcrumbs.
+// Agent: LOCAL sidebarOpen; RENDERS AdminTopbar+AdminSidebar+Outlet; OFFSETS main md:ml-64.
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import AdminSidebar from "./AdminSidebar";

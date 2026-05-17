@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
 
+// Human: Full songs row from SQL; converted to API-facing `Song` (genres loaded separately).
+// Agent: READS songs table via FromRow; MAPS to Song via From; WRITES via admin/upload and handlers.
 #[derive(Debug, FromRow)]
-#[allow(dead_code)]
 pub struct SongDb {
     pub id: String,
     pub title: String,

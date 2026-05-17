@@ -1,3 +1,5 @@
+// Human: Primary dashboard — stats cards, debounced search, recent/topmost grids, all inside `DashboardLayout`.
+// Agent: PARALLEL initial fetch stats/recent/history/top; SEARCH debounce 250ms fetchSongs; KEYBOARD "/" focuses search.
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -12,7 +14,8 @@ import DashboardLayout from "../components/DashboardLayout";
 import ArtworkImage from "../components/ArtworkImage";
 import type { Song } from "../types";
 
-/* ─── Helpers ─── */
+// Human: Short human-readable duration for aggregate stats (hours appear when large).
+// Agent: PURE formatter for stats cards.
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -24,8 +27,8 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
-/* ─── Sub-components ─── */
-
+// Human: Small KPI tile used in the stats row — icon + value + uppercase label.
+// Agent: PRESENTATIONAL; PROPS label/value/icon/colorClass.
 function StatCard({
   label,
   value,
@@ -50,7 +53,6 @@ function StatCard({
   );
 }
 
-/* ─── Main page ─── */
 export default function Library() {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -63,7 +65,8 @@ export default function Library() {
   const [searchResults, setSearchResults] = useState<Song[] | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* Keyboard shortcut: / to focus search */
+  // Human: Vim-style focus — "/" jumps to search unless user is already typing in an input.
+  // Agent: keydown listener; PREVENTDEFAULT when target not INPUT/TEXTAREA.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "/" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
@@ -75,7 +78,8 @@ export default function Library() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* Load dashboard data */
+  // Human: On mount pull all dashboard slices — failures degrade to empty/null segments rather than hard error page.
+  // Agent: Promise.all fetchStats, fetchRecentSongs, fetchHistory, fetchTopPlays; SETS loading false in then.
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -97,7 +101,8 @@ export default function Library() {
     return () => { mounted = false; };
   }, []);
 
-  /* Search handler */
+  // Human: Debounce typing so we do not hit `/songs` on every keystroke while still feeling instant.
+  // Agent: EFFECT [searchQuery]; CLEARS results when empty; TIMER 250ms then fetchSongs q.
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);

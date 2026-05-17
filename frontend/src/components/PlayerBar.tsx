@@ -1,3 +1,5 @@
+// Human: Drives the DOM `<audio>` element, wires HLS where needed, and syncs time/volume with PlayerContext.
+// Agent: READS currentStreamUrl; USES hls.js when URL ends with `/playlist`; CALLS logHistory/updateHistory; RENDERS QueueDrawer + hidden audio.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Hls from "hls.js";
@@ -6,6 +8,8 @@ import { logHistory, updateHistory } from "../api/client";
 import ArtworkImage from "./ArtworkImage";
 import QueueDrawer from "./QueueDrawer";
 
+// Human: Format seconds as `m:ss` for labels on the seek bar and time readouts.
+// Agent: PURE helper; RETURNS "0:00" when non-finite.
 function formatTime(t: number) {
   if (!isFinite(t)) return "0:00";
   const m = Math.floor(t / 60);
@@ -13,6 +17,8 @@ function formatTime(t: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Human: Show +/- offset from current playback position inside the hover tooltip on the progress bar.
+// Agent: PURE helper; FORMATS sign and absolute delta as m:ss.
 function formatDelta(seconds: number) {
   const sign = seconds >= 0 ? "+" : "-";
   const absSeconds = Math.abs(Math.round(seconds));
@@ -24,6 +30,8 @@ function formatDelta(seconds: number) {
 export default function PlayerBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // Human: Library layout (`DashboardLayout`) already offsets content — align floating bar with sidebar gutter on md+.
+  // Agent: READS pathname; SETS isDashboard and isPlayerPage for positioning and visibility rules.
   const isDashboard = pathname === "/" || pathname === "/playlists" || pathname.startsWith("/playlist/");
   const isPlayerPage = pathname.startsWith("/player/");
   const {
@@ -57,6 +65,8 @@ export default function PlayerBar() {
   const listenAccumulator = useRef(0);
   const lastTimeUpdate = useRef<{ time: number; ts: number } | null>(null);
 
+  // Human: When switching tracks or stream URLs, flush partial listen time to the server (best-effort).
+  // Agent: CLEANUP on effect; READS historySessionId+listenAccumulator; CALLS updateHistory.
   useEffect(() => {
     return () => {
       if (historySessionId.current) {
@@ -69,6 +79,8 @@ export default function PlayerBar() {
     };
   }, [currentSong?.id, currentStreamUrl]);
 
+  // Human: Start a “play session” row server-side when a new song actually begins loading.
+  // Agent: WHEN song id changes vs lastLoggedStart; CALLS logHistory; STORES session id in ref.
   useEffect(() => {
     if (currentSong && currentStreamUrl && currentSong.id !== lastLoggedStart.current) {
       logHistory(currentSong.id, undefined, false)
@@ -80,12 +92,16 @@ export default function PlayerBar() {
     }
   }, [currentSong, currentStreamUrl]);
 
+  // Human: Pause should not accrue listen time — drop the last timing anchor when transport stops.
+  // Agent: CLEARS lastTimeUpdate when !isPlaying.
   useEffect(() => {
     if (!isPlaying) {
       lastTimeUpdate.current = null;
     }
   }, [isPlaying]);
 
+  // Human: Attach a new media source when the stream URL changes — HLS master playlists use hls.js + auth header on XHR.
+  // Agent: IF url ends with `/playlist` THEN new Hls else audio.src; CLEANUP destroys Hls instance.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentStreamUrl) return;
@@ -119,6 +135,8 @@ export default function PlayerBar() {
     };
   }, [currentStreamUrl]);
 
+  // Human: Reset playback position on URL swap and honor `isPlaying` by calling play/pause on the element.
+  // Agent: RESETS currentTime when url changes; CALLS audio.play() or pause(); LOGS play() rejections.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -142,6 +160,8 @@ export default function PlayerBar() {
     }
   }, [currentStreamUrl, isPlaying, audioRef]);
 
+  // Human: Keep `progress`/`buffered` synced from native events and accumulate honest listen seconds when clocks agree.
+  // Agent: onTimeUpdate; READS buffered end; ACCUMULATES when wall delta ~ audio delta and playing.
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -163,12 +183,16 @@ export default function PlayerBar() {
     }
   }, [audioRef, setProgress, setBuffered, isPlaying]);
 
+  // Human: Prefer the browser’s `duration` once metadata is known — can differ from API `duration_seconds`.
+  // Agent: onLoadedMetadata; CALLS setDuration(audio.duration).
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     setDuration(audio.duration || 0);
   }, [audioRef, setDuration]);
 
+  // Human: Finalize listen stats for the finished track then auto-advance if a queue exists.
+  // Agent: onEnded; CALLS updateHistory with completed flag; CLEARS session refs; CALLS playNext when queue non-empty.
   const handleEnded = useCallback(() => {
     if (currentSong && historySessionId.current) {
       const duration = Math.round(listenAccumulator.current);
@@ -183,11 +207,15 @@ export default function PlayerBar() {
     }
   }, [currentSong, queue, playNext]);
 
+  // Human: Surface element errors to the console — the UI does not show a toast here today.
+  // Agent: onError; LOGS audio.error.
   const handleAudioError = useCallback(() => {
     const audio = audioRef.current;
     console.error("Audio element error:", audio?.error);
   }, [audioRef]);
 
+  // Human: Dragging the range resets listen-sample anchors so we don’t count seek jumps as listening time.
+  // Agent: onChange range; CLEARS lastTimeUpdate; CALLS seek.
   const handleSeekInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       lastTimeUpdate.current = null;
@@ -196,6 +224,8 @@ export default function PlayerBar() {
     [seek]
   );
 
+  // Human: Volume slider writes through context so PlayerContext and `<audio>` stay matched.
+  // Agent: onChange range; CALLS setVolume.
   const handleVolumeInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setVolume(Number(e.target.value));
@@ -205,6 +235,8 @@ export default function PlayerBar() {
 
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
 
+  // Human: Tooltip seeks preview — map mouse X within the bar to a percentage for time preview math.
+  // Agent: onMouseMove; SETS hoverPercent 0–100 from clientX/rect.width.
   const handleProgressMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -215,10 +247,14 @@ export default function PlayerBar() {
     []
   );
 
+  // Human: When the cursor leaves the seek bar, drop hover preview and fall back to actual progress dot position.
+  // Agent: SETS hoverPercent null.
   const handleProgressMouseLeave = useCallback(() => {
     setHoverPercent(null);
   }, []);
 
+  // Human: No floating chrome on `/player/:id` — that page has an integrated bottom transport.
+  // Agent: RETURNS null early when !currentSong; HIDES floating bar when isPlayerPage.
   if (!currentSong) return null;
 
   const progressPercent = duration ? (progress / duration) * 100 : 0;
@@ -226,6 +262,8 @@ export default function PlayerBar() {
 
   return (
     <>
+      {/* Human: Mini-player floats above content except on the dedicated full player route. */}
+      {/* Agent: CONDITIONAL !isPlayerPage around fixed bar; APPLIES isDashboard left offset. */}
       {!isPlayerPage && (
         <div
           className={`fixed bottom-4 z-40 ${
@@ -450,6 +488,8 @@ export default function PlayerBar() {
 
       <QueueDrawer />
 
+      {/* Human: Shared element referenced by PlayerContext — all transport state funnels through this node. */}
+      {/* Agent: ref=audioRef; WIRES time/metadata/end/error handlers; preload metadata. */}
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}

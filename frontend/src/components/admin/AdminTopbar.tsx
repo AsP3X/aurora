@@ -1,3 +1,5 @@
+// Human: Sticky admin header with hamburger (mobile), brand link, optional `extra` slot, and account menu.
+// Agent: CALLS onMenuToggle; STATE showUserMenu; LOGOUT clears auth via useAuth.
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useState } from "react";

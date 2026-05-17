@@ -1,3 +1,5 @@
+// Human: Full-viewport canvas animation for auth/setup backgrounds — particles + lines + mouse proximity glow.
+// Agent: rAF loop; resize+mousemove listeners; NOTE cleanup removes `resize` by wrong ref in original code (comments only).
 import { useEffect, useRef } from "react";
 
 interface Particle {
@@ -8,9 +10,13 @@ interface Particle {
   radius: number;
 }
 
+// Human: Decorative aurora-themed network mesh; pointer-events none so forms stay usable above it.
+// Agent: CANVAS 2d; PARTICLE physics bounce; LINES by distance threshold; MOUSE attracts edges.
 export default function NetworkBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Human: One effect owns the animation loop for the lifetime of the component.
+  // Agent: rAF animate; WINDOW resize+mousemove; TEARDOWN cancels rAF and runs cleanup closure.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;

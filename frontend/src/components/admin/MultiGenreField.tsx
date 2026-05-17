@@ -1,3 +1,5 @@
+// Human: Chip list + picker for many genres — uses multi-select EntityPickerDialog and per-chip remove buttons.
+// Agent: onMultiSelect wired; onSelect noop passthrough for dialog API; LOCAL open state.
 import { useState } from "react";
 import EntityPickerDialog from "./EntityPickerDialog";
 

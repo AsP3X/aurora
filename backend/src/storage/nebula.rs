@@ -1,3 +1,5 @@
+// Human: HTTP client for Aurora's Nebula object storage gateway—authenticated with service JWTs and HMAC query signing for browser fetches.
+// Agent: USES reqwest with Bearer service token; IMPLEMENTS Storage; generate_signature BUILDS presigned GET URLs; READS base/public URLs + bucket.
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -7,6 +9,8 @@ use crate::storage::{Storage, StorageStream};
 
 type HmacSha256 = Hmac<Sha256>;
 
+// Human: Canonical string `${METHOD}\n${bucket}\n${key}\n${expires}` signed with the object-store signing secret for time-bounded URLs.
+// Agent: READS method, secret, bucket, key, expires; RETURNS hex HMAC; USED by presigned_url + presigned_segment_url.
 fn generate_signature(method: &str, secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
     let payload = format!("{}\n{}\n{}\n{}", method.to_uppercase(), bucket, key, expires);
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
@@ -26,6 +30,8 @@ pub struct NebulaStorage {
 }
 
 impl NebulaStorage {
+    // Human: Bootstrap HTTP client state and mint a long-lived backend JWT so subsequent object verbs share one Authorization header.
+    // Agent: READS jwt_secret + signing_secret; CALLS generate_service_token; TRIMS base URLs; LOGS non-secret connection metadata only.
     pub fn new(base_url: String, public_base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
         let token = generate_service_token(jwt_secret)?;
         let base_url = base_url.trim_end_matches('/').to_string();
@@ -55,6 +61,8 @@ impl NebulaStorage {
     }
 }
 
+// Human: Mint a dedicated HS256 token identifying the backend service subject so Nebula accepts bucket operations without user cookies.
+// Agent: READS jwt_secret; ENCODE Claims `{ sub: aurora-backend, role: admin }`; TTL ~1y; RETURNS compact JWT string.
 fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
     use serde::{Deserialize, Serialize};
@@ -93,6 +101,8 @@ fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
 
 #[async_trait::async_trait]
 impl Storage for NebulaStorage {
+    // Human: Stream the object bytes through reqwest into an async Reader-compatible byte stream with declared length and content-type.
+    // Agent: HTTP GET with Bearer; REQUIRES 2xx; MAPS Body bytes_stream into io::Error adapter; LOGS URL/status metadata.
     async fn get_stream(
         &self,
         key: &str,
@@ -130,6 +140,8 @@ impl Storage for NebulaStorage {
         Ok((Box::pin(stream), content_length, content_type))
     }
 
+    // Human: Cheap existence probe using HTTP HEAD so upload/commit paths can branch without downloading bodies.
+    // Agent: HTTP HEAD with Bearer; RETURNS status.is_success; LOGS debug only.
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
         let url = self.url(key);
         tracing::debug!(%url, key, "NebulaStorage HEAD request");
@@ -145,6 +157,8 @@ impl Storage for NebulaStorage {
         Ok(exists)
     }
 
+    // Human: Remove an object key; treat 404 as success so deletes are idempotent during cleanup paths.
+    // Agent: HTTP DELETE; ALLOWS 404; BAIL on other non-success; LOGS info/error with URL.
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         let url = self.url(key);
         tracing::info!(%url, key, "NebulaStorage DELETE request");
@@ -168,6 +182,8 @@ impl Storage for NebulaStorage {
         Ok(())
     }
 
+    // Human: Upload arbitrary bytes with explicit content type—used for audio, images, HLS segments, and playlists alike.
+    // Agent: HTTP PUT body=data; REQUIRES 2xx; SETS CONTENT-TYPE; LOGS len + URL.
     async fn put(
         &self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()> {
         let url = self.url(key);
@@ -195,6 +211,8 @@ impl Storage for NebulaStorage {
         Ok(())
     }
 
+    // Human: Hand clients a time-limited CDN-style URL for full-file streaming when HLS is not ready or for simple proxies.
+    // Agent: READS wall clock + expiry_seconds; APPENDS signature + expires query params on public_url; SAME scheme as segments.
     fn presigned_url(&self, key: &str, expiry_seconds: u64) -> anyhow::Result<String> {
         let expires = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
@@ -209,6 +227,8 @@ impl Storage for NebulaStorage {
         Ok(url)
     }
 
+    // Human: Variant kept distinct for clarity at call sites even though signing matches `presigned_url` today—HLS segments use the same GET HMAC contract.
+    // Agent: IDENTICAL signing inputs to presigned_url; RETURNS public_url + signature query; USED by handlers guessing nebula mode.
     fn presigned_segment_url(&self, key: &str, expires_secs: u64) -> anyhow::Result<String> {
         let expires = SystemTime::now()
             .duration_since(UNIX_EPOCH)?

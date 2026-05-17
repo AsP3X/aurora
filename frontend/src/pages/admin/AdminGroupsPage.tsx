@@ -1,3 +1,5 @@
+// Human: Manage permission groups — create group, assign permission keys, add/remove members from global user list.
+// Agent: LOAD permissions/groups/users; on selected group fetchGroupPermissions+fetchGroupMembers; SAVE setGroupPermissions.
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchPermissions,

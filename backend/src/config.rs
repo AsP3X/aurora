@@ -4,10 +4,12 @@ use serde::Deserialize;
 pub struct Config {
     #[serde(default = "default_database_url")]
     pub database_url: String,
-    #[allow(dead_code)]
+    // Human: Meilisearch endpoint for future full-text search (see /api/v1/search stub).
+    // Agent: READS MEILI_URL env; STORED on AppState; NOT yet used by search SDK calls.
     #[serde(default = "default_meili_url")]
     pub meili_url: String,
-    #[allow(dead_code)]
+    // Human: Meilisearch API key paired with meili_url when search is implemented.
+    // Agent: READS MEILI_MASTER_KEY env; STORED on AppState; NEVER exposed in HTTP responses.
     #[serde(default = "default_meili_master_key")]
     pub meili_master_key: String,
     #[serde(default = "default_jwt_secret")]

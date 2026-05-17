@@ -1,3 +1,5 @@
+// Human: Fixed admin navigation — highlights exact `/admin` vs prefix for deeper routes; mobile overlay closes on navigate.
+// Agent: READS pathname; MAP navItems; OVERLAY md:hidden; onCloseMobile on Link click.
 import { Link, useLocation } from "react-router-dom";
 
 interface NavItem {

@@ -1,3 +1,5 @@
+// Human: Searchable user picker — single-select (Enter picks top) vs multi-select with Done and max cap.
+// Agent: Fuse on email/id/role; MODE DISCRIMINANT multi; ESC closes via document listener; MAX_MULTI=40 in multi.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
 
@@ -41,12 +43,16 @@ export default function UserPickerDialog(props: UserPickerDialogProps) {
   const [draftIds, setDraftIds] = useState<string[]>(() => (multi ? [...props.selectedUserIds] : []));
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Human: Focus filter input whenever dialog becomes visible.
+  // Agent: EFFECT [open]; TIMEOUT 50ms focus; CLEANUP clears timeout.
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, [open]);
 
+  // Human: Click overlay is Close — Escape should behave the same for accessibility.
+  // Agent: EFFECT [open, onClose]; DOCUMENT keydown Escape listener.
   useEffect(() => {
     if (!open) return;
     const onEsc = (e: KeyboardEvent) => {

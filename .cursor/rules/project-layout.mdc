@@ -1,0 +1,35 @@
+---
+description: >-
+  Aurora repo layout—backend Rust API, frontend Vite app; where to implement
+  changes by default
+alwaysApply: true
+---
+
+# Aurora project layout
+
+**Aurora** is a self-hosted music streaming server (Rust API + React/Vite web player). There is **no** `apps/` monorepo and **no** Next.js app in this repository.
+
+## Directories
+
+| Path | Role |
+|------|------|
+| **`backend/`** | Rust / Axum API (`/api/v1`), SQLx migrations, Meilisearch integration |
+| **`frontend/`** | React + Vite + Tailwind web player and admin UI |
+| **`docs/`** | Project documentation |
+| **Root** | `package.json` (pnpm workspace scripts), `docker-compose.yml`, `README.md` |
+
+## Where to implement
+
+- **API, database, auth, streaming, search:** `backend/src/` and `backend/migrations/`.
+- **UI, client API calls, player/admin pages:** `frontend/src/` (especially `frontend/src/api/client.ts` for HTTP).
+- **Do not** assume paths from other projects (`apps/api`, `apps/web-vite`, `apps/web`, Prisma, etc.) unless the user explicitly ports work from elsewhere.
+
+## Local development (reference)
+
+- **`pnpm run dev`** — API (`:3000`) + Vite (`:5173`) via root scripts.
+- **`pnpm run dev:backend`** / **`pnpm run dev:frontend`** — one service at a time.
+- Env and defaults: `README.md`, `backend/src/config.rs`.
+
+## Package manager
+
+Root and frontend use **pnpm** (`packageManager` in root `package.json`). Prefer pnpm over npm/yarn for installs and scripts in this repo.

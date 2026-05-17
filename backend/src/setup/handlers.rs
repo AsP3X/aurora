@@ -1,3 +1,5 @@
+// Human: Expose build metadata and one-time tenant setup that mirrors register/login responses so the SPA can store a JWT immediately.
+// Agent: READS users COUNT for gating; WRITES users + app_settings + admin group_memberships in TX; RETURNS AuthResponse on success only once.
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,6 +19,8 @@ pub struct ReleaseInfo {
     pub environment: String,
 }
 
+// Human: Non-secret build fingerprint for `/api/v1` about screens—uses compile-time crate version plus runtime git SHA from AppState.
+// Agent: READS state.git_sha, state.environment; RETURNS JSON ReleaseInfo; NO DB queries.
 pub async fn release_info(State(state): State<Arc<AppState>>) -> Json<ReleaseInfo> {
     Json(ReleaseInfo {
         version: env!("CARGO_PKG_VERSION"),
@@ -39,6 +43,8 @@ pub struct SetupRequest {
     pub music_dir: Option<String>,
 }
 
+// Human: Tell the SPA whether any user row exists so it can route to setup vs login without probing protected endpoints.
+// Agent: READS COUNT(*) FROM users; RETURNS setup_complete bool; NO AUTH middleware on route.
 pub async fn setup_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupStatus>, AppError> {
@@ -51,6 +57,8 @@ pub async fn setup_status(
     }))
 }
 
+// Human: Atomic first admin creation with default settings—rejects weak passwords or repeat calls once the users table is non-empty.
+// Agent: WRITES users as role admin; INSERTS group admin UUID; SEEDS app_settings keys; RETURNS JWT via create_token; HTTP 409 if already initialized.
 pub async fn setup(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupRequest>,

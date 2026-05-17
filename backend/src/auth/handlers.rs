@@ -1,3 +1,5 @@
+// Human: Registration, login, JWT issue/verify, and the /auth/me profile payload.
+// Agent: WRITES users table; EMITS JWT Claims; RETURNS AuthResponse JSON; LOGS redacted emails only.
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -42,6 +44,8 @@ pub struct UserDto {
     pub permissions: Vec<String>,
 }
 
+// Human: Hash passwords with Argon2id defaults and a random salt so stored verifier strings are safe offline.
+// Agent: USES Argon2 + SaltString::generate; RETURNS PHC string; WRITES nothing; ERRORS propagate as password_hash::Error.
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -51,6 +55,8 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
     Ok(password_hash)
 }
 
+// Human: Check a candidate password against a PHC hash without logging either value.
+// Agent: READS password bytes + stored hash string; RETURNS bool; USES Argon2::verify_password; NO DB.
 fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::password_hash::Error> {
     let parsed_hash = PasswordHash::new(hash)?;
     let argon2 = Argon2::default();
@@ -59,6 +65,8 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::password_
         .is_ok())
 }
 
+// Human: Mint a short-lived HS256 JWT embedding subject id, email snapshot, role, and standard iat/exp claims.
+// Agent: WRITES JWT with EncodingKey from jwt_secret; RETURNS compact token string; TTL fixed ~24h via chrono.
 pub fn create_token(user_id: String, email: String, role: String, secret: &str) -> anyhow::Result<String> {
     let now = Utc::now();
     let claims = Claims {
@@ -78,6 +86,8 @@ pub fn create_token(user_id: String, email: String, role: String, secret: &str) 
     Ok(token)
 }
 
+// Human: Validate signature and decode claims using the same HS256 secret the issuer used—callers still must check DB state afterward.
+// Agent: READS token + secret; USES jsonwebtoken decode Default Validation; RETURNS Claims; ERRORS bubble as anyhow.
 pub fn decode_token(token: &str, secret: &str) -> anyhow::Result<Claims> {
     let validation = Validation::default();
     let token_data = decode::<Claims>(
@@ -88,11 +98,13 @@ pub fn decode_token(token: &str, secret: &str) -> anyhow::Result<Claims> {
     Ok(token_data.claims)
 }
 
+// Human: Create a listener account when policy allows, add default group membership, and return a ready-to-use JWT like login does.
+// Agent: READS app_settings flags; WRITES users + group_memberships in TX; RETURNS 409 on duplicate email; LOGS redacted email only.
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    info!(email = %body.email, "register attempt");
+    info!(email_redacted = %crate::redact::email_for_log(&body.email), "register attempt");
 
     let allow_public: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
@@ -148,7 +160,7 @@ pub async fn register(
 
             tx.commit().await?;
 
-            info!(user_id = %id, email = %body.email, "user registered");
+            info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&body.email), "user registered");
 
             let token = create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
                 .map_err(|e| AppError::Internal(e.into()))?;
@@ -167,21 +179,23 @@ pub async fn register(
             }))
         }
         Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-            warn!(email = %body.email, "registration failed: email already exists");
+            warn!(email_redacted = %crate::redact::email_for_log(&body.email), "registration failed: email already exists");
             Err(AppError::Conflict("email already exists".into()))
         }
         Err(e) => {
-            warn!(email = %body.email, error = %e, "registration failed");
+            warn!(email_redacted = %crate::redact::email_for_log(&body.email), error = %e, "registration failed");
             Err(AppError::Database(e))
         }
     }
 }
 
+// Human: Authenticate against the stored Argon hash and issue a JWT only when the account is enabled.
+// Agent: READS users by email; VERIFY password; RETURNS 401 bad creds; RETURNS 403 if disabled; EMITS token + permissions snapshot.
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    info!(email = %body.email, "login attempt");
+    info!(email_redacted = %crate::redact::email_for_log(&body.email), "login attempt");
 
     let row = sqlx::query_as::<_, (String, String, String, String, bool)>(
         "SELECT id, email, password_hash, role, enabled FROM users WHERE email = $1"
@@ -195,16 +209,16 @@ pub async fn login(
         .map_err(|_| AppError::Unauthorized)?;
 
     if !valid {
-        warn!(email = %body.email, "login failed: invalid password");
+        warn!(email_redacted = %crate::redact::email_for_log(&body.email), "login failed: invalid password");
         return Err(AppError::Unauthorized);
     }
 
     if !enabled {
-        warn!(email = %body.email, "login failed: account disabled");
+        warn!(email_redacted = %crate::redact::email_for_log(&body.email), "login failed: account disabled");
         return Err(AppError::Forbidden("account is disabled".into()));
     }
 
-    info!(user_id = %id, email = %email, role = %role, "login success");
+    info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&email), role = %role, "login success");
 
     let token = create_token(id.clone(), email.clone(), role.clone(), &state.jwt_secret)
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -223,6 +237,8 @@ pub async fn login(
     }))
 }
 
+// Human: Refresh the caller profile from the database so enabled flag, role label, and permission keys stay current versus JWT snapshot.
+// Agent: READS users by claims.sub; JOINS permission helpers; HTTP 404 if user row missing; LOGS redacted email.
 pub async fn me(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<Claims>,
@@ -238,7 +254,7 @@ pub async fn me(
 
     let permissions = get_user_permission_keys(&state.pool, &id).await;
 
-    info!(user_id = %id, email = %email, "me request");
+    info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&email), "me request");
 
     Ok(Json(UserDto {
         id,
@@ -249,6 +265,8 @@ pub async fn me(
     }))
 }
 
+// Human: Stub route kept for future OAuth wiring; today it only acknowledges the provider name in JSON.
+// Agent: HTTP 200 JSON message; NO DB; READS path provider string; PLACEHOLDER until real OAuth flow exists.
 pub async fn oauth_placeholder(
     axum::extract::Path(provider): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
