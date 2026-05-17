@@ -67,3 +67,19 @@ export interface AuthResponse {
   token: string;
   user: User;
 }
+
+// Human: One line of synced lyrics — text plus optional start time in milliseconds.
+// Agent: MIRRORS backend LyricLine; USED by LyricsPanel and AdminLyricsEditorPage.
+export interface LyricLine {
+  text: string;
+  start_ms?: number | null;
+}
+
+// Human: Full lyrics document for a song as returned by GET /songs/:id/lyrics.
+// Agent: INCLUDES synced flag; CONSUMED by player and admin editor.
+export interface SongLyrics {
+  song_id: string;
+  lines: LyricLine[];
+  synced: boolean;
+  updated_at: string;
+}

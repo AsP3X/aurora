@@ -1,6 +1,7 @@
 // Human: Admin music table — glass DataTable, search/upload toolbar, HLS badges, context menu, edit in GlassDialog, glass pagination.
 // Agent: fetchAdminSongs offset+query; ContextMenu; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled; USES PageHeader DataTable GlassDialog GlassButton.
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   fetchAdminSongs,
   deleteAdminSong,
@@ -64,6 +65,7 @@ function hlsEncodeBadge(song: Song): { label: string; className: string; title?:
 }
 
 export default function AdminLibraryPage() {
+  const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [songQuery, setSongQuery] = useState("");
   const [songOffset, setSongOffset] = useState(0);
@@ -290,6 +292,15 @@ export default function AdminLibraryPage() {
           </svg>
         ),
         onClick: () => void openEditDialog(song),
+      },
+      {
+        label: "Edit lyrics",
+        icon: (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h10M5 6a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6z" />
+          </svg>
+        ),
+        onClick: () => navigate(`/admin/library/${song.id}/lyrics`),
       },
       {
         label: song.enabled ? "Disable" : "Enable",

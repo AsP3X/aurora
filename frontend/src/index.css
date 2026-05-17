@@ -82,4 +82,145 @@
   .admin-panel {
     @apply bg-surface-900 border border-white/5 rounded-2xl;
   }
+
+  /* Human: Subtle glow on the active karaoke line in the player carousel. */
+  /* Agent: KEYFRAMES lyrics-current-glow; CLASS animate-lyrics-current-glow on center row. */
+  @keyframes lyrics-current-glow {
+    0%,
+    100% {
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.15);
+    }
+    50% {
+      text-shadow: 0 0 28px rgba(139, 92, 246, 0.45), 0 0 12px rgba(255, 255, 255, 0.2);
+    }
+  }
+
+  .animate-lyrics-current-glow {
+    animation: lyrics-current-glow 2.4s ease-in-out infinite;
+  }
+
+  /* Human: GPU-friendly vertical slide for the player lyrics strip. */
+  /* Agent: CLASS lyrics-carousel-track; will-change transform; backface-visibility hidden. */
+  .lyrics-carousel-track {
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  /* Human: Player stage animates grid columns so art + metadata slide left when lyrics open. */
+  /* Agent: CLASS player-stage; MODIFIERS --open|--closed; CELLS track+lyrics; TRANSITION grid-template-columns 650ms. */
+  .player-stage {
+    display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    align-items: center;
+    column-gap: 0;
+    transition:
+      grid-template-columns 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      column-gap 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-stage--closed {
+    grid-template-columns: minmax(0, 1fr) 0fr;
+  }
+
+  .player-stage--open {
+    grid-template-columns: minmax(0, min(100%, 340px)) minmax(0, 1fr);
+    column-gap: 1.25rem;
+  }
+
+  @media (max-width: 767px) {
+    .player-stage--open {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      row-gap: 1.25rem;
+    }
+
+    .player-lyrics-cell {
+      grid-column: 1;
+      grid-row: 2;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .player-stage--open {
+      column-gap: 2rem;
+    }
+  }
+
+  .player-track-cell {
+    grid-column: 1;
+    justify-self: center;
+    width: 100%;
+    max-width: 28rem;
+    min-width: 0;
+    transition:
+      max-width 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      justify-self 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-stage--open .player-track-cell {
+    justify-self: start;
+    max-width: min(100%, 340px);
+  }
+
+  .player-track-inner {
+    transition: gap 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-artwork-frame {
+    transition:
+      width 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      max-width 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-meta-block {
+    transition:
+      margin 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      text-align 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-chips-row {
+    transition:
+      max-height 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      margin 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-lyrics-cell {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 550ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .player-stage--open .player-lyrics-cell {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .player-stage,
+    .player-track-cell,
+    .player-artwork-frame,
+    .player-meta-block,
+    .player-chips-row {
+      will-change: max-width;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .player-stage,
+    .player-track-cell,
+    .player-track-inner,
+    .player-artwork-frame,
+    .player-meta-block,
+    .player-chips-row,
+    .player-lyrics-cell {
+      transition-duration: 0.01ms !important;
+    }
+  }
 }

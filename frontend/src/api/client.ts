@@ -1,4 +1,4 @@
-import type { Song, SongDraft, Playlist } from "../types";
+import type { Song, SongDraft, Playlist, SongLyrics, LyricLine } from "../types";
 
 // Human: Resolve API root from Vite env or same host on port 3000 for local dev.
 // Agent: READS VITE_API_URL; RETURNS /api/v1 base URL string.
@@ -311,6 +311,33 @@ export async function fetchPlaylistUrl(id: string): Promise<string> {
 export async function fetchArtworkUrl(id: string): Promise<string | null> {
   const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string | null };
   return res.url;
+}
+
+// Human: Load synced lyrics for playback UI (404 when the song has no lyrics yet).
+// Agent: GET /songs/:id/lyrics; REQUIRES auth + library.view; RETURNS SongLyrics.
+export async function fetchSongLyrics(id: string): Promise<SongLyrics> {
+  return apiFetch(`/songs/${id}/lyrics`) as Promise<SongLyrics>;
+}
+
+// Human: Admin lyrics editor loads the same document via the admin-scoped route.
+// Agent: GET /admin/songs/:id/lyrics; REQUIRES admin access.
+export async function fetchAdminSongLyrics(id: string): Promise<SongLyrics> {
+  return apiFetch(`/admin/songs/${id}/lyrics`) as Promise<SongLyrics>;
+}
+
+// Human: Persist lyric lines and timestamps from the admin sync editor.
+// Agent: PUT /admin/songs/:id/lyrics; BODY { lines }; RETURNS SongLyrics.
+export async function saveAdminSongLyrics(id: string, lines: LyricLine[]): Promise<SongLyrics> {
+  return apiFetch(`/admin/songs/${id}/lyrics`, {
+    method: "PUT",
+    body: JSON.stringify({ lines }),
+  }) as Promise<SongLyrics>;
+}
+
+// Human: Remove all lyrics for a song from the admin editor.
+// Agent: DELETE /admin/songs/:id/lyrics; RETURNS { ok: true }.
+export async function deleteAdminSongLyrics(id: string) {
+  return apiFetch(`/admin/songs/${id}/lyrics`, { method: "DELETE" });
 }
 
 export async function fetchPlaylists() {
