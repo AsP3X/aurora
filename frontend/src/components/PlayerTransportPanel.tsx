@@ -2,6 +2,7 @@
 // Agent: PROPS playback state + handlers; OPTIONAL queueButtonRef+keyboardHintsId+artworkLink; RENDERS progress row + transport row matching PlayerBar.
 import { useCallback, useState, type RefObject } from "react";
 import ArtworkImage from "./ArtworkImage";
+import { resolveTrackDuration } from "../lib/playbackDuration";
 import type { Song } from "../types";
 
 // Human: Format seconds as `m:ss` for labels on the seek bar and time readouts.
@@ -103,9 +104,16 @@ export default function PlayerTransportPanel({
     [onVolumeChange],
   );
 
-  const progressPercent = duration ? (progress / duration) * 100 : 0;
-  const bufferedPercent = duration ? (buffered / duration) * 100 : 0;
-  const trackDuration = duration || song.duration_seconds;
+  // Human: One duration drives fill width, range max, tooltips, and time labels so the bar always matches the audible track.
+  // Agent: resolveTrackDuration(duration, song.duration_seconds); PERCENTS clamped 0–100; range value min(progress, trackDuration).
+  const trackDuration = resolveTrackDuration(duration, song.duration_seconds);
+  const progressPercent =
+    trackDuration > 0 ? Math.min(100, (progress / trackDuration) * 100) : 0;
+  const bufferedPercent =
+    trackDuration > 0 && buffered > 0
+      ? Math.min(100, (buffered / trackDuration) * 100)
+      : 0;
+  const seekValue = trackDuration > 0 ? Math.min(progress, trackDuration) : progress;
 
   return (
     <div className={`relative rounded-[32px] ${className}`.trim()}>
@@ -164,11 +172,13 @@ export default function PlayerTransportPanel({
           <input
             type="range"
             min={0}
-            max={trackDuration}
-            value={progress}
+            max={trackDuration > 0 ? trackDuration : 1}
+            step={0.05}
+            value={seekValue}
             onChange={handleSeekInput}
+            disabled={trackDuration <= 0}
             aria-label="Seek"
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
           />
 
           <div

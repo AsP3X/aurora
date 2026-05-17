@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import Hls from "hls.js";
 import { usePlayer } from "../context/PlayerContext";
 import { logHistory, updateHistory } from "../api/client";
+import { clampProgressToTrack, readMediaDurationSeconds } from "../lib/playbackDuration";
 import PlayerTransportPanel from "./PlayerTransportPanel";
 import QueueDrawer from "./QueueDrawer";
 
@@ -165,13 +166,27 @@ export default function PlayerBar() {
     }
   }, [audioRef, setProgress, setBuffered, isPlaying]);
 
-  // Human: Prefer the browser’s `duration` once metadata is known — can differ from API `duration_seconds`.
-  // Agent: onLoadedMetadata; CALLS setDuration(audio.duration).
-  const handleLoadedMetadata = useCallback(() => {
+  // Human: HLS and progressive streams may report length late or as Infinity — listen for real updates without wiping catalog duration.
+  // Agent: EFFECT on currentStreamUrl+currentSong.id; LISTENS loadedmetadata+durationchange; SETS finite audio.duration; CLAMPS progress.
+  useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
-    setDuration(audio.duration || 0);
-  }, [audioRef, setDuration]);
+    if (!audio || !currentSong) return;
+
+    const syncDurationFromElement = () => {
+      const fromMedia = readMediaDurationSeconds(audio);
+      if (fromMedia == null) return;
+      setDuration(fromMedia);
+      setProgress(clampProgressToTrack(audio.currentTime, fromMedia));
+    };
+
+    syncDurationFromElement();
+    audio.addEventListener("loadedmetadata", syncDurationFromElement);
+    audio.addEventListener("durationchange", syncDurationFromElement);
+    return () => {
+      audio.removeEventListener("loadedmetadata", syncDurationFromElement);
+      audio.removeEventListener("durationchange", syncDurationFromElement);
+    };
+  }, [currentStreamUrl, currentSong?.id, audioRef, setDuration, setProgress]);
 
   // Human: Finalize listen stats for the finished track then auto-advance if a queue exists.
   // Agent: onEnded; CALLS updateHistory with completed flag; CLEARS session refs; CALLS playNext when queue non-empty.
@@ -250,7 +265,6 @@ export default function PlayerBar() {
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
         onError={handleAudioError}
         preload="metadata"

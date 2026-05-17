@@ -1,6 +1,7 @@
 // Human: Shared seek bar with hover time tooltip and optional sync markers for lyric editing.
 // Agent: PROPS progress+duration+onSeek+markers; INTERNAL hoverPercent; EMITS onSeek(seconds).
 import { useCallback, useState } from "react";
+import { resolveTrackDuration } from "../lib/playbackDuration";
 
 export interface SeekMarker {
   timeSeconds: number;
@@ -10,6 +11,9 @@ export interface SeekMarker {
 interface SeekProgressBarProps {
   progress: number;
   duration: number;
+  /** Human: Catalog length used when `duration` from the element is not yet known. */
+  // Agent: OPTIONAL fallback for resolveTrackDuration.
+  catalogDurationSeconds?: number;
   onSeek: (timeSeconds: number) => void;
   buffered?: number;
   disabled?: boolean;
@@ -37,6 +41,7 @@ function formatDelta(seconds: number) {
 export default function SeekProgressBar({
   progress,
   duration,
+  catalogDurationSeconds = 0,
   onSeek,
   buffered = 0,
   disabled = false,
@@ -62,9 +67,15 @@ export default function SeekProgressBar({
     setHoverPercent(null);
   }, []);
 
-  const max = duration > 0 ? duration : 1;
-  const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
-  const bufferedPercent = duration > 0 && buffered > 0 ? (buffered / duration) * 100 : 0;
+  const trackDuration = resolveTrackDuration(duration, catalogDurationSeconds);
+  const max = trackDuration > 0 ? trackDuration : 1;
+  const progressPercent =
+    trackDuration > 0 ? Math.min(100, (progress / trackDuration) * 100) : 0;
+  const bufferedPercent =
+    trackDuration > 0 && buffered > 0
+      ? Math.min(100, (buffered / trackDuration) * 100)
+      : 0;
+  const seekValue = trackDuration > 0 ? Math.min(progress, trackDuration) : progress;
 
   function handleSeekInput(e: React.ChangeEvent<HTMLInputElement>) {
     onSeek(Number(e.target.value));
@@ -74,7 +85,7 @@ export default function SeekProgressBar({
     <div className={className}>
       <div className="relative pt-4">
         {markers.map((marker, i) => {
-          const leftPct = duration > 0 ? (marker.timeSeconds / duration) * 100 : 0;
+          const leftPct = trackDuration > 0 ? (marker.timeSeconds / trackDuration) * 100 : 0;
           return (
             <button
               key={`${marker.timeSeconds}-${marker.label ?? i}`}
@@ -138,9 +149,9 @@ export default function SeekProgressBar({
             min={0}
             max={max}
             step={0.05}
-            value={Math.min(progress, max)}
+            value={seekValue}
             onChange={handleSeekInput}
-            disabled={disabled || duration <= 0}
+            disabled={disabled || trackDuration <= 0}
             aria-label="Seek"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-30"
           />
@@ -152,11 +163,15 @@ export default function SeekProgressBar({
             <div className="flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] opacity-0 scale-75 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0">
               <div className="bg-white rounded-xl px-4 py-3 flex flex-col items-center gap-1 relative z-10 shadow-2xl shadow-black/30 ring-2 ring-aurora-500/20">
                 <span className="text-base font-bold text-surface-900 leading-none tracking-tight">
-                  {formatTime(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 : 0)}
+                  {formatTime(
+                    trackDuration ? (trackDuration * (hoverPercent ?? progressPercent)) / 100 : 0,
+                  )}
                 </span>
                 <span className="text-xs font-semibold text-surface-600 leading-none">
                   {formatDelta(
-                    duration ? (duration * (hoverPercent ?? progressPercent)) / 100 - progress : 0,
+                    trackDuration
+                      ? (trackDuration * (hoverPercent ?? progressPercent)) / 100 - progress
+                      : 0,
                   )}
                 </span>
               </div>
@@ -169,7 +184,7 @@ export default function SeekProgressBar({
       {showTimeLabels && (
         <div className="flex items-center justify-between text-xs text-surface-500 font-mono mt-1.5">
           <span>{formatTime(progress)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{formatTime(trackDuration)}</span>
         </div>
       )}
     </div>

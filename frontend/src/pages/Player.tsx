@@ -7,6 +7,7 @@ import { fetchSong, fetchSongLyrics } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 import LyricsPanel from "../components/LyricsPanel";
 import PlayerTransportPanel from "../components/PlayerTransportPanel";
+import { readMediaDurationSeconds, resolveTrackDuration } from "../lib/playbackDuration";
 import type { SongLyrics } from "../types";
 
 export default function Player() {
@@ -67,7 +68,10 @@ export default function Player() {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;
     setProgress(audio.currentTime);
-    setDuration(audio.duration || currentSong.duration_seconds || 0);
+    const fromMedia = readMediaDurationSeconds(audio);
+    setDuration(
+      fromMedia ?? resolveTrackDuration(0, currentSong.duration_seconds),
+    );
     if (audio.buffered.length > 0) {
       setBuffered(audio.buffered.end(audio.buffered.length - 1));
     }
