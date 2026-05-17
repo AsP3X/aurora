@@ -20,6 +20,14 @@ pnpm install
 
 This installs root tooling and the frontend workspace. The API is Rust (`backend/`); run `cargo build` there if you want to verify the backend separately.
 
+For local API runs, generate secrets once (creates `backend/.env` and root `.env`):
+
+```bash
+./init-env.sh
+```
+
+The backend refuses to start with known weak or placeholder secrets (`GENERATE_ME`, `change-me-in-production`, `dev-*-change-me`).
+
 ### Start everything
 
 ```bash
@@ -42,6 +50,14 @@ pnpm run dev:frontend
 ```
 
 ### Start with Docker (Postgres + Meilisearch)
+
+Generate secrets once (creates `.env` from `.env.example` with random values):
+
+```bash
+docker compose --profile init run --rm init-env
+```
+
+Then start the stack (Compose requires `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, and `NOS_*` secrets in `.env`):
 
 ```bash
 docker compose up --build
@@ -93,5 +109,9 @@ Unauthenticated `GET /api/v1/version` returns the crate version, optional `git_s
 | `AURORA_ENVIRONMENT` | `development` | Set to `production` to hide detailed query parse errors on 400 responses |
 | `GIT_SHA` | (unset) | Shown on `/api/v1/version`; set at build (`docker build --build-arg GIT_SHA=...`) or runtime |
 | `ADMIN_LISTENING_RPM` | `120` | Per-admin rolling cap (60s window) for aggregate listening API POST/GET |
+| `AUTH_LOGIN_RPM` | `15` | Per-IP rolling cap (60s window) for `POST /auth/login` |
+| `AUTH_REGISTER_RPM` | `5` | Per-IP rolling cap (60s window) for `POST /auth/register` |
+| `UPLOAD_RPM` | `20` | Per-admin-user rolling cap (60s window) for song stage/commit uploads |
+| `HLS_SEGMENT_RPM` | `480` | Per-user-per-song rolling cap (60s window) for `GET .../segments/{name}` |
 
 See `backend/src/config.rs` for full configuration options.

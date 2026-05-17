@@ -43,8 +43,8 @@ services:
       dockerfile: Dockerfile
     container_name: aurora-object-storage
     environment:
-      NOS_JWT_SECRET: ${NOS_JWT_SECRET:-dev-nos-jwt-secret-change-me}
-      NOS_SIGNING_SECRET: ${NOS_SIGNING_SECRET:-dev-nos-signing-secret-change-me}
+      NOS_JWT_SECRET: ${NOS_JWT_SECRET:?Set NOS_JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      NOS_SIGNING_SECRET: ${NOS_SIGNING_SECRET:?Set NOS_SIGNING_SECRET in .env — run: docker compose --profile init run --rm init-env}
       NOS_BIND_ADDR: 0.0.0.0:9000
       NOS_DATA_DIR: /data/blobs
       NOS_META_PATH: /data/meta/metadata.db
@@ -65,10 +65,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://aurora:aurora@postgres:5432/aurora}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
-      OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:-dev-nos-jwt-secret-change-me}
-      SIGNING_SECRET: ${NOS_SIGNING_SECRET:-dev-nos-signing-secret-change-me}
-      MASTER_SECRET: ${MASTER_SECRET:-dev-master-secret-change-me}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:?Set NOS_JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      SIGNING_SECRET: ${SIGNING_SECRET:?Set SIGNING_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      MASTER_SECRET: ${MASTER_SECRET:?Set MASTER_SECRET in .env — run: docker compose --profile init run --rm init-env}
       URL_EXPIRY_SECONDS: ${URL_EXPIRY_SECONDS:-3600}
       MUSIC_DIR: ${MUSIC_DIR:-/music}
       STORAGE_MODE: ${STORAGE_MODE:-proxy}
@@ -80,6 +80,10 @@ services:
       AURORA_ENVIRONMENT: ${AURORA_ENVIRONMENT:-development}
       GIT_SHA: ${GIT_SHA:-unknown}
       ADMIN_LISTENING_RPM: ${ADMIN_LISTENING_RPM:-120}
+      AUTH_LOGIN_RPM: ${AUTH_LOGIN_RPM:-15}
+      AUTH_REGISTER_RPM: ${AUTH_REGISTER_RPM:-5}
+      UPLOAD_RPM: ${UPLOAD_RPM:-20}
+      HLS_SEGMENT_RPM: ${HLS_SEGMENT_RPM:-480}
     ports:
       - "3000:3000"
     volumes:

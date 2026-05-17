@@ -4,7 +4,7 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use axum::{extract::State, Json};
+use axum::{extract::State, http::HeaderMap, Json};
 use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -102,8 +102,12 @@ pub fn decode_token(token: &str, secret: &str) -> anyhow::Result<Claims> {
 // Agent: READS app_settings flags; WRITES users + group_memberships in TX; RETURNS 409 on duplicate email; LOGS redacted email only.
 pub async fn register(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    let ip = crate::rate_limit::client_ip_from_headers(&headers);
+    crate::rate_limit::enforce(&state.auth_register_rl, &ip)?;
+
     info!(email_redacted = %crate::redact::email_for_log(&body.email), "register attempt");
 
     let allow_public: Option<(String,)> = sqlx::query_as(
@@ -193,8 +197,12 @@ pub async fn register(
 // Agent: READS users by email; VERIFY password; RETURNS 401 bad creds; RETURNS 403 if disabled; EMITS token + permissions snapshot.
 pub async fn login(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    let ip = crate::rate_limit::client_ip_from_headers(&headers);
+    crate::rate_limit::enforce(&state.auth_login_rl, &ip)?;
+
     info!(email_redacted = %crate::redact::email_for_log(&body.email), "login attempt");
 
     let row = sqlx::query_as::<_, (String, String, String, String, bool)>(

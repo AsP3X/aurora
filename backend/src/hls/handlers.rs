@@ -118,6 +118,9 @@ pub async fn get_segment(
 ) -> Result<Response, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
+    let rl_key = format!("{}:{}", claims.sub, id);
+    crate::rate_limit::enforce(&state.hls_segment_rl, &rl_key)?;
+
     let prefix = format!("songs/{}/segments/", id);
     let key = format!("{}{}", prefix, segment_name);
 

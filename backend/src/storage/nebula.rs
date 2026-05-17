@@ -108,7 +108,7 @@ impl Storage for NebulaStorage {
         key: &str,
     ) -> anyhow::Result<(StorageStream, u64, String)> {
         let url = self.url(key);
-        tracing::info!(%url, key, "NebulaStorage GET request");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage GET request");
         let response = self
             .client
             .get(&url)
@@ -118,7 +118,7 @@ impl Storage for NebulaStorage {
 
         let status = response.status();
         if !status.is_success() {
-            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage GET failed");
+            tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage GET failed");
             anyhow::bail!("Nebula OS GET failed: {} {}", status.as_u16(), url);
         }
 
@@ -132,7 +132,7 @@ impl Storage for NebulaStorage {
             .unwrap_or("application/octet-stream")
             .to_string();
 
-        tracing::info!(%url, key, content_length, %content_type, "NebulaStorage GET success");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, content_length, %content_type, "NebulaStorage GET success");
         let stream = response.bytes_stream().map(|res| {
             res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         });
@@ -144,7 +144,7 @@ impl Storage for NebulaStorage {
     // Agent: HTTP HEAD with Bearer; RETURNS status.is_success; LOGS debug only.
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
         let url = self.url(key);
-        tracing::debug!(%url, key, "NebulaStorage HEAD request");
+        tracing::debug!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage HEAD request");
         let response = self
             .client
             .head(&url)
@@ -153,7 +153,7 @@ impl Storage for NebulaStorage {
             .await?;
 
         let exists = response.status().is_success();
-        tracing::debug!(%url, key, exists, "NebulaStorage HEAD result");
+        tracing::debug!(url_redacted = %crate::redact::url_for_log(&url), key, exists, "NebulaStorage HEAD result");
         Ok(exists)
     }
 
@@ -161,7 +161,7 @@ impl Storage for NebulaStorage {
     // Agent: HTTP DELETE; ALLOWS 404; BAIL on other non-success; LOGS info/error with URL.
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         let url = self.url(key);
-        tracing::info!(%url, key, "NebulaStorage DELETE request");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage DELETE request");
         let response = self
             .client
             .delete(&url)
@@ -171,14 +171,14 @@ impl Storage for NebulaStorage {
 
         let status = response.status();
         if !status.is_success() && status.as_u16() != 404 {
-            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage DELETE failed");
+            tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage DELETE failed");
             anyhow::bail!(
                 "Nebula OS DELETE failed: {} {}",
                 status.as_u16(),
                 url
             );
         }
-        tracing::info!(%url, key, "NebulaStorage DELETE success");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage DELETE success");
         Ok(())
     }
 
@@ -188,7 +188,7 @@ impl Storage for NebulaStorage {
         &self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()> {
         let url = self.url(key);
         let len = data.len();
-        tracing::info!(%url, key, %content_type, len, "NebulaStorage PUT request");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, %content_type, len, "NebulaStorage PUT request");
         let response = self
             .client
             .put(&url)
@@ -200,14 +200,14 @@ impl Storage for NebulaStorage {
 
         let status = response.status();
         if !status.is_success() {
-            tracing::error!(%url, key, status = status.as_u16(), "NebulaStorage PUT failed");
+            tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage PUT failed");
             anyhow::bail!(
                 "Nebula OS PUT failed: {} {}",
                 status.as_u16(),
                 url
             );
         }
-        tracing::info!(%url, key, "NebulaStorage PUT success");
+        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage PUT success");
         Ok(())
     }
 
@@ -223,7 +223,7 @@ impl Storage for NebulaStorage {
             "{}?signature={}&expires={}",
             self.public_url(key), signature, expires
         );
-        tracing::debug!(key, %url, expires, "NebulaStorage presigned_url generated");
+        tracing::debug!(key, url_redacted = %crate::redact::url_for_log(&url), expires, "NebulaStorage presigned_url generated");
         Ok(url)
     }
 
@@ -239,7 +239,7 @@ impl Storage for NebulaStorage {
             "{}?signature={}&expires={}",
             self.public_url(key), signature, expires
         );
-        tracing::debug!(key, %url, expires, "NebulaStorage presigned_segment_url generated");
+        tracing::debug!(key, url_redacted = %crate::redact::url_for_log(&url), expires, "NebulaStorage presigned_segment_url generated");
         Ok(url)
     }
 }

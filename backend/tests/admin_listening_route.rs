@@ -19,6 +19,10 @@ async fn test_config(db_url: &str, music_dir: &str) -> Config {
     std::env::set_var("JWT_SECRET", strong_secret());
     std::env::set_var("SIGNING_SECRET", "test-signing-secret-not-default-value");
     std::env::set_var("MASTER_SECRET", "test-master-secret-not-default-value");
+    std::env::set_var(
+        "OBJECT_STORAGE_JWT_SECRET",
+        "test-object-storage-jwt-not-default-value",
+    );
     std::env::set_var("AURORA_ENVIRONMENT", "development");
     Config::from_env().expect("test config")
 }

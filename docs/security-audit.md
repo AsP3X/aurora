@@ -1,55 +1,121 @@
- ---
-  Security Review: Aurora Music Server
+# Security review: Aurora music server
 
-  Reviewed: 2026-05-10 | 7 candidates assessed, 4 false positives removed, 3 confirmed
+| Field | Value |
+|-------|--------|
+| **Original review** | 2026-05-10 |
+| **Re-verification** | 2026-05-17 |
+| **Remediation completed** | 2026-05-17 |
+| **Scope** | 7 candidates assessed originally; 4 false positives removed; **3 confirmed** (all remediated) |
+| **Regression tests** | `backend/tests/security_audit_regressions.rs`, `backend/src/secrets.rs` (unit tests) |
 
-  ---
-  Vuln 1 — Auth Bypass: allow_public_registration Never Enforced
+---
 
-  File: backend/src/auth/handlers.rs:90–155, backend/src/main.rs:77
-  Severity: High | Confidence: 9/10 | Category: auth_bypass
+## Summary
 
-  Description: The admin can set allow_public_registration = false via the setup flow, which is written to app_settings in the database. However, the register handler never reads this setting, and there is no
-  middleware or guard that checks it before the route executes. The route sits in public_routes with no auth layer whatsoever. Registration succeeds regardless of admin intent.
+| ID | Finding | Severity | Status |
+|----|---------|----------|--------|
+| [Vuln 1](#vuln-1--auth-bypass-allow_public_registration) | `allow_public_registration` not enforced on register | High | **Fixed** |
+| [Vuln 2](#vuln-2--forged-jwts-via-weak-default-secrets) | Known weak JWT / signing defaults | High | **Fixed** |
+| [Vuln 3](#vuln-3--privilege-escalation-via-usersmanage) | `users.manage` could change roles | Medium | **Fixed** |
 
-  Exploit Scenario: Admin deploys an invite-only instance and disables public registration. An attacker sends one unauthenticated request:
-  POST /api/v1/auth/register
-  {"email":"attacker@evil.com","password":"hunter2"}
-  The server returns a valid listener JWT with no preconditions. The attacker now has authenticated access to the library, streaming, playlists, and play history.
+---
 
-  Recommendation: At the top of the register handler, read allow_public_registration from app_settings and return 403 Forbidden if it is false. This is a one-query check that should mirror how the setup
-  handler already writes the flag.
+## Re-verification method (2026-05-17)
 
-  ---
-  Vuln 2 — Forged JWTs via Publicly Known Default Secret
+1. **Code review** — handlers, `backend/src/secrets.rs`, `docker-compose.yml`, Nebula startup.
+2. **Automated tests** — `cargo test --test security_audit_regressions` and `cargo test secrets::`.
+3. **Compose** — secret vars use `${VAR:?}` (no `dev-*` fallbacks).
 
-  File: backend/src/config.rs:41, backend/docker-compose.yml:40
-  Severity: High | Confidence: 9/10 | Category: broken_auth
+---
 
-  Description: The application falls back to "change-me-in-production" (code default) or "change-me-in-production-jwt-secret" (Docker Compose default) when JWT_SECRET is not set. Neither value is secret — both
-   are committed to the public repository. No startup validation warns or aborts when the default is detected. A deployment that takes no configuration action runs with a publicly known signing key.
+## Vuln 1 — Auth bypass: `allow_public_registration`
 
-  Exploit Scenario: Operator runs docker-compose up without setting JWT_SECRET. An attacker signs any JWT payload with the known secret using standard tooling (e.g. jwt.io or python-jose) and includes "role":
-  "admin". The server's decode_token accepts it as valid. The attacker has unconditional admin access: song upload/deletion, user management, and all system settings.
+| | |
+|--|--|
+| **Severity** | High |
+| **Status** | **Fixed** |
 
-  Recommendation: On startup, compare the loaded secret against both known defaults and abort with a clear error message if a match is found. Alternatively, generate a random secret on first run and persist
-  it, refusing to start if none is configured. The docker-compose file should use ${JWT_SECRET:?JWT_SECRET must be set} syntax to fail fast at compose startup.
+### Fix
 
-  ---
-  Vuln 3 — Privilege Escalation: users.manage Grants Role Promotion
+`register` returns **403** when `app_settings.allow_public_registration` is `"false"` (`backend/src/auth/handlers.rs`).
 
-  File: backend/src/permissions/mod.rs:137–152, backend/src/admin/handlers.rs:245–285
-  Severity: Medium | Confidence: 9/10 | Category: privilege_escalation
+### Verification
 
-  Description: require_admin_access admits any user whose permissions include users.manage — without requiring role == "admin". The update_user_role endpoint (PUT /api/v1/admin/users/{id}/role) uses only
-  require_admin_access, with no further check that the caller already holds role = "admin". It also has no self-targeting guard (unlike delete_user, which explicitly blocks this). A user granted users.manage
-  can promote themselves or any other user to role = "admin".
+| Test | Result |
+|------|--------|
+| `register_returns_forbidden_when_public_registration_disabled` | Pass |
+| `register_succeeds_when_public_registration_enabled` | Pass |
 
-  Exploit Scenario: An admin grants a "moderator" account the users.manage permission to handle routine user support. That user sends:
-  PUT /api/v1/admin/users/{own-user-id}/role
-  {"role": "admin"}
-  This updates their database row. On next login, their JWT carries role: "admin", granting unconditional require_admin_access passage forever — including ability to upload/delete songs, mutate app settings,
-  and demote other admins. Even if the admin later revokes users.manage, the promoted role persists until manually reset in the database.
+---
 
-  Recommendation: Add a role == "admin" check inside update_user_role before executing the update — only full admins should be able to change roles. Also add a self-targeting guard (mirror the pattern from
-  delete_user) and validate body.role against an explicit allowlist (["admin", "listener"]) rather than accepting arbitrary strings.
+## Vuln 2 — Forged JWTs via weak default secrets
+
+| | |
+|--|--|
+| **Severity** | High |
+| **Status** | **Fixed** |
+
+### Fix
+
+1. **`backend/src/secrets.rs`** — `validate_startup_secrets()` rejects known weak values (including `dev-jwt-secret-change-me`, compose placeholders `GENERATE_ME`) and secrets shorter than 32 characters.
+2. **Startup** — Called from `run()` and `create_app_state()` so every boot path is gated.
+3. **`docker-compose.yml`** — `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, `NOS_JWT_SECRET`, `NOS_SIGNING_SECRET` use `${VAR:?…}` (fail if `.env` missing).
+4. **`nebula-os`** — `secrets.rs` validates `NOS_JWT_SECRET` / `NOS_SIGNING_SECRET` at startup.
+5. **Docs** — README Docker section documents `docker compose --profile init run --rm init-env` before `up`.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `startup_rejects_compose_weak_jwt_default` | Pass |
+| `startup_rejects_legacy_change_me_jwt_default` | Pass |
+| `create_app_state_rejects_weak_signing_secret` | Pass |
+| `weak_secret_helper_covers_documented_defaults` | Pass |
+| Compose has no `:-dev-*` secret fallbacks | Pass (review) |
+
+---
+
+## Vuln 3 — Privilege escalation: `users.manage` grants role promotion
+
+| | |
+|--|--|
+| **Severity** | Medium |
+| **Status** | **Fixed** |
+
+### Fix
+
+`update_user_role` requires JWT `role == "admin"`, blocks self-targeting, allowlists `admin` / `listener` (`backend/src/admin/handlers.rs`).
+
+### Verification
+
+| Test | Result |
+|------|--------|
+| `update_user_role_forbidden_for_listener_with_users_manage` | Pass |
+| `update_user_role_rejects_self_targeting` | Pass |
+
+---
+
+## False positives (original review)
+
+Four of seven candidates were false positives in the 2026-05-10 review; not tracked here.
+
+---
+
+## Running regression tests
+
+From `backend/`:
+
+```bash
+cargo test --test security_audit_regressions
+cargo test secrets::
+```
+
+---
+
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-05-10 | Initial review — 3 confirmed findings |
+| 2026-05-17 | Re-verification; Vuln 2 partial |
+| 2026-05-17 | All three fixed; secrets module, compose hardening, expanded tests |
