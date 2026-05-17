@@ -240,18 +240,32 @@ function xhrUploadForm<T>(
   });
 }
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: string;
+  enabled?: boolean;
+  permissions: string[];
+};
+
+export type AuthResponse = {
+  token?: string | null;
+  pending_activation?: boolean;
+  user: AuthUser;
+};
+
 export async function login(email: string, password: string) {
   return apiFetch("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
-  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
+  }) as Promise<AuthResponse>;
 }
 
 export async function register(email: string, password: string) {
   return apiFetch("/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
-  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
+  }) as Promise<AuthResponse>;
 }
 
 export async function me() {
@@ -500,6 +514,12 @@ export async function fetchPublicRegistrationSetting() {
   return apiFetch("/settings/registration", { cache: "no-store" }) as Promise<{ allow_public_registration: boolean }>;
 }
 
+export async function fetchPublicActivationSetting() {
+  return apiFetch("/settings/activation", { cache: "no-store" }) as Promise<{
+    require_account_activation: boolean;
+  }>;
+}
+
 export async function setup(body: {
   email: string;
   password: string;
@@ -703,6 +723,8 @@ export async function retryAdminSongHls(id: string) {
   }>;
 }
 
+// Human: Admin banner payload when Meilisearch lags behind the authoritative SQL library.
+// Agent: READS /admin/search/sync-status JSON; CONSUMED by AdminLibraryPage warning strip.
 export interface SearchSyncStatus {
   meili_configured: boolean;
   pending_count: number;
@@ -718,6 +740,8 @@ export async function fetchSearchSyncStatus() {
   return apiFetch("/admin/search/sync-status") as Promise<SearchSyncStatus>;
 }
 
+// Human: Ask the server to flush queued index operations now instead of waiting for the worker tick.
+// Agent: POST /admin/search/retry-sync; RETURNS refreshed SearchSyncStatus.
 export async function retrySearchSync() {
   return apiFetch("/admin/search/retry-sync", { method: "POST" }) as Promise<SearchSyncStatus>;
 }

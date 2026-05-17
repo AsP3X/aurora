@@ -620,6 +620,8 @@ pub async fn commit_song(
             .execute(&state.pool)
             .await;
 
+            // Human: Return the committed song immediately while ffmpeg runs in a detached task.
+            // Agent: SETS hls_encode_status pending; SPAWNS encode_job with staging cleanup keys.
             crate::hls::encode_job::spawn_hls_encode_job(
                 state.pool.clone(),
                 state.storage.clone(),
@@ -640,6 +642,8 @@ pub async fn commit_song(
                 tracing::warn!("Failed to populate genres after commit: {}", e);
             }
 
+            // Human: Index the new library row for search as soon as the DB commit succeeds.
+            // Agent: tokio::spawn notify_song_upsert; QUEUES retry row when Meilisearch is down.
             let song_id_for_search = song.id.clone();
             let sync = state.search_sync.clone();
             tokio::spawn(async move {

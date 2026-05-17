@@ -1,5 +1,5 @@
-// Human: Namespaces admin-only HTTP handlers (library CRUD helpers, settings, RBAC-adjacent user ops) and song upload staging.
-// Agent: EXPORTS handlers + upload modules; NO runtime code here; ROUTER wires in lib.rs.
+// Human: Namespaces admin-only HTTP handlers (library CRUD, HLS retry, settings, RBAC) and song upload staging.
+// Agent: EXPORTS handlers + hls_handlers + upload; ROUTER wires retry/search routes in lib.rs.
 pub mod handlers;
 pub mod hls_handlers;
 pub mod upload;

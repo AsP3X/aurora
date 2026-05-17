@@ -112,11 +112,11 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 ### IMP-008 — Account activation end-to-end
 
-- [ ] **Status**
+- [x] **Status**
 - **Priority:** Medium
 - **Summary:** Verify `require_account_activation` is enforced on login and surfaced in admin UI (approve/disable users).
 - **References:** `backend/src/auth/handlers.rs`, admin users pages
-- **Done notes:**
+- **Done notes:** Register omits JWT when activation required (`pending_activation`); login/middleware return 403 for disabled users; `GET /settings/activation`; Login page pending-approval UX; Admin Users banner + Approve action; regression tests in `security_audit_regressions.rs`.
 
 ### IMP-009 — Expose OpenAPI / Swagger UI
 
@@ -310,11 +310,11 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 ### IMP-030 — Inline documentation pass on landed diff
 
-- [ ] **Status**
+- [x] **Status**
 - **Priority:** Medium
 - **Summary:** Ensure changed `*.rs`, `*.ts`, `*.tsx` follow Human/Agent comment rules for non-trivial logic.
 - **References:** `.cursor/rules/inline-documentation.mdc`
-- **Done notes:**
+- **Done notes:** Audited IMP-021 landed diff (HLS encode job, search sync queue, admin handlers/upload, frontend library/admin API). Added Human/Agent pairs on non-trivial blocks that only had module-level docs (progress scaling, Meili spawn/backoff, delete/retry flows, Song HLS types, DataTable breakpoints).
 
 ---
 

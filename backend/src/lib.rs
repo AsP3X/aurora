@@ -192,6 +192,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/login", post(auth::handlers::login))
         .route("/api/v1/auth/oauth/{provider}", get(auth::handlers::oauth_placeholder))
         .route("/api/v1/settings/registration", get(admin::handlers::get_public_registration_setting))
+        .route("/api/v1/settings/activation", get(admin::handlers::get_public_activation_setting))
         // Fallback direct stream for songs not yet transcoded to HLS
         .route("/api/v1/songs/{id}/stream", get(songs::handlers::stream_song))
         .route("/api/v1/songs/{id}/artwork", get(songs::handlers::get_artwork));
@@ -260,6 +261,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/songs", get(admin::handlers::list_admin_songs))
         .route("/api/v1/admin/songs/{id}", axum::routing::delete(admin::handlers::delete_song).put(admin::handlers::update_song))
         .route("/api/v1/admin/songs/{id}/enabled", axum::routing::put(admin::handlers::toggle_song_enabled))
+        // Human: Admin-only HLS retry and Meilisearch backlog controls (library reliability).
+        // Agent: POST hls/retry; GET search/sync-status; POST search/retry-sync; REQUIRE auth middleware layer.
         .route(
             "/api/v1/admin/songs/{id}/hls/retry",
             post(admin::hls_handlers::retry_hls_encode),

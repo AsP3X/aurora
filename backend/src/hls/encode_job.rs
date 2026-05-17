@@ -44,6 +44,8 @@ pub async fn mark_failed(pool: &AnyPool, song_id: &str, message: &str) {
     .await;
 }
 
+// Human: Mirror ffmpeg/upload percent into `conversion_progress` for admin library polling.
+// Agent: UPDATE songs.conversion_progress; BEST-EFFORT (errors ignored) during background job.
 async fn set_progress(pool: &AnyPool, song_id: &str, progress: i32) {
     let _ = sqlx::query("UPDATE songs SET conversion_progress = $1 WHERE id = $2")
         .bind(progress)
@@ -101,6 +103,8 @@ pub async fn run_hls_encode_job(
 
     match key_store.create_key_for_song(song_uuid).await {
         Ok((key_id, key)) => {
+            // Human: Reserve 0–5% for setup and map ffmpeg 0–100% into 5–50% before upload phase.
+            // Agent: watch channel from HlsEncoder; SCALES pct*0.45+5; WRITES conversion_progress until channel closes.
             let (progress_tx, mut progress_rx) = tokio::sync::watch::channel(0i32);
             let pool_for_progress = pool.clone();
             let song_id_for_progress = song_id.clone();
@@ -203,6 +207,8 @@ pub async fn run_hls_encode_job(
                                 continue;
                             }
                         };
+                        // Human: Log and continue when one segment fails so a partial library is still debuggable.
+                        // Agent: ON upload Err TRACE error only; STILL advances progress; does not abort whole job.
                         if let Err(e) = storage
                             .put(
                                 &format!("{prefix}segments/{name}"),

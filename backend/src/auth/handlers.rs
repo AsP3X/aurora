@@ -31,8 +31,13 @@ pub struct RegisterRequest {
 
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
-    pub token: String,
+    /// Omitted when registration requires admin approval before first sign-in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
     pub user: UserDto,
+    /// True when the account was created but is not yet enabled for login.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pending_activation: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,15 +169,29 @@ pub async fn register(
 
             tx.commit().await?;
 
-            info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&body.email), "user registered");
-
-            let token = create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
-                .map_err(|e| AppError::Internal(e.into()))?;
+            info!(
+                user_id = %id,
+                email_redacted = %crate::redact::email_for_log(&body.email),
+                enabled,
+                "user registered"
+            );
 
             let permissions = get_user_permission_keys(&state.pool, &user_id).await;
 
+            // Human: Pending accounts must not receive a JWT — login and middleware already reject disabled users.
+            // Agent: WHEN enabled THEN create_token Some; ELSE token None + pending_activation true.
+            let token = if enabled {
+                Some(
+                    create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
+                        .map_err(|e| AppError::Internal(e.into()))?,
+                )
+            } else {
+                None
+            };
+
             Ok(Json(AuthResponse {
                 token,
+                pending_activation: !enabled,
                 user: UserDto {
                     id: user_id,
                     email: body.email,
@@ -205,14 +224,17 @@ pub async fn login(
 
     info!(email_redacted = %crate::redact::email_for_log(&body.email), "login attempt");
 
-    let row = sqlx::query_as::<_, (String, String, String, String, bool)>(
-        "SELECT id, email, password_hash, role, enabled FROM users WHERE email = $1"
+    // Human: Cast enabled for SQLite INTEGER columns — same pattern as auth middleware.
+    // Agent: READS users; CAST enabled AS INTEGER; MAPS 0 → disabled before password check completes.
+    let row = sqlx::query_as::<_, (String, String, String, String, i64)>(
+        "SELECT id, email, password_hash, role, CAST(enabled AS INTEGER) AS enabled FROM users WHERE email = $1",
     )
     .bind(&body.email)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (id, email, hash, role, enabled) = row.ok_or(AppError::Unauthorized)?;
+    let (id, email, hash, role, enabled_raw) = row.ok_or(AppError::Unauthorized)?;
+    let enabled = enabled_raw != 0;
     let valid = verify_password(&body.password, &hash)
         .map_err(|_| AppError::Unauthorized)?;
 
@@ -223,7 +245,9 @@ pub async fn login(
 
     if !enabled {
         warn!(email_redacted = %crate::redact::email_for_log(&body.email), "login failed: account disabled");
-        return Err(AppError::Forbidden("account is disabled".into()));
+        return Err(AppError::Forbidden(
+            "account is not activated. Contact an administrator.".into(),
+        ));
     }
 
     info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&email), role = %role, "login success");
@@ -234,7 +258,8 @@ pub async fn login(
     let permissions = get_user_permission_keys(&state.pool, &id).await;
 
     Ok(Json(AuthResponse {
-        token,
+        token: Some(token),
+        pending_activation: false,
         user: UserDto {
             id,
             email,
@@ -251,14 +276,15 @@ pub async fn me(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<Claims>,
 ) -> Result<Json<UserDto>, AppError> {
-    let row = sqlx::query_as::<_, (String, String, String, bool)>(
-        "SELECT id, email, role, enabled FROM users WHERE id = $1"
+    let row = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT id, email, role, CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
     )
     .bind(&claims.sub)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (id, email, role, enabled) = row.ok_or(AppError::NotFound)?;
+    let (id, email, role, enabled_raw) = row.ok_or(AppError::NotFound)?;
+    let enabled = enabled_raw != 0;
 
     let permissions = get_user_permission_keys(&state.pool, &id).await;
 

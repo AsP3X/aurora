@@ -53,7 +53,9 @@ pub async fn auth_middleware(
 
     let (user_enabled,) = enabled.ok_or(AppError::Unauthorized)?;
     if user_enabled == 0 {
-        return Err(AppError::Forbidden("account is disabled".into()));
+        return Err(AppError::Forbidden(
+            "account is not activated. Contact an administrator.".into(),
+        ));
     }
 
     request.extensions_mut().insert(claims);

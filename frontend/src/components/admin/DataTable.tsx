@@ -34,7 +34,8 @@ export default function DataTable<T>({
 
   return (
   <>
-      {/* Desktop table */}
+      {/* Human: Wide viewports use a scrollable table inside the flat admin panel. */}
+      {/* Agent: hidden md:block; THEAD/TBODY; loading spinner or emptyState row. */}
       <div className="hidden md:block admin-panel overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -92,7 +93,8 @@ export default function DataTable<T>({
         </div>
       </div>
 
-      {/* Mobile cards */}
+      {/* Human: Narrow viewports render one card per row via the caller’s renderMobileCard. */}
+      {/* Agent: md:hidden stack; SAME loading/empty branches as desktop. */}
       <div className="md:hidden space-y-3">
         {loading ? (
           <div className="admin-panel p-8 flex justify-center">

@@ -144,6 +144,8 @@ export default function AdminLibraryPage() {
     return () => clearInterval(timer);
   }, [songs, songQuery, songOffset, loadSongs]);
 
+  // Human: Re-queue ffmpeg for failed or never-started encodes without re-uploading source audio.
+  // Agent: CALLS retryAdminSongHls; REFRESHES table; SETS retryingHlsId for menu disabled state.
   async function handleRetryHls(song: Song) {
     setRetryingHlsId(song.id);
     setError("");
@@ -307,6 +309,8 @@ export default function AdminLibraryPage() {
       },
     ];
 
+    // Human: Offer retry when encode failed or never reached ready/processing (stuck pending).
+    // Agent: CONTEXT MENU item; CALLS handleRetryHls; DISABLED while retryingHlsId matches row.
     if (song.hls_encode_status === "failed" || (!song.hls_ready && song.hls_encode_status !== "processing")) {
       items.push({
         label: retryingHlsId === song.id ? "Retrying HLS…" : "Retry HLS encode",
