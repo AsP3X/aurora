@@ -1,3 +1,5 @@
-// Human: Wire Meilisearch-backed HTTP handlers for library search while keeping module surface minimal for the router.
-// Agent: EXPORTS handlers submodule; USED by lib route nest under /search (see lib.rs).
+// Human: Wire Meilisearch-backed HTTP handlers, indexing, and retry queue for search sync failures.
+// Agent: EXPORTS handlers/indexer/sync_queue; USED by lib routes and admin song mutations.
 pub mod handlers;
+pub mod indexer;
+pub mod sync_queue;

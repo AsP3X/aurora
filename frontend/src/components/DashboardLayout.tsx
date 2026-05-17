@@ -6,6 +6,7 @@ import { fetchPlaylists, fetchHistory, createPlaylist } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import ArtworkImage from "./ArtworkImage";
 import type { Playlist } from "../types";
+import SkipLink from "./SkipLink";
 
 export default function DashboardLayout({
   children,
@@ -79,6 +80,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex flex-col bg-surface-950 h-screen">
+      <SkipLink />
       {/* ─── Topbar ─── */}
       <div className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-3">
@@ -112,8 +114,12 @@ export default function DashboardLayout({
         <div className="flex items-center gap-3">
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowUserMenu((v) => !v)}
-              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full bg-surface-900 border border-white/5 hover:border-white/10 transition-colors"
+              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full bg-surface-900 border border-white/5 hover:border-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+              aria-expanded={showUserMenu}
+              aria-haspopup="menu"
+              aria-label={`Account menu for ${user?.email ?? "user"}`}
             >
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center text-xs font-bold text-white">
                 {user?.email?.[0]?.toUpperCase() || "?"}
@@ -248,9 +254,13 @@ export default function DashboardLayout({
       </div>
 
       {/* ─── Main content ─── */}
-      <div className="md:ml-64 flex-1 bg-surface-950 p-4 md:p-8 pb-28 md:pb-8 overflow-auto">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="md:ml-64 flex-1 bg-surface-950 p-4 md:p-8 pb-28 md:pb-8 overflow-auto"
+      >
         {children}
-      </div>
+      </main>
     </div>
   );
 }

@@ -129,11 +129,13 @@ export default function Player() {
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)] px-4 sm:px-6">
-      {/* Top bar */}
+      {/* Human: Floating glass pill keeps the back affordance visible on busy artwork without a full chrome bar. */}
+      {/* Agent: USES glass-pill; navigates -1; focus ring aurora. */}
       <div className="py-4">
         <button
+          type="button"
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-sm text-surface-400 hover:text-white transition-colors group"
+          className="glass-pill inline-flex items-center gap-2 px-4 py-2.5 text-sm text-surface-300 hover:text-white transition-colors group focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
         >
           <svg className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -145,15 +147,22 @@ export default function Player() {
       {/* Main content - centered */}
       <div className="flex-1 flex flex-col items-center justify-center pb-8">
         <div className="w-full max-w-md space-y-8">
-          {/* Artwork */}
+          {/* Human: Layered violet radial washes sell “aurora” behind the cover without clipping the rounded artwork. */}
+          {/* Agent: STACK two radial gradients (sharp + soft blur); POINTER-EVENTS none; artwork rounded-3xl. */}
           <div className="relative mx-auto w-full max-w-sm sm:max-w-md">
             <div
-              className="absolute -inset-4 rounded-[2rem] opacity-60 pointer-events-none"
+              className="absolute -inset-8 rounded-[2rem] opacity-70 pointer-events-none blur-3xl"
+              style={{
+                background: "radial-gradient(ellipse at 50% 45%, rgba(139,92,246,0.28) 0%, transparent 62%)",
+              }}
+            />
+            <div
+              className="absolute -inset-4 rounded-[2rem] opacity-90 pointer-events-none"
               style={{
                 background: "radial-gradient(ellipse at 50% 50%, rgba(139,92,246,0.15) 0%, transparent 70%)",
               }}
             />
-            <div className="relative aspect-square rounded-3xl overflow-hidden bg-surface-900 shadow-2xl shadow-black/50">
+            <div className="relative aspect-square rounded-3xl overflow-hidden bg-surface-900 shadow-2xl shadow-black/50 ring-1 ring-white/10">
               <ArtworkImage
                 songId={currentSong.id}
                 title={currentSong.title}
@@ -200,103 +209,136 @@ export default function Player() {
         </div>
       </div>
 
-      {/* Bottom Player Bar - Full-screen version */}
-      <div className="sticky bottom-0 left-0 right-0 bg-surface-950/90 backdrop-blur-xl border-t border-white/10 py-4 px-4 sm:px-6 -mx-4 sm:-mx-6">
-        <div className="max-w-3xl mx-auto space-y-3">
-          {/* Progress Bar */}
-          <div>
-            <div className="relative h-1.5 group cursor-pointer"
-            onMouseMove={handleProgressMouseMove}
-            onMouseLeave={handleProgressMouseLeave}
-          >
-              {/* Track */}
-              <div className="absolute inset-0 bg-surface-800 rounded-full overflow-hidden">
-              <div
-                className="absolute inset-y-0 left-0 bg-surface-600 rounded-full"
-                style={{ width: `${bufferedPercent}%` }}
-              />
-              <div
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-500 to-aurora-400 rounded-full"
-                style={{ width: `${progressPercent}%` }}
-              />
-              </div>
+      {/* Human: Bottom cluster mirrors PlayerBar liquid-glass shell so full-screen player feels like the same transport metaphor. */}
+      {/* Agent: DUPLICATE rounded-[32px] blur stack from PlayerBar; progress h-2.5 aurora fill + thumb dot; volume surface-800/60 track. */}
+      <div className="sticky bottom-0 left-0 right-0 py-4 px-4 sm:px-6 -mx-4 sm:-mx-6 mt-auto">
+        <div className="max-w-3xl mx-auto">
+          <div className="relative rounded-[32px]">
+            <div className="absolute inset-0 rounded-[32px] overflow-hidden">
+              <div className="absolute inset-0 backdrop-blur-2xl bg-surface-950/35" />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/[0.12] to-white/[0.02]" />
+              <div className="absolute inset-0 shadow-[inset_0_1px_2px_rgba(255,255,255,0.15)]" />
+              <div className="absolute inset-0 rounded-[32px] border border-white/20" />
+            </div>
+            <div className="absolute -inset-1 rounded-[36px] bg-black/20 blur-xl -z-10 pointer-events-none" />
 
-              <input
-                type="range"
-                min={0}
-                max={duration || currentSong.duration_seconds}
-                value={progress}
-                onChange={handleSeek}
-                aria-label="Seek"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-
-              {/* Drag tooltip */}
-              <div
-                className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
-                style={{ left: `${hoverPercent ?? progressPercent}%`, transform: "translateX(-50%)" }}
-              >
-                <div className="flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] opacity-0 scale-75 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0">
-                  <div className="bg-white rounded-xl px-4 py-3 flex flex-col items-center gap-1 relative z-10 shadow-2xl shadow-black/30 ring-2 ring-aurora-500/20">
-                    <span className="text-base font-bold text-surface-900 leading-none tracking-tight">
-                      {formatTime(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 : 0)}
-                    </span>
-                    <span className="text-xs font-semibold text-surface-600 leading-none">
-                      {formatDelta(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 - progress : 0)}
-                    </span>
+            <div className="relative px-4 sm:px-5 py-4 space-y-3">
+              {/* Progress Bar */}
+              <div>
+                <div
+                  className="relative w-full h-2.5 group cursor-pointer"
+                  onMouseMove={handleProgressMouseMove}
+                  onMouseLeave={handleProgressMouseLeave}
+                >
+                  <div className="relative w-full h-full bg-surface-800/60 rounded-full overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-surface-500/40 rounded-full"
+                      style={{ width: `${bufferedPercent}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-aurora-400 to-aurora-500 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.4)] transition-[width] duration-300 ease-linear"
+                      style={{ width: `${progressPercent}%` }}
+                    />
                   </div>
-                  <div className="w-3 h-3 bg-white rotate-45 -mt-2 relative z-0 shadow-lg shadow-black/20 ring-2 ring-aurora-500/20" />
+
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow pointer-events-none z-10 transition-[left] duration-300 ease-linear"
+                    style={{ left: `calc(${progressPercent}% - 5px)` }}
+                  />
+
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-[left,opacity] duration-300 ease-linear pointer-events-none flex items-center justify-center z-10"
+                    style={{ left: `calc(${progressPercent}% - 10px)` }}
+                  >
+                    <div className="w-2 h-2 bg-aurora-500 rounded-full" />
+                  </div>
+
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || currentSong.duration_seconds}
+                    value={progress}
+                    onChange={handleSeek}
+                    aria-label="Seek"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+
+                  <div
+                    className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center"
+                    style={{ left: `${hoverPercent ?? progressPercent}%`, transform: "translateX(-50%)" }}
+                  >
+                    <div className="flex flex-col items-center drop-shadow-xl origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] opacity-0 scale-75 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0">
+                      <div className="bg-white rounded-xl px-4 py-3 flex flex-col items-center gap-1 relative z-10 shadow-2xl shadow-black/30 ring-2 ring-aurora-500/20">
+                        <span className="text-base font-bold text-surface-900 leading-none tracking-tight">
+                          {formatTime(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 : 0)}
+                        </span>
+                        <span className="text-xs font-semibold text-surface-600 leading-none">
+                          {formatDelta(duration ? (duration * (hoverPercent ?? progressPercent)) / 100 - progress : 0)}
+                        </span>
+                      </div>
+                      <div className="w-3 h-3 bg-white rotate-45 -mt-2 relative z-0 shadow-lg shadow-black/20 ring-2 ring-aurora-500/20" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-surface-500 font-mono mt-1.5">
+                  <span>{formatTime(progress)}</span>
+                  <span>{formatTime(duration || currentSong.duration_seconds)}</span>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between text-xs text-surface-500 font-mono mt-1.5">
-              <span>{formatTime(progress)}</span>
-              <span>{formatTime(duration || currentSong.duration_seconds)}</span>
-            </div>
-          </div>
 
-          {/* Transport + Volume Row */}
-          <div className="flex items-center justify-between gap-4">
-            {/* Volume */}
-            <div className="flex items-center gap-2 w-28 sm:w-36">
-              <button
-                onClick={toggleMute}
-                aria-label={volume === 0 ? "Unmute" : "Mute"}
-                className="text-surface-400 hover:text-white transition-colors shrink-0"
-              >
-                {volume === 0 ? (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-                ) : volume < 0.5 ? (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                )}
-              </button>
-              <div className="relative flex-1 h-1 bg-surface-800 rounded-full overflow-hidden group cursor-pointer">
-                <div
-                  className="absolute inset-y-0 left-0 bg-surface-400 rounded-full"
-                  style={{ width: `${volume * 100}%` }}
-                />
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                  style={{ left: `calc(${volume * 100}% - 5px)` }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  onChange={handleVolume}
-                  aria-label="Volume"
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-              </div>
-            </div>
+              {/* Transport + Volume Row */}
+              <div className="flex items-center justify-between gap-4">
+                {/* Volume */}
+                <div className="flex items-center gap-2 w-28 sm:w-36">
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    aria-label={volume === 0 ? "Unmute" : "Mute"}
+                    className="text-surface-400 hover:text-white transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 rounded-full"
+                  >
+                    {volume === 0 ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+                    ) : volume < 0.5 ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                    )}
+                  </button>
+                  <div className="relative flex-1 h-1 bg-surface-800/60 rounded-full overflow-hidden group cursor-pointer">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-surface-400 rounded-full"
+                      style={{ width: `${volume * 100}%` }}
+                    />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                      style={{ left: `calc(${volume * 100}% - 4px)` }}
+                    />
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={volume}
+                      onChange={handleVolume}
+                      aria-label="Volume"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
 
-            {/* Transport Controls */}
-            <div className="flex items-center justify-center gap-2 sm:gap-4">
+                {/* Transport Controls */}
+                <div
+                  className="flex items-center justify-center gap-2 sm:gap-4"
+                  role="region"
+                  aria-label="Player controls"
+                  aria-describedby="player-page-keyboard-hints"
+                >
+                  <p className="sr-only" id="player-page-keyboard-hints">
+                    Space play or pause. Arrow keys seek five seconds. Shift with arrows for previous or next track. Q
+                    toggles queue. M mutes.
+                  </p>
               <button
+                type="button"
                 onClick={toggleShuffle}
                 disabled={queue.length === 0}
                 className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${
@@ -349,12 +391,15 @@ export default function Player() {
               </button>
 
               <button
-                onClick={() => setQueueOpen(true)}
-                className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${
+                type="button"
+                onClick={() => setQueueOpen(!queueOpen)}
+                className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-aurora-500/50 ${
                   queueOpen ? "text-aurora-400" : "text-surface-400 hover:text-white"
                 }`}
-                title="Queue"
+                title="Queue (Q)"
                 aria-label="Queue"
+                aria-expanded={queueOpen}
+                aria-controls="playback-queue-drawer"
               >
                 <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -364,6 +409,8 @@ export default function Player() {
 
             {/* Spacer to balance volume on left */}
             <div className="w-28 sm:w-36 hidden sm:block" />
+              </div>
+            </div>
           </div>
         </div>
       </div>

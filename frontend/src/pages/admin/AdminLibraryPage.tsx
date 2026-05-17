@@ -1,5 +1,5 @@
-// Human: Admin music table — search/paginate songs, context actions, inline edit w/ artwork crop, upload modal, delete confirm.
-// Agent: fetchAdminSongs offset+query; ContextMenu actions; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled.
+// Human: Admin music table — glass DataTable, search/upload toolbar, HLS badges, context menu, edit in GlassDialog, glass pagination.
+// Agent: fetchAdminSongs offset+query; ContextMenu; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled; USES PageHeader DataTable GlassDialog GlassButton.
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchAdminSongs,
@@ -7,6 +7,10 @@ import {
   updateAdminSong,
   toggleAdminSongEnabled,
   fetchArtworkUrl,
+  retryAdminSongHls,
+  fetchSearchSyncStatus,
+  retrySearchSync,
+  type SearchSyncStatus,
 } from "../../api/client";
 import ArtworkImage from "../../components/ArtworkImage";
 import ContextMenu from "../../components/ui/ContextMenu";
@@ -15,6 +19,12 @@ import UploadSongDialog from "../../components/admin/UploadSongDialog";
 import MultiGenreField from "../../components/admin/MultiGenreField";
 import ConfirmModal from "../../components/admin/ConfirmModal";
 import ArtworkCropper from "../../components/admin/ArtworkCropper";
+import PageHeader from "../../components/admin/PageHeader";
+import DataTable from "../../components/admin/DataTable";
+import type { DataTableColumn } from "../../components/admin/DataTable";
+import MobileDataCard from "../../components/admin/MobileDataCard";
+import GlassDialog from "../../components/admin/GlassDialog";
+import GlassButton from "../../components/admin/GlassButton";
 import type { Song } from "../../types";
 
 function formatDuration(seconds: number) {
@@ -23,6 +33,34 @@ function formatDuration(seconds: number) {
   const s = seconds % 60;
   if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Human: Map backend HLS fields to a short label and Tailwind colors for the admin table.
+// Agent: READS hls_ready, hls_encode_status, conversion_progress; RETURNS label + badge classes.
+function hlsEncodeBadge(song: Song): { label: string; className: string; title?: string } {
+  if (song.hls_ready) {
+    return {
+      label: "Ready",
+      className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    };
+  }
+  if (song.hls_encode_status === "failed") {
+    return {
+      label: "Failed",
+      className: "bg-red-500/15 text-red-300 border-red-500/30",
+      title: song.hls_encode_error || "HLS encode failed",
+    };
+  }
+  if (song.hls_encode_status === "processing" || song.conversion_progress > 0) {
+    return {
+      label: song.conversion_progress > 0 ? `${song.conversion_progress}%` : "Encoding",
+      className: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    };
+  }
+  return {
+    label: "Pending",
+    className: "bg-surface-700 text-surface-400 border-white/10",
+  };
 }
 
 export default function AdminLibraryPage() {
@@ -59,6 +97,8 @@ export default function AdminLibraryPage() {
 
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [searchSync, setSearchSync] = useState<SearchSyncStatus | null>(null);
+  const [retryingHlsId, setRetryingHlsId] = useState<string | null>(null);
 
   const existingGenres = useMemo(() => {
     const genres = new Set<string>();
@@ -71,8 +111,9 @@ export default function AdminLibraryPage() {
     try {
       const data = await fetchAdminSongs({ q, limit: SONG_LIMIT, offset, order_by: "title" });
       setSongs(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to load songs");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to load songs";
+      setError(message);
     } finally {
       setSongLoading(false);
     }
@@ -81,6 +122,41 @@ export default function AdminLibraryPage() {
   useEffect(() => {
     loadSongs(songQuery || undefined, songOffset);
   }, [songQuery, songOffset, loadSongs]);
+
+  useEffect(() => {
+    fetchSearchSyncStatus()
+      .then(setSearchSync)
+      .catch(() => setSearchSync(null));
+  }, []);
+
+  // Human: Refresh the table while any row is still transcoding so progress badges stay current.
+  // Agent: INTERVAL 3s when processing songs exist; CALLS loadSongs with current query/offset.
+  useEffect(() => {
+    const processing = songs.some(
+      (s) =>
+        !s.hls_ready &&
+        (s.hls_encode_status === "processing" || s.conversion_progress > 0),
+    );
+    if (!processing) return;
+    const timer = setInterval(() => {
+      loadSongs(songQuery || undefined, songOffset);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [songs, songQuery, songOffset, loadSongs]);
+
+  async function handleRetryHls(song: Song) {
+    setRetryingHlsId(song.id);
+    setError("");
+    try {
+      await retryAdminSongHls(song.id);
+      await loadSongs(songQuery || undefined, songOffset);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to retry HLS encode";
+      setError(message);
+    } finally {
+      setRetryingHlsId(null);
+    }
+  }
 
   async function openEditDialog(song: Song) {
     setEditingSong(song);
@@ -122,7 +198,7 @@ export default function AdminLibraryPage() {
           studio: editForm.studio || undefined,
         },
         editCroppedBlob ?? undefined,
-        editArtworkChanged ? editRemoveArtwork : undefined
+        editArtworkChanged ? editRemoveArtwork : undefined,
       );
       setSongs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
       setEditingSong(null);
@@ -130,8 +206,9 @@ export default function AdminLibraryPage() {
       setEditCroppedBlob(null);
       setEditArtworkChanged(false);
       setEditRemoveArtwork(false);
-    } catch (e: any) {
-      setError(e.message || "Failed to update song");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to update song";
+      setError(message);
     } finally {
       setSavingEdit(false);
     }
@@ -141,8 +218,9 @@ export default function AdminLibraryPage() {
     try {
       const updated = await toggleAdminSongEnabled(song.id, !song.enabled);
       setSongs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-    } catch (e: any) {
-      setError(e.message || "Failed to toggle enabled state");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to toggle enabled state";
+      setError(message);
     }
   }
 
@@ -178,8 +256,9 @@ export default function AdminLibraryPage() {
       await deleteAdminSong(confirmModal.id);
       setSongs((prev) => prev.filter((s) => s.id !== confirmModal.id));
       setConfirmModal(null);
-    } catch (e: any) {
-      setError(e.message || "Failed to delete song");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to delete song";
+      setError(message);
     } finally {
       setDeleting(false);
     }
@@ -190,8 +269,17 @@ export default function AdminLibraryPage() {
     setContextMenu({ x: e.clientX, y: e.clientY, song });
   }
 
+  function openRowMenu(e: React.MouseEvent, song: Song) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setContextMenu({
+      x: rect.left + rect.width / 2,
+      y: rect.bottom + 4,
+      song,
+    });
+  }
+
   function buildMenuItems(song: Song): ContextMenuItem[] {
-    return [
+    const items: ContextMenuItem[] = [
       {
         label: "Edit",
         icon: (
@@ -199,7 +287,7 @@ export default function AdminLibraryPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
         ),
-        onClick: () => openEditDialog(song),
+        onClick: () => void openEditDialog(song),
       },
       {
         label: song.enabled ? "Disable" : "Enable",
@@ -215,141 +303,209 @@ export default function AdminLibraryPage() {
             )}
           </svg>
         ),
-        onClick: () => handleToggleEnabled(song),
-      },
-      {
-        label: "Delete",
-        danger: true,
-        icon: (
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        ),
-        onClick: () => setConfirmModal({ id: song.id, name: song.title }),
+        onClick: () => void handleToggleEnabled(song),
       },
     ];
+
+    if (song.hls_encode_status === "failed" || (!song.hls_ready && song.hls_encode_status !== "processing")) {
+      items.push({
+        label: retryingHlsId === song.id ? "Retrying HLS…" : "Retry HLS encode",
+        onClick: () => void handleRetryHls(song),
+        disabled: retryingHlsId === song.id,
+      });
+    }
+
+    items.push({
+      label: "Delete",
+      danger: true,
+      icon: (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      ),
+      onClick: () => setConfirmModal({ id: song.id, name: song.title }),
+    });
+
+    return items;
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Library</h1>
-        {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            {error}
-          </div>
-        )}
-      </div>
+  const columns: DataTableColumn<Song>[] = [
+    {
+      key: "artwork",
+      header: "Artwork",
+      render: (song) => (
+        <ArtworkImage
+          songId={song.id}
+          title={song.title}
+          artist={song.artist}
+          className="w-10 h-10 rounded-lg object-cover bg-surface-950"
+        />
+      ),
+    },
+    {
+      key: "title",
+      header: "Title",
+      render: (song) => (
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium text-white truncate">{song.title}</span>
+          {!song.enabled && (
+            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-surface-700 text-surface-400 border border-white/5">
+              Disabled
+            </span>
+          )}
+        </div>
+      ),
+    },
+    { key: "artist", header: "Artist", render: (song) => <span className="text-surface-300">{song.artist}</span> },
+    {
+      key: "album",
+      header: "Album",
+      render: (song) => <span className="text-surface-400">{song.album || "—"}</span>,
+    },
+    {
+      key: "duration",
+      header: "Duration",
+      render: (song) => <span className="text-surface-400">{formatDuration(song.duration_seconds)}</span>,
+    },
+    {
+      key: "format",
+      header: "Format",
+      render: (song) => <span className="text-surface-400 uppercase">{song.file_format}</span>,
+    },
+    {
+      key: "streaming",
+      header: "Streaming",
+      render: (song) => {
+        const badge = hlsEncodeBadge(song);
+        return (
+          <span title={badge.title} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${badge.className}`}>
+            {badge.label}
+          </span>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      headerClassName: "text-right",
+      className: "text-right",
+      render: (song) => (
+        <button
+          type="button"
+          onClick={(e) => openRowMenu(e, song)}
+          className="text-surface-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+          aria-label={`Actions for ${song.title}`}
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="6" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="18" r="1.5" />
+          </svg>
+        </button>
+      ),
+    },
+  ];
 
-      <div className="flex items-center gap-3">
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Library" error={error || undefined} />
+
+      {searchSync?.warning && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-amber-200 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2 admin-panel !rounded-xl">
+          <span>{searchSync.warning}</span>
+          {(searchSync.pending_count > 0 || searchSync.failed_count > 0) && (
+            <button
+              type="button"
+              onClick={() => retrySearchSync().then(setSearchSync).catch(() => undefined)}
+              className="px-2 py-1 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 text-amber-100 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+            >
+              Retry search sync
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Human: Toolbar sits in its own glass strip so search + upload read as one admin control cluster. */}
+      {/* Agent: admin-panel WRAPS flex row; INPUT filter; BUTTON opens UploadSongDialog. */}
+      <div className="admin-panel p-4 flex flex-wrap items-center gap-3">
+        <label htmlFor="admin-library-search" className="sr-only">
+          Search songs in library
+        </label>
         <input
-          type="text"
+          id="admin-library-search"
+          type="search"
           placeholder="Search songs..."
           value={songQuery}
-          onChange={(e) => { setSongQuery(e.target.value); setSongOffset(0); }}
-          className="flex-1 max-w-md px-3 py-2 bg-surface-900 border border-white/10 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-1 focus:ring-aurora-500"
+          onChange={(e) => {
+            setSongQuery(e.target.value);
+            setSongOffset(0);
+          }}
+          className="flex-1 min-w-[200px] max-w-md px-3 py-2 bg-surface-950/50 border border-white/10 rounded-xl text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
         />
         <button
+          type="button"
           onClick={() => setShowUploadDialog(true)}
-          className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 shrink-0"
         >
           + Upload Song
         </button>
-        {songLoading && <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />}
+        {songLoading && (
+          <div className="w-5 h-5 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin shrink-0" />
+        )}
       </div>
 
-      <div className="bg-surface-900 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm text-left min-w-[700px]">
-          <thead className="text-xs text-surface-400 uppercase bg-surface-950/50 border-b border-white/5">
-            <tr>
-              <th className="px-4 py-3 font-medium">Artwork</th>
-              <th className="px-4 py-3 font-medium">Title</th>
-              <th className="px-4 py-3 font-medium">Artist</th>
-              <th className="px-4 py-3 font-medium">Album</th>
-              <th className="px-4 py-3 font-medium">Duration</th>
-              <th className="px-4 py-3 font-medium">Format</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {songs.map((song) => (
-              <tr
-                key={song.id}
-                onContextMenu={(e) => handleContextMenu(e, song)}
-                className={`hover:bg-white/[0.02] transition-colors ${!song.enabled ? "opacity-50" : ""}`}
-              >
-                <td className="px-4 py-3">
-                  <ArtworkImage
-                    songId={song.id}
-                    title={song.title}
-                    artist={song.artist}
-                    className="w-10 h-10 rounded-lg object-cover bg-surface-950"
-                  />
-                </td>
-                <td className="px-4 py-3 text-white font-medium">
-                  <div className="flex items-center gap-2">
-                    {song.title}
-                    {!song.enabled && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-700 text-surface-400 border border-white/5">
-                        Disabled
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-surface-300">{song.artist}</td>
-                <td className="px-4 py-3 text-surface-400">{song.album || "—"}</td>
-                <td className="px-4 py-3 text-surface-400">{formatDuration(song.duration_seconds)}</td>
-                <td className="px-4 py-3 text-surface-400 uppercase">{song.file_format}</td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setContextMenu({
-                        x: rect.left + rect.width / 2,
-                        y: rect.bottom + 4,
-                        song,
-                      });
-                    }}
-                    className="text-surface-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <circle cx="12" cy="6" r="1.5" />
-                      <circle cx="12" cy="12" r="1.5" />
-                      <circle cx="12" cy="18" r="1.5" />
-                    </svg>
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {songs.length === 0 && !songLoading && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-surface-500">
-                  No songs found.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Song>
+        columns={columns}
+        data={songs}
+        rowKey={(song) => song.id}
+        loading={songLoading}
+        rowClassName={(song) => (!song.enabled ? "opacity-50" : "")}
+        onRowContextMenu={handleContextMenu}
+        renderMobileCard={(song) => {
+          const badge = hlsEncodeBadge(song);
+          return (
+            <MobileDataCard
+              leading={
+                <ArtworkImage
+                  songId={song.id}
+                  title={song.title}
+                  artist={song.artist}
+                  className="w-12 h-12 rounded-lg object-cover bg-surface-950 shrink-0"
+                />
+              }
+              primary={song.title}
+              secondary={`${!song.enabled ? "Disabled · " : ""}${song.artist} · ${song.album || "—"} · ${formatDuration(
+                song.duration_seconds,
+              )} · ${song.file_format.toUpperCase()} · ${badge.label}`}
+              trailing={
+                <button
+                  type="button"
+                  onClick={(e) => openRowMenu(e, song)}
+                  className="text-surface-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 shrink-0"
+                  aria-label={`Actions for ${song.title}`}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="6" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="18" r="1.5" />
+                  </svg>
+                </button>
+              }
+            />
+          );
+        }}
+      />
 
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setSongOffset((o) => Math.max(0, o - SONG_LIMIT))}
-          disabled={songOffset === 0}
-          className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-        >
+      <div className="admin-panel px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <GlassButton onClick={() => setSongOffset((o) => Math.max(0, o - SONG_LIMIT))} disabled={songOffset === 0}>
           Previous
-        </button>
-        <span className="text-sm text-surface-400">
+        </GlassButton>
+        <span className="text-sm text-surface-400 font-mono">
           Showing {songs.length > 0 ? songOffset + 1 : 0}–{songOffset + songs.length}
         </span>
-        <button
-          onClick={() => setSongOffset((o) => o + SONG_LIMIT)}
-          disabled={songs.length < SONG_LIMIT}
-          className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-        >
+        <GlassButton onClick={() => setSongOffset((o) => o + SONG_LIMIT)} disabled={songs.length < SONG_LIMIT}>
           Next
-        </button>
+        </GlassButton>
       </div>
 
       {contextMenu && (
@@ -361,107 +517,111 @@ export default function AdminLibraryPage() {
         />
       )}
 
-      {/* Edit Song Dialog */}
-      {editingSong && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-surface-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-white mb-4">Edit Song</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Title</label>
-                <input
-                  value={editForm.title}
-                  onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Artist</label>
-                <input
-                  value={editForm.artist}
-                  onChange={(e) => setEditForm((f) => ({ ...f, artist: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Album</label>
-                <input
-                  value={editForm.album}
-                  onChange={(e) => setEditForm((f) => ({ ...f, album: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Album Artist</label>
-                <input
-                  value={editForm.album_artist}
-                  onChange={(e) => setEditForm((f) => ({ ...f, album_artist: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Track Number</label>
-                <input
-                  type="number"
-                  value={editForm.track_number}
-                  onChange={(e) => setEditForm((f) => ({ ...f, track_number: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Year</label>
-                <input
-                  type="number"
-                  value={editForm.year}
-                  onChange={(e) => setEditForm((f) => ({ ...f, year: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-              <div className="col-span-2">
-                <MultiGenreField
-                  label="Genre"
-                  values={editForm.genres}
-                  onChange={(v) => setEditForm((f) => ({ ...f, genres: v }))}
-                  existingValues={existingGenres}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-surface-400 mb-1">Studio</label>
-                <input
-                  value={editForm.studio}
-                  onChange={(e) => setEditForm((f) => ({ ...f, studio: e.target.value }))}
-                  className="w-full bg-surface-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-aurora-500"
-                />
-              </div>
-            </div>
-            <div className="col-span-2 mt-2">
-              <h3 className="mb-2 text-sm font-medium text-white">Artwork</h3>
-              <ArtworkCropper
-                imageSrc={editImageSrc}
-                onCropComplete={handleEditCropComplete}
-                onReplace={handleEditReplaceArtwork}
-                onRemove={handleEditRemoveArtwork}
-              />
-            </div>
-            <div className="flex gap-3 justify-end mt-6">
-              <button
-                onClick={() => setEditingSong(null)}
-                disabled={savingEdit}
-                className="px-4 py-2 bg-surface-800 hover:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                disabled={savingEdit || !editForm.title.trim() || !editForm.artist.trim()}
-                className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-              >
-                {savingEdit ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
+      <GlassDialog
+        open={!!editingSong}
+        onClose={() => !savingEdit && setEditingSong(null)}
+        title="Edit Song"
+        size="lg"
+        className="max-h-[90vh] overflow-y-auto"
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Title</label>
+            <input
+              value={editForm.title}
+              onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Artist</label>
+            <input
+              value={editForm.artist}
+              onChange={(e) => setEditForm((f) => ({ ...f, artist: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Album</label>
+            <input
+              value={editForm.album}
+              onChange={(e) => setEditForm((f) => ({ ...f, album: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Album Artist</label>
+            <input
+              value={editForm.album_artist}
+              onChange={(e) => setEditForm((f) => ({ ...f, album_artist: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Track Number</label>
+            <input
+              type="number"
+              value={editForm.track_number}
+              onChange={(e) => setEditForm((f) => ({ ...f, track_number: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Year</label>
+            <input
+              type="number"
+              value={editForm.year}
+              onChange={(e) => setEditForm((f) => ({ ...f, year: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
+          </div>
+          <div className="col-span-2">
+            <MultiGenreField
+              label="Genre"
+              values={editForm.genres}
+              onChange={(v) => setEditForm((f) => ({ ...f, genres: v }))}
+              existingValues={existingGenres}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-surface-400 mb-1">Studio</label>
+            <input
+              value={editForm.studio}
+              onChange={(e) => setEditForm((f) => ({ ...f, studio: e.target.value }))}
+              className="w-full bg-surface-950/80 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+            />
           </div>
         </div>
-      )}
+        {/* Human: Artwork editor spans full dialog width below the metadata grid. */}
+        {/* Agent: BLOCK mt-2; NOT grid child — avoids invalid col-span without grid parent. */}
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-medium text-white">Artwork</h3>
+          <ArtworkCropper
+            imageSrc={editImageSrc}
+            onCropComplete={handleEditCropComplete}
+            onReplace={handleEditReplaceArtwork}
+            onRemove={handleEditRemoveArtwork}
+          />
+        </div>
+        <div className="flex gap-3 justify-end mt-6">
+          <button
+            type="button"
+            onClick={() => setEditingSong(null)}
+            disabled={savingEdit}
+            className="px-4 py-2 bg-surface-950/80 hover:bg-surface-900 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 border border-white/10 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSaveEdit()}
+            disabled={savingEdit || !editForm.title.trim() || !editForm.artist.trim()}
+            className="px-4 py-2 bg-aurora-600 hover:bg-aurora-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+          >
+            {savingEdit ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </GlassDialog>
 
       {confirmModal && (
         <ConfirmModal

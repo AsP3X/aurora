@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchAdminStats, fetchAdminListeningStats } from "../../api/client";
-import StatCard from "../../components/admin/StatCard";
+import AdminStatCard from "../../components/admin/AdminStatCard";
+import AdminGlassCard from "../../components/admin/AdminGlassCard";
+import AdminActionCard from "../../components/admin/AdminActionCard";
+import PageHeader from "../../components/admin/PageHeader";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -46,16 +49,16 @@ export default function AdminOverviewPage() {
       const data = await fetchAdminStats();
       setStats(data);
       setError("");
-    } catch (e: any) {
-      setError(e.message || "Failed to load stats");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load stats");
     }
     try {
       const lData = await fetchAdminListeningStats();
       setListeningStats(lData);
       setListeningStatsError("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       setListeningStats(null);
-      setListeningStatsError(e.message || "Failed to load listening stats");
+      setListeningStatsError(e instanceof Error ? e.message : "Failed to load listening stats");
     }
   }, []);
 
@@ -63,20 +66,14 @@ export default function AdminOverviewPage() {
     loadStats();
   }, [loadStats]);
 
+  const headerError = [error, listeningStatsError].filter(Boolean).join(" · ") || undefined;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Overview</h1>
-        {(error || listeningStatsError) && (
-          <div className="flex flex-col gap-2 items-end text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            {error && <span>{error}</span>}
-            {listeningStatsError && <span>{listeningStatsError}</span>}
-          </div>
-        )}
-      </div>
+      <PageHeader title="Overview" error={headerError} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard
           label="Users"
           value={stats ? formatNumber(stats.total_users) : "—"}
           icon={
@@ -86,7 +83,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-aurora-600/20 text-aurora-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Songs"
           value={stats ? formatNumber(stats.total_songs) : "—"}
           icon={
@@ -96,7 +93,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-emerald-500/20 text-emerald-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Playlists"
           value={stats ? formatNumber(stats.total_playlists) : "—"}
           icon={
@@ -106,7 +103,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-amber-500/20 text-amber-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Storage Used"
           value={stats ? formatBytes(stats.total_storage_bytes) : "—"}
           icon={
@@ -118,8 +115,8 @@ export default function AdminOverviewPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard
           label="Total Plays"
           value={listeningStats ? formatNumber(listeningStats.total_plays) : "—"}
           icon={
@@ -130,7 +127,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-sky-500/20 text-sky-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Active Listeners"
           value={listeningStats ? formatNumber(listeningStats.active_users) : "—"}
           icon={
@@ -140,7 +137,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-violet-500/20 text-violet-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Total Listening Time"
           value={listeningStats ? formatDurationShort(listeningStats.total_listening_seconds) : "—"}
           icon={
@@ -150,7 +147,7 @@ export default function AdminOverviewPage() {
           }
           colorClass="bg-orange-500/20 text-orange-400"
         />
-        <StatCard
+        <AdminStatCard
           label="Avg Session"
           value={listeningStats ? formatDurationShort(listeningStats.avg_duration_seconds) : "—"}
           icon={
@@ -163,39 +160,25 @@ export default function AdminOverviewPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Quick Actions</h3>
+        <AdminGlassCard title="Quick Actions">
           <div className="grid grid-cols-2 gap-3">
-            <ActionCard icon={<UsersIcon />} label="Manage Users" onClick={() => navigate("/admin/users")} />
-            <ActionCard icon={<LibraryIcon />} label="Browse Library" onClick={() => navigate("/admin/library")} />
-            <ActionCard icon={<PlaylistsIcon />} label="View Playlists" onClick={() => navigate("/admin/playlists")} />
-            <ActionCard icon={<SettingsIcon />} label="Edit Settings" onClick={() => navigate("/admin/settings")} />
+            <AdminActionCard icon={<UsersIcon />} label="Manage Users" onClick={() => navigate("/admin/users")} />
+            <AdminActionCard icon={<LibraryIcon />} label="Browse Library" onClick={() => navigate("/admin/library")} />
+            <AdminActionCard icon={<PlaylistsIcon />} label="View Playlists" onClick={() => navigate("/admin/playlists")} />
+            <AdminActionCard icon={<SettingsIcon />} label="Edit Settings" onClick={() => navigate("/admin/settings")} />
           </div>
-        </div>
+        </AdminGlassCard>
 
-        <div className="bg-surface-900 border border-white/5 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">System Info</h3>
+        <AdminGlassCard title="System Info">
           <div className="space-y-3 text-sm">
             <InfoRow label="Total registered users" value={stats ? formatNumber(stats.total_users) : "—"} />
             <InfoRow label="Tracks in library" value={stats ? formatNumber(stats.total_songs) : "—"} />
             <InfoRow label="User playlists" value={stats ? formatNumber(stats.total_playlists) : "—"} />
             <InfoRow label="Library storage" value={stats ? formatBytes(stats.total_storage_bytes) : "—"} />
           </div>
-        </div>
+        </AdminGlassCard>
       </div>
     </div>
-  );
-}
-
-function ActionCard({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-2 p-4 bg-surface-800/50 border border-white/5 rounded-xl hover:border-white/10 hover:bg-surface-800 transition-all"
-    >
-      <span className="text-aurora-400">{icon}</span>
-      <span className="text-sm font-medium text-white">{label}</span>
-    </button>
   );
 }
 
@@ -208,7 +191,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-/* Inline icons for Quick Actions */
 function UsersIcon() {
   return (
     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

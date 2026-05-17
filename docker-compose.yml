@@ -6,7 +6,7 @@ services:
       - .:/workspace
     working_dir: /workspace
     command: >
-      sh -c "chmod +x init-env.sh && ./init-env.sh"
+      sh -c "tr -d '\r' < /workspace/init-env.sh > /tmp/init-env.sh && sh /tmp/init-env.sh"
     profiles:
       - init
 
@@ -43,8 +43,10 @@ services:
       dockerfile: Dockerfile
     container_name: aurora-object-storage
     environment:
-      NOS_JWT_SECRET: ${NOS_JWT_SECRET:?Set NOS_JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
-      NOS_SIGNING_SECRET: ${NOS_SIGNING_SECRET:?Set NOS_SIGNING_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      # Human: Optional at compose-parse time so `docker compose down` works without .env; Nebula validates on start.
+      # Agent: READS .env via compose interpolation; FAILS at container start if unset/weak (nebula-os secrets.rs).
+      NOS_JWT_SECRET: ${NOS_JWT_SECRET:-}
+      NOS_SIGNING_SECRET: ${NOS_SIGNING_SECRET:-}
       NOS_BIND_ADDR: 0.0.0.0:9000
       NOS_DATA_DIR: /data/blobs
       NOS_META_PATH: /data/meta/metadata.db
@@ -65,10 +67,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://aurora:aurora@postgres:5432/aurora}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
-      OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:?Set NOS_JWT_SECRET in .env — run: docker compose --profile init run --rm init-env}
-      SIGNING_SECRET: ${SIGNING_SECRET:?Set SIGNING_SECRET in .env — run: docker compose --profile init run --rm init-env}
-      MASTER_SECRET: ${MASTER_SECRET:?Set MASTER_SECRET in .env — run: docker compose --profile init run --rm init-env}
+      JWT_SECRET: ${JWT_SECRET:-}
+      OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:-}
+      SIGNING_SECRET: ${SIGNING_SECRET:-}
+      MASTER_SECRET: ${MASTER_SECRET:-}
       URL_EXPIRY_SECONDS: ${URL_EXPIRY_SECONDS:-3600}
       MUSIC_DIR: ${MUSIC_DIR:-/music}
       STORAGE_MODE: ${STORAGE_MODE:-proxy}

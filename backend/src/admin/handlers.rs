@@ -108,6 +108,12 @@ pub async fn delete_song(
         .execute(&state.pool)
         .await?;
 
+    let song_id = id.clone();
+    let sync = state.search_sync.clone();
+    tokio::spawn(async move {
+        sync.notify_song_delete(&song_id).await;
+    });
+
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -119,7 +125,8 @@ pub struct AdminPlaylist {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
-    pub is_public: bool,
+    #[serde(with = "crate::playlists::model::serde_is_public")]
+    pub is_public: i64,
     pub created_at: String,
     pub owner_email: String,
     pub song_count: i64,
@@ -574,6 +581,13 @@ pub async fn update_song(
 
     let mut song: crate::songs::model::Song = song_db.into();
     crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
+
+    let song_id = song.id.clone();
+    let sync = state.search_sync.clone();
+    tokio::spawn(async move {
+        sync.notify_song_upsert(&song_id).await;
+    });
+
     Ok(Json(song))
 }
 
@@ -600,5 +614,12 @@ pub async fn toggle_song_enabled(
 
     let mut song: crate::songs::model::Song = song_db.into();
     crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
+
+    let song_id = song.id.clone();
+    let sync = state.search_sync.clone();
+    tokio::spawn(async move {
+        sync.notify_song_upsert(&song_id).await;
+    });
+
     Ok(Json(song))
 }

@@ -60,6 +60,7 @@ export default function PlayerBar() {
   } = usePlayer();
 
   const prevStreamUrl = useRef<string | null>(null);
+  const queueButtonRef = useRef<HTMLButtonElement>(null);
   const lastLoggedStart = useRef<string | null>(null);
   const historySessionId = useRef<string | null>(null);
   const listenAccumulator = useRef(0);
@@ -284,7 +285,16 @@ export default function PlayerBar() {
           <div className="absolute -inset-1 rounded-[36px] bg-black/20 blur-xl -z-10" />
 
           {/* Content */}
-          <div className="relative px-4 sm:px-5 py-3 space-y-2">
+          <div
+            className="relative px-4 sm:px-5 py-3 space-y-2"
+            role="region"
+            aria-label="Player controls"
+            aria-describedby="player-keyboard-hints"
+          >
+            <p className="sr-only" id="player-keyboard-hints">
+              Space play or pause. Arrow keys seek five seconds. Shift with arrows for previous or next track. Q
+              toggles queue. M mutes. Escape closes the queue.
+            </p>
             {/* Progress bar */}
             <div
               className="relative w-full h-2.5 group cursor-pointer"
@@ -428,10 +438,14 @@ export default function PlayerBar() {
                 </span>
 
                 <button
+                  ref={queueButtonRef}
+                  type="button"
                   onClick={() => setQueueOpen(!queueOpen)}
-                  className={`text-surface-400 hover:text-white transition-colors ${queueOpen ? "text-aurora-400" : ""}`}
+                  className={`text-surface-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 rounded-lg p-1 ${queueOpen ? "text-aurora-400" : ""}`}
                   aria-label="Queue"
-                  title="Queue"
+                  aria-expanded={queueOpen}
+                  aria-controls="playback-queue-drawer"
+                  title="Queue (Q)"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -486,7 +500,7 @@ export default function PlayerBar() {
       </div>
       )}
 
-      <QueueDrawer />
+      <QueueDrawer returnFocusRef={queueButtonRef} />
 
       {/* Human: Shared element referenced by PlayerContext — all transport state funnels through this node. */}
       {/* Agent: ref=audioRef; WIRES time/metadata/end/error handlers; preload metadata. */}

@@ -1,7 +1,8 @@
 // Human: Modal fuzzy picker over known string values — supports single pick or multi with Enter-to-create new tokens.
 // Agent: Fuse.js search; RESET on first open; multiSelect toggles local selection then onMultiSelect on Done; Escape closes.
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useId } from "react";
 import Fuse from "fuse.js";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface EntityPickerDialogProps {
   open: boolean;
@@ -32,6 +33,11 @@ export default function EntityPickerDialog({
   const [query, setQuery] = useState("");
   const [localSelected, setLocalSelected] = useState<string[]>(selectedValues);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const searchId = useId();
+
+  useFocusTrap(open, panelRef, { initialFocus: false });
 
   const wasOpenRef = useRef(false);
   // Human: When dialog opens, reset query/selection and focus the filter input for fast keyboard flows.
@@ -104,15 +110,29 @@ export default function EntityPickerDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        className="flex max-h-[60vh] w-full max-w-md flex-col rounded-xl border border-surface-700 bg-surface-950 p-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="flex max-h-[60vh] w-full max-w-md flex-col rounded-xl border border-surface-700 bg-surface-950 p-4 shadow-2xl outline-none"
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-3 text-sm font-semibold text-white">{title}</h3>
+        <h3 id={titleId} className="mb-3 text-sm font-semibold text-white">
+          {title}
+        </h3>
 
+        <label htmlFor={searchId} className="sr-only">
+          Search or create {title.toLowerCase()}
+        </label>
         <input
+          id={searchId}
           ref={inputRef}
           className={inputClass}
           value={query}

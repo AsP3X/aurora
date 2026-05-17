@@ -1,0 +1,4 @@
+# Human: Shell scripts must use LF so Alpine init containers can execute them.
+# Agent: eol=lf for init-env.sh and other shell scripts checked out on Windows.
+*.sh text eol=lf
+init-env.sh text eol=lf

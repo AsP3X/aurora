@@ -694,6 +694,34 @@ export async function toggleAdminSongEnabled(id: string, enabled: boolean) {
   }) as Promise<Song>;
 }
 
+// Human: Ask the API to re-run ffmpeg HLS for a song that failed or stalled.
+// Agent: POST /admin/songs/:id/hls/retry; RETURNS { ok, song_id }.
+export async function retryAdminSongHls(id: string) {
+  return apiFetch(`/admin/songs/${id}/hls/retry`, { method: "POST" }) as Promise<{
+    ok: boolean;
+    song_id: string;
+  }>;
+}
+
+export interface SearchSyncStatus {
+  meili_configured: boolean;
+  pending_count: number;
+  failed_count: number;
+  oldest_pending_at: string | null;
+  sample_errors: Array<{ song_id: string; operation: string; last_error: string }>;
+  warning: string | null;
+}
+
+// Human: Surface Meilisearch backlog for admin banners when DB and index diverge.
+// Agent: GET /admin/search/sync-status; READS pending/failed counts.
+export async function fetchSearchSyncStatus() {
+  return apiFetch("/admin/search/sync-status") as Promise<SearchSyncStatus>;
+}
+
+export async function retrySearchSync() {
+  return apiFetch("/admin/search/retry-sync", { method: "POST" }) as Promise<SearchSyncStatus>;
+}
+
 export async function fetchAdminPlaylists() {
   return apiFetch("/admin/playlists") as Promise<Array<{
     id: string;

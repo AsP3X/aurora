@@ -120,12 +120,16 @@ export default function Library() {
   /* Search bar for topbar */
   const searchBar = (
     <div className="relative">
-      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <label htmlFor="library-search" className="sr-only">
+        Search songs, artists, and albums
+      </label>
+      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
       <input
+        id="library-search"
         ref={searchRef}
-        type="text"
+        type="search"
         placeholder="Search songs, artists, albums..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
@@ -133,8 +137,10 @@ export default function Library() {
       />
       {isSearching && (
         <button
+          type="button"
           onClick={() => setSearchQuery("")}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-white transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 rounded-full p-0.5"
+          aria-label="Clear search"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
