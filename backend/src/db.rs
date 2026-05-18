@@ -5,6 +5,28 @@ use sqlx::migrate::{MigrateDatabase, Migrator};
 use sqlx::AnyPool;
 use std::path::Path;
 
+// Human: Classify a connection string so setup UI and migrations pick the right driver family.
+// Agent: READS url prefix; RETURNS "postgres" | "sqlite" | None when unsupported.
+pub fn driver_from_url(database_url: &str) -> Option<&'static str> {
+    if database_url.starts_with("postgres://") || database_url.starts_with("postgresql://") {
+        Some("postgres")
+    } else if database_url.starts_with("sqlite:") {
+        Some("sqlite")
+    } else {
+        None
+    }
+}
+
+// Human: Verify the URL is reachable and migrations apply without keeping a long-lived pool (setup wizard test button).
+// Agent: CALLS init_pool; DISCONNECTS implicitly when pool drops; PROPAGATES driver/migration errors.
+pub async fn test_connection(database_url: &str) -> anyhow::Result<()> {
+    let pool = init_pool(database_url).await?;
+    sqlx::query("SELECT 1")
+        .execute(&pool)
+        .await?;
+    Ok(())
+}
+
 // Human: Create the database file/cluster DB if missing, open a bounded pool, apply pragmas/migrations once at startup.
 // Agent: CALLS create_database for sqlite/postgres URLs; RUNS migrations; PRAGMA foreign_keys ON for sqlite; DEFAULT max_connections 20.
 pub async fn init_pool(database_url: &str) -> anyhow::Result<AnyPool> {
