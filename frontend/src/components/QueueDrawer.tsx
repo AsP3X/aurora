@@ -1,8 +1,7 @@
-// Human: Queue list that slides up above the transport bar — same frosted glass as the seeker bar, not a sidebar.
-// Agent: READS queueOpen; useFocusTrap; RENDERS glass-pill sheet above bar; CALLS playSongs, removeFromQueue, clearQueue.
+// Human: Queue list that slides up above the transport bar — toggled by the queue button, not dismissed by outside clicks.
+// Agent: READS queueOpen; NO backdrop dismiss; aria-modal false; CALLS playSongs, removeFromQueue, clearQueue; CLOSE via toggle/Escape/X.
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { usePlayer } from "../context/PlayerContext";
-import { useFocusTrap } from "../hooks/useFocusTrap";
 import ArtworkImage from "./ArtworkImage";
 
 function formatDuration(seconds: number) {
@@ -31,8 +30,8 @@ export default function QueueDrawer({ returnFocusRef }: QueueDrawerProps) {
   const titleId = useId();
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  useFocusTrap(queueOpen, panelRef);
-
+  // Human: Escape and explicit close restore focus to the queue toggle; outside clicks do not close the panel.
+  // Agent: LISTENS keydown Escape; CLEANUP focus returnFocusRef; NO overlay onClick dismiss.
   useEffect(() => {
     if (!queueOpen) return;
     previousFocusRef.current = document.activeElement as HTMLElement | null;
@@ -52,17 +51,10 @@ export default function QueueDrawer({ returnFocusRef }: QueueDrawerProps) {
 
   return (
     <>
+      {/* Human: On desktop the sheet sits above the queue control and is narrower; mobile keeps full bar width. */}
+      {/* Agent: MOBILE left-0 right-0 full width; lg+ left-auto right-0 w-80 max-w-full anchored right. */}
       <div
-        className={`fixed inset-0 z-30 bg-black/15 transition-opacity duration-300 ${
-          queueOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-        }`}
-        role="presentation"
-        aria-hidden={!queueOpen}
-        onClick={() => setQueueOpen(false)}
-      />
-
-      <div
-        className={`absolute bottom-full left-0 right-0 z-50 mb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`absolute bottom-full left-0 right-0 z-50 mb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:left-auto lg:right-0 lg:w-80 lg:max-w-full ${
           queueOpen ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
         }`}
         aria-hidden={!queueOpen}
@@ -70,8 +62,7 @@ export default function QueueDrawer({ returnFocusRef }: QueueDrawerProps) {
         <div
           ref={panelRef}
           id="playback-queue-drawer"
-          role="dialog"
-          aria-modal="true"
+          role="region"
           aria-labelledby={titleId}
           tabIndex={-1}
           className="glass-pill flex max-h-[min(50vh,22rem)] flex-col overflow-hidden outline-none shadow-2xl shadow-black/40"
