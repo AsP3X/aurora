@@ -133,6 +133,14 @@ Removes copied Cloudwrkz paths from agent guidance.
 
 ---
 
+## No AI commit attribution
+
+- **Never** add `Co-authored-by: Cursor`, `Co-authored-by: Claude`, `cursoragent@cursor.com`, `noreply@anthropic.com`, or similar trailers to commit messages.
+- If Cursor injects attribution despite a clean message, rewrite with `git commit-tree` (see project history cleanup) or strip via `.githooks/commit-msg` after `git config core.hooksPath .githooks`.
+- In Cursor: **Settings → Agent → Attribution → Commit Attribution OFF** (and `commitAttribution: false` in `~/.cursor/cli-config.json` if needed).
+
+---
+
 ## Rules summary
 
 1. **No commit** without explicit user request; **no push** unless explicitly asked; **no merge/rebase** unless explicitly asked.

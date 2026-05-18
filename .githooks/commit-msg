@@ -1,0 +1,7 @@
+#!/bin/sh
+# Human: Remove Cursor/Claude co-author trailers so they never land in project history.
+# Agent: READS $1 commit message file; WRITES stripped message; STRIPS lines matching cursoragent@cursor.com or anthropic.com co-author trailers.
+msg_file="$1"
+tmp=$(mktemp) || exit 0
+sed -E '/^[Cc]o-[Aa]uthored-[Bb]y:.*(cursoragent@cursor\.com|anthropic\.com)/d' "$msg_file" >"$tmp" && mv "$tmp" "$msg_file"
+exit 0
