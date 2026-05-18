@@ -22,6 +22,7 @@ import {
   getVisibleLineEntries,
   isLyricLineVisibleAtSeek,
   nextVisibleLineIndex,
+  isLyricsFullySynced,
   parseLyricsImportText,
   serializeLyricsWithTimestamps,
 } from "../../utils/lyrics";
@@ -230,6 +231,10 @@ export default function AdminLyricsEditorPage() {
       })),
     [lines],
   );
+
+  // Human: Mobile dock shows Save/Preview only after every non-empty line has a timestamp.
+  // Agent: useMemo isLyricsFullySynced(lines); MATCHES backend is_synced; DRIVES mobile dock mode.
+  const syncComplete = useMemo(() => isLyricsFullySynced(lines), [lines]);
 
   // Human: If the playhead passes the selected row, jump selection to the next visible line.
   // Agent: EFFECT [currentTimeMs, lines]; READS selectedIndex; MAY SET selectedIndex to first visible.
@@ -458,7 +463,7 @@ export default function AdminLyricsEditorPage() {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-6 pb-[calc(13.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+    <div className="space-y-4 lg:space-y-6 pb-[calc(11rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <PageHeader title="Lyrics" subtitle={`${song.title} — ${song.artist}`}>
         <Link
           to="/admin/library"
@@ -592,8 +597,8 @@ export default function AdminLyricsEditorPage() {
         )}
       </div>
 
-      {/* Human: Fixed bottom dock on mobile — seek, play/sync, and primary actions stay thumb-reachable. */}
-      {/* Agent: lg:hidden fixed inset-x-0 bottom-0 z-30; safe-area padding; seekBar + transport + save row. */}
+      {/* Human: Fixed bottom dock on mobile — sync controls while syncing; save/preview after all lines timed. */}
+      {/* Agent: lg:hidden fixed z-30; syncComplete TOGGLES single control row; mobileMoreOpen popover. */}
       <div
         className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-surface-950/95 backdrop-blur-xl shadow-[0_-8px_32px_rgba(0,0,0,0.45)]"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
@@ -603,10 +608,12 @@ export default function AdminLyricsEditorPage() {
             {seekBar}
           </div>
           <p className="text-[10px] text-surface-500 text-center leading-snug px-1">
-            Tap markers to jump · seek left to edit passed lines
+            {syncComplete
+              ? "All lines synced — save to keep changes"
+              : "Tap markers to jump · seek left to edit passed lines"}
           </p>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 relative">
             <button
               type="button"
               onClick={togglePlay}
@@ -624,48 +631,42 @@ export default function AdminLyricsEditorPage() {
                 </svg>
               )}
             </button>
-            <button
-              type="button"
-              onClick={() => syncLineAt(selectedIndex)}
-              disabled={!audioReady}
-              className="flex-1 min-h-[48px] rounded-xl bg-gradient-to-r from-aurora-600 to-aurora-500 text-white font-semibold text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-400/60 shadow-lg shadow-aurora-500/25"
-            >
-              Sync line {selectedIndex + 1}
-            </button>
-            <button
-              type="button"
-              onClick={addLine}
-              aria-label="Add line"
-              className="shrink-0 min-h-[48px] min-w-[48px] rounded-xl bg-surface-800 border border-white/10 text-surface-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50 flex items-center justify-center"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
 
-          <div className="flex gap-2 relative">
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saving}
-              className="flex-1 min-h-[44px] rounded-xl bg-white text-surface-950 font-semibold text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white/40"
-            >
-              {saving ? "Saving…" : "Save lyrics"}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate(`/player/${songId}`)}
-              className="min-h-[44px] px-4 rounded-xl bg-surface-800 border border-white/10 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
-            >
-              Preview
-            </button>
+            {syncComplete ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={saving}
+                  className="flex-1 min-h-[48px] rounded-xl bg-white text-surface-950 font-semibold text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white/40 active:scale-[0.98]"
+                >
+                  {saving ? "Saving…" : "Save lyrics"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/player/${songId}`)}
+                  className="min-h-[48px] px-4 rounded-xl bg-surface-800 border border-white/10 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50 active:scale-[0.98]"
+                >
+                  Preview
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => syncLineAt(selectedIndex)}
+                disabled={!audioReady}
+                className="flex-1 min-h-[48px] rounded-xl bg-gradient-to-r from-aurora-600 to-aurora-500 text-white font-semibold text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-aurora-400/60 shadow-lg shadow-aurora-500/25 active:scale-[0.98]"
+              >
+                Sync line {selectedIndex + 1}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setMobileMoreOpen((open) => !open)}
               aria-label="More actions"
               aria-expanded={mobileMoreOpen}
-              className="min-h-[44px] min-w-[44px] rounded-xl bg-surface-800 border border-white/10 text-surface-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50 flex items-center justify-center"
+              className="shrink-0 min-h-[48px] min-w-[48px] rounded-xl bg-surface-800 border border-white/10 text-surface-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-aurora-500/50 flex items-center justify-center"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />

@@ -136,6 +136,14 @@ export function serializeLyricsWithTimestamps(lines: LyricLine[]): string {
     .join("\n");
 }
 
+// Human: True when every non-empty line has a timestamp — matches backend `is_synced` for save/preview gating.
+// Agent: PURE; IGNORES blank lines; REQUIRES start_ms >= 0 on all content lines; FALSE if no content.
+export function isLyricsFullySynced(lines: LyricLine[]): boolean {
+  const content = lines.filter((line) => line.text.trim() !== "");
+  if (content.length === 0) return false;
+  return content.every((line) => line.start_ms != null && line.start_ms >= 0);
+}
+
 // Human: Drop trailing blank spacer rows after import (plain or timestamped).
 // Agent: FILTER; KEEPS line if text, start_ms, or later non-empty row exists.
 function trimTrailingBlankImportLines(lines: LyricLine[]): LyricLine[] {
