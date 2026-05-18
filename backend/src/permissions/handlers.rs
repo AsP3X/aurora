@@ -444,9 +444,10 @@ pub async fn update_user_enabled(
         return Err(AppError::BadRequest("cannot change your own enabled status".into()));
     }
 
-    let enabled_flag: i64 = if body.enabled { 1 } else { 0 };
+    // Human: Use bool binding so Postgres BOOLEAN and SQLite INTEGER columns both accept the value.
+    // Agent: UPDATE users.enabled; BINDS body.enabled as bool via sqlx Any.
     sqlx::query("UPDATE users SET enabled = $1 WHERE id = $2")
-        .bind(enabled_flag)
+        .bind(body.enabled)
         .bind(&user_id)
         .execute(&state.pool)
         .await?;

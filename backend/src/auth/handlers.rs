@@ -146,14 +146,15 @@ pub async fn register(
 
     let mut tx = state.pool.begin().await?;
 
-    let enabled_flag: i64 = if enabled { 1 } else { 0 };
+    // Human: Bind `enabled` as bool — sqlx maps it to BOOLEAN (Postgres) or INTEGER 0/1 (SQLite).
+    // Agent: WRITES users.enabled; BINDS bool; REQUIRES Any pool driver-specific encoding.
     let result = sqlx::query_as::<_, (String,)>(
         "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'listener', $4) RETURNING id",
     )
     .bind(&user_id)
     .bind(&body.email)
     .bind(&password_hash)
-    .bind(enabled_flag)
+    .bind(enabled)
     .fetch_one(&mut *tx)
     .await;
 
