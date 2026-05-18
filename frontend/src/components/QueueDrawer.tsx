@@ -52,9 +52,9 @@ export default function QueueDrawer({ returnFocusRef }: QueueDrawerProps) {
   return (
     <>
       {/* Human: On desktop the sheet sits above the queue control and is narrower; mobile keeps full bar width. */}
-      {/* Agent: MOBILE left-0 right-0 full width; lg+ left-auto right-0 w-80 max-w-full anchored right. */}
+      {/* Agent: MOBILE left-0 right-0 full width; lg+ left-auto right-0 w-[40rem] max-w-full anchored right. */}
       <div
-        className={`absolute bottom-full left-0 right-0 z-50 mb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:left-auto lg:right-0 lg:w-80 lg:max-w-full ${
+        className={`absolute bottom-full left-0 right-0 z-50 mb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:left-auto lg:right-0 lg:w-[40rem] lg:max-w-full ${
           queueOpen ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
         }`}
         aria-hidden={!queueOpen}
