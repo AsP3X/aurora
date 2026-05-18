@@ -13,6 +13,11 @@ import type { SongDraft, Song } from "../../types";
 import SongMetadataForm from "./SongMetadataForm";
 import ArtworkCropper from "./ArtworkCropper";
 
+// Human: Mobile Safari and several mobile WebViews treat `accept="audio/*"` as a strict MIME filter, which often hides `.wav` and other valid files even though the OS can open them; we combine `audio/*` with concrete extensions and MIME tokens that mirror the backend stage allowlist.
+// Agent: READS only by `<input accept>`; MUST stay aligned with `allowed` in `backend/src/admin/upload.rs` (mp3, flac, ogg, opus, m4a, aac, wma, wav); BROADENS picker on iOS/Android without relaxing server validation.
+const ADMIN_AUDIO_UPLOAD_ACCEPT =
+  "audio/*,.mp3,.flac,.ogg,.opus,.m4a,.aac,.wma,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/flac,audio/x-flac,audio/ogg,audio/opus,audio/aac,audio/x-ms-wma,audio/wav,audio/x-wav,audio/wave";
+
 type UploadState =
   | "idle"
   | "uploading"
@@ -275,7 +280,7 @@ export default function UploadSongDialog({
               id={fileInputId}
               ref={fileInputRef}
               type="file"
-              accept="audio/*"
+              accept={ADMIN_AUDIO_UPLOAD_ACCEPT}
               className="hidden"
               onChange={handleFileSelect}
             />
