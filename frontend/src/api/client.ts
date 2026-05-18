@@ -537,6 +537,20 @@ export async function setupStatus() {
   return apiFetch("/setup/status", { cache: "no-store" }) as Promise<{ setup_complete: boolean }>;
 }
 
+export async function setupDatabaseInfo() {
+  return apiFetch("/setup/database", { cache: "no-store" }) as Promise<{
+    driver: string;
+    database_url: string;
+  }>;
+}
+
+export async function testSetupDatabase(database_url: string) {
+  return apiFetch("/setup/database/test", {
+    method: "POST",
+    body: JSON.stringify({ database_url }),
+  }) as Promise<{ ok: boolean; driver: string }>;
+}
+
 export async function fetchPublicRegistrationSetting() {
   return apiFetch("/settings/registration", { cache: "no-store" }) as Promise<{ allow_public_registration: boolean }>;
 }
@@ -553,11 +567,17 @@ export async function setup(body: {
   instance_name: string;
   allow_public_registration: boolean;
   music_dir: string;
+  database_url?: string;
 }) {
   return apiFetch("/setup", {
     method: "POST",
     body: JSON.stringify(body),
-  }) as Promise<{ token: string; user: { id: string; email: string; role: string; permissions: string[] } }>;
+  }) as Promise<{
+    token?: string;
+    user: { id: string; email: string; role: string; permissions: string[] };
+    restart_required?: boolean;
+    configured_database_url?: string;
+  }>;
 }
 
 // Admin APIs

@@ -1,10 +1,22 @@
-// Human: First-run wizard (admin user, instance options, media path) — completes with JWT via `setup` API.
-// Agent: MULTI-STEP state; VALIDATES per step; CALLS setup(); setAuth; REPLACE navigate "/".
-import { useState } from "react";
+// Human: First-run wizard (admin user, instance options, database, media path) — completes with JWT via `setup` API.
+// Agent: MULTI-STEP state; VALIDATES per step; CALLS setup/testSetupDatabase; setAuth; REPLACE navigate "/".
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { setup } from "../api/client";
+import { setup, setupDatabaseInfo, testSetupDatabase } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import NetworkBackground from "../components/NetworkBackground";
+import DatabaseConnectionDialog from "../components/setup/DatabaseConnectionDialog";
+import {
+  buildPostgresUrl,
+  buildSqliteUrl,
+  DEFAULT_POSTGRES_URL,
+  DEFAULT_SQLITE_PATH,
+  DOCKER_POSTGRES_DEFAULTS,
+  parsePostgresUrl,
+  sqlitePathFromUrl,
+  type DatabaseDriver,
+  type PostgresConnectionFields,
+} from "../lib/databaseConnection";
 
 type Step = 1 | 2 | 3;
 
@@ -19,8 +31,41 @@ export default function Setup() {
   const [instanceName, setInstanceName] = useState("Aurora Music");
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
   const [musicDir, setMusicDir] = useState("/music");
+  const [databaseDriver, setDatabaseDriver] = useState<DatabaseDriver>("postgres");
+  const [databaseUrl, setDatabaseUrl] = useState(DEFAULT_POSTGRES_URL);
+  const [postgresFields, setPostgresFields] = useState<PostgresConnectionFields>(DOCKER_POSTGRES_DEFAULTS);
+  const [sqlitePath, setSqlitePath] = useState(DEFAULT_SQLITE_PATH);
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+  const [dbTesting, setDbTesting] = useState(false);
+  const [dbTestMessage, setDbTestMessage] = useState<string | null>(null);
+  const [dbTestError, setDbTestError] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Human: Pre-fill database fields from the running API when possible (Docker Postgres URL, local SQLite, etc.).
+  // Agent: CALLS setupDatabaseInfo once; MAPS driver + url into wizard state; IGNORES errors (wizard keeps compose defaults).
+  useEffect(() => {
+    let cancelled = false;
+    setupDatabaseInfo()
+      .then((info) => {
+        if (cancelled) return;
+        const driver = info.driver === "sqlite" ? "sqlite" : "postgres";
+        setDatabaseDriver(driver);
+        setDatabaseUrl(info.database_url);
+        if (driver === "postgres") {
+          const parsed = parsePostgresUrl(info.database_url);
+          if (parsed) setPostgresFields(parsed);
+        } else {
+          setSqlitePath(sqlitePathFromUrl(info.database_url));
+        }
+      })
+      .catch(() => {
+        /* keep Docker Postgres defaults */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Human: Step 1 validates account fields client-side before advancing the wizard.
   // Agent: RETURNS error string or null; CHECKS email regex + password length + match.
@@ -34,7 +79,54 @@ export default function Setup() {
 
   function validateStep2(): string | null {
     if (!instanceName.trim()) return "Instance name is required";
+    if (!databaseUrl.trim()) return "Database connection is required";
     return null;
+  }
+
+  // Human: Switching driver rebuilds the connection URL from the matching default form values.
+  // Agent: MUTATES databaseDriver + databaseUrl; READS postgresFields/sqlitePath builders.
+  function selectDatabaseDriver(driver: DatabaseDriver) {
+    setDatabaseDriver(driver);
+    setDbTestMessage(null);
+    setDbTestError(null);
+    if (driver === "postgres") {
+      const url = buildPostgresUrl(postgresFields);
+      setDatabaseUrl(url);
+    } else {
+      setDatabaseUrl(buildSqliteUrl(sqlitePath));
+    }
+  }
+
+  // Human: Connection dialog applies edited host/credentials back to the wizard summary line.
+  // Agent: WRITES databaseUrl + postgresFields/sqlitePath; CLOSES dialog.
+  function applyDatabaseConnection(
+    url: string,
+    fields: PostgresConnectionFields,
+    path: string,
+  ) {
+    setDatabaseUrl(url);
+    setPostgresFields(fields);
+    setSqlitePath(path);
+    setDbTestMessage(null);
+    setDbTestError(null);
+    setConnectionDialogOpen(false);
+  }
+
+  // Human: Optional connectivity check before setup — surfaces API errors in the dialog.
+  // Agent: CALLS testSetupDatabase; SETS dbTestMessage or dbTestError.
+  async function handleTestDatabase(url: string) {
+    setDbTestMessage(null);
+    setDbTestError(null);
+    setDbTesting(true);
+    try {
+      const res = await testSetupDatabase(url);
+      setDbTestMessage(`Connected successfully (${res.driver}).`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Connection test failed";
+      setDbTestError(message);
+    } finally {
+      setDbTesting(false);
+    }
   }
 
   function validateStep3(): string | null {
@@ -77,7 +169,15 @@ export default function Setup() {
         instance_name: instanceName.trim(),
         allow_public_registration: allowPublicRegistration,
         music_dir: musicDir.trim(),
+        database_url: databaseUrl.trim(),
       });
+      if (res.restart_required) {
+        const url = res.configured_database_url ?? databaseUrl.trim();
+        setError(
+          `Database configured. Set DATABASE_URL to the chosen connection string, restart Aurora, then sign in. Example: ${url}`,
+        );
+        return;
+      }
       if (!res.token) {
         setError("Setup did not return a session token.");
         return;
@@ -205,6 +305,45 @@ export default function Setup() {
                   />
                 </div>
 
+                <div>
+                  <p className="text-sm font-medium text-surface-300 mb-2">Database</p>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {(["postgres", "sqlite"] as const).map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        onClick={() => selectDatabaseDriver(kind)}
+                        className={`h-10 rounded-xl border text-sm font-medium transition-all ${
+                          databaseDriver === kind
+                            ? "border-aurora-500/50 bg-aurora-500/15 text-aurora-200"
+                            : "border-white/10 bg-surface-950 text-surface-400 hover:border-white/20"
+                        }`}
+                      >
+                        {kind === "postgres" ? "PostgreSQL" : "SQLite"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0 rounded-xl bg-surface-950 border border-white/10 px-3 py-2">
+                      <p className="text-xs text-surface-500">Connection</p>
+                      <p className="text-xs text-surface-300 font-mono truncate" title={databaseUrl}>
+                        {databaseUrl}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDbTestMessage(null);
+                        setDbTestError(null);
+                        setConnectionDialogOpen(true);
+                      }}
+                      className="h-10 px-4 shrink-0 text-sm font-medium rounded-xl border border-white/10 text-surface-200 hover:bg-white/5 transition-colors"
+                    >
+                      Configure
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between py-1">
                   <div>
                     <p className="text-sm font-medium text-surface-200">Allow public registration</p>
@@ -300,6 +439,20 @@ export default function Setup() {
           Aurora Music — Self-hosted music streaming
         </p>
       </div>
+
+      <DatabaseConnectionDialog
+        open={connectionDialogOpen}
+        onClose={() => setConnectionDialogOpen(false)}
+        driver={databaseDriver}
+        databaseUrl={databaseUrl}
+        postgresFields={postgresFields}
+        sqlitePath={sqlitePath}
+        onApply={applyDatabaseConnection}
+        onTest={handleTestDatabase}
+        testing={dbTesting}
+        testMessage={dbTestMessage}
+        testError={dbTestError}
+      />
     </div>
   );
 }

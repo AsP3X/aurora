@@ -58,6 +58,8 @@ pub struct AppState {
     pub search_indexer: Option<Arc<search::indexer::SearchIndexer>>,
     /// Coordinates immediate index sync and DB-backed retries after failures.
     pub search_sync: Arc<search::sync_queue::SearchSyncService>,
+    /// Active `DATABASE_URL` the process connected with at startup (used to compare setup wizard input).
+    pub database_url: String,
 }
 
 fn install_sqlx_drivers() {
@@ -181,6 +183,7 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         meili_master_key: config.meili_master_key.clone(),
         search_indexer,
         search_sync,
+        database_url: config.database_url.clone(),
     }))
 }
 
@@ -188,6 +191,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
         .route("/api/v1/version", get(setup::handlers::release_info))
         .route("/api/v1/setup/status", get(setup::handlers::setup_status))
+        .route("/api/v1/setup/database", get(setup::handlers::setup_database_info))
+        .route(
+            "/api/v1/setup/database/test",
+            post(setup::handlers::test_setup_database),
+        )
         .route("/api/v1/setup", post(setup::handlers::setup))
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))
