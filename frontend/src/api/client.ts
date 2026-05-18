@@ -566,6 +566,7 @@ export async function setup(body: {
   password: string;
   instance_name: string;
   allow_public_registration: boolean;
+  require_account_activation?: boolean;
   music_dir: string;
   database_url?: string;
 }) {

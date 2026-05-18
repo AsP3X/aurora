@@ -11,6 +11,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, Level};
 
 pub mod admin;
+pub mod app_settings;
 pub mod auth;
 pub mod config;
 pub mod db;

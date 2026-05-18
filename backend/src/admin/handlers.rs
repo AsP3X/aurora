@@ -301,7 +301,9 @@ pub async fn get_public_registration_setting(
     .fetch_optional(&state.pool)
     .await?;
 
-    let enabled = value.map(|(v,)| v == "true").unwrap_or(true);
+    let enabled = value
+        .map(|(v,)| !crate::app_settings::value_is_false(&v))
+        .unwrap_or(true);
     Ok(Json(serde_json::json!({ "allow_public_registration": enabled })))
 }
 
@@ -316,7 +318,9 @@ pub async fn get_public_activation_setting(
     .fetch_optional(&state.pool)
     .await?;
 
-    let required = value.map(|(v,)| v == "true").unwrap_or(false);
+    let required = value
+        .map(|(v,)| crate::app_settings::value_is_true(&v))
+        .unwrap_or(false);
     Ok(Json(
         serde_json::json!({ "require_account_activation": required }),
     ))

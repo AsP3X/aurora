@@ -29,6 +29,9 @@ export default function AdminSettingsPage() {
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
 
+  const publicRegistration = settings.find((s) => s.key === "allow_public_registration");
+  const requireActivation = settings.find((s) => s.key === "require_account_activation");
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -45,6 +48,55 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  // Human: Match backend truthy parsing so toggles work even if a row was edited as `True` or `1`.
+  // Agent: PURE; TRIMS; LOWERCASE; TRUE for true/1/yes/on.
+  function settingValueIsTrue(value: string | undefined): boolean {
+    if (!value) return false;
+    const v = value.trim().toLowerCase();
+    return v === "true" || v === "1" || v === "yes" || v === "on";
+  }
+
+  async function handleRegistrationToggle(
+    key: "allow_public_registration" | "require_account_activation",
+    next: boolean,
+  ) {
+    setSaving(true);
+    setError("");
+    const value = next ? "true" : "false";
+    try {
+      await updateAdminSetting(key, value);
+      setSettings((prev) => {
+        const existing = prev.find((s) => s.key === key);
+        if (existing) {
+          return prev.map((s) => (s.key === key ? { ...s, value, updated_at: new Date().toISOString() } : s));
+        }
+        return [...prev, { key, value, updated_at: new Date().toISOString() }];
+      });
+      if (key === "allow_public_registration" && !next) {
+        await updateAdminSetting("require_account_activation", "false");
+        setSettings((prev) => {
+          const existing = prev.find((s) => s.key === "require_account_activation");
+          if (existing) {
+            return prev.map((s) =>
+              s.key === "require_account_activation"
+                ? { ...s, value: "false", updated_at: new Date().toISOString() }
+                : s,
+            );
+          }
+          return [
+            ...prev,
+            { key: "require_account_activation", value: "false", updated_at: new Date().toISOString() },
+          ];
+        });
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to update registration policy";
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave(key: string) {
     setSaving(true);
@@ -152,6 +204,70 @@ export default function AdminSettingsPage() {
           Add Setting
         </GlassButton>
       </PageHeader>
+
+      {/* Human: First-class toggles for registration policy — avoids typo-prone raw `true`/`false` text edits. */}
+      {/* Agent: CALLS handleRegistrationToggle; READS allow_public_registration + require_account_activation rows. */}
+      <AdminGlassCard padding="md" className="space-y-4">
+        <h2 className="text-sm font-semibold text-white">Registration</h2>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-surface-200">Allow public registration</p>
+            <p className="text-xs text-surface-500 mt-0.5">Anyone can create an account from the login page</p>
+          </div>
+          <button
+            type="button"
+            disabled={saving || loading}
+            onClick={() =>
+              void handleRegistrationToggle(
+                "allow_public_registration",
+                !settingValueIsTrue(publicRegistration?.value),
+              )
+            }
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 disabled:opacity-50 ${
+              settingValueIsTrue(publicRegistration?.value) ? "bg-aurora-600" : "bg-surface-700"
+            }`}
+            aria-pressed={settingValueIsTrue(publicRegistration?.value)}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settingValueIsTrue(publicRegistration?.value) ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+        <div
+          className={`flex items-center justify-between gap-4 ${
+            !settingValueIsTrue(publicRegistration?.value) ? "opacity-50" : ""
+          }`}
+        >
+          <div>
+            <p className="text-sm font-medium text-surface-200">Require admin approval on register</p>
+            <p className="text-xs text-surface-500 mt-0.5">
+              New accounts stay inactive until you approve them on the Users page
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={saving || loading || !settingValueIsTrue(publicRegistration?.value)}
+            onClick={() =>
+              void handleRegistrationToggle(
+                "require_account_activation",
+                !settingValueIsTrue(requireActivation?.value),
+              )
+            }
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+              settingValueIsTrue(requireActivation?.value) ? "bg-aurora-600" : "bg-surface-700"
+            }`}
+            aria-pressed={settingValueIsTrue(requireActivation?.value)}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settingValueIsTrue(requireActivation?.value) ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </AdminGlassCard>
 
       <DataTable<Setting>
         columns={columns}

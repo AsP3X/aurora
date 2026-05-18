@@ -60,6 +60,9 @@ pub struct SetupRequest {
     pub password: String,
     pub instance_name: String,
     pub allow_public_registration: bool,
+    /// When true, new self-registered accounts are created disabled until an admin approves them.
+    #[serde(default)]
+    pub require_account_activation: bool,
     pub music_dir: Option<String>,
     /// Target database for first-run data; defaults to the server's startup `DATABASE_URL`.
     pub database_url: Option<String>,
@@ -238,7 +241,11 @@ pub async fn setup(
 
     sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
         .bind("require_account_activation")
-        .bind("false")
+        .bind(if body.require_account_activation {
+            "true"
+        } else {
+            "false"
+        })
         .execute(&mut *tx)
         .await?;
 

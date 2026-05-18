@@ -11,6 +11,7 @@ import {
   updateUserEnabled,
   deleteUser,
   fetchAdminSettings,
+  updateAdminSetting,
 } from "../../api/client";
 import AdminGlassCard from "../../components/admin/AdminGlassCard";
 import PermissionManager from "../../components/admin/PermissionManager";
@@ -55,6 +56,7 @@ export default function AdminUsersPage() {
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [activationRequired, setActivationRequired] = useState(false);
+  const [savingActivationPolicy, setSavingActivationPolicy] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
@@ -85,13 +87,29 @@ export default function AdminUsersPage() {
     fetchAdminSettings()
       .then((settings) => {
         const row = settings.find((s) => s.key === "require_account_activation");
-        setActivationRequired(row?.value === "true");
+        setActivationRequired(settingValueIsTrue(row?.value));
       })
       .catch(() => setActivationRequired(false));
   }, [loadUsers, loadPermissions]);
 
   // Human: One-click approve for disabled accounts when operators are clearing the activation queue.
   // Agent: CALLS updateUserEnabled(userId, true); OPTIMISTIC users map; SETS approvingId during request.
+  // Human: Persist the instance-wide “approve before sign-in” flag from the Users page header toggle.
+  // Agent: CALLS updateAdminSetting('require_account_activation', 'true'|'false'); MUTATES activationRequired state.
+  async function handleToggleActivationRequired(next: boolean) {
+    setSavingActivationPolicy(true);
+    setError("");
+    try {
+      await updateAdminSetting("require_account_activation", next ? "true" : "false");
+      setActivationRequired(next);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to update registration policy";
+      setError(message);
+    } finally {
+      setSavingActivationPolicy(false);
+    }
+  }
+
   async function handleApprove(userId: string) {
     setApprovingId(userId);
     setError("");
@@ -243,15 +261,30 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Users"
-        subtitle={
-          activationRequired
-            ? "New registrations stay inactive until you approve them below."
-            : undefined
-        }
-        error={error || undefined}
-      />
+      <PageHeader title="Users" error={error || undefined}>
+        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-surface-950/60 px-3 py-2">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs font-medium text-surface-200">Require admin approval on register</p>
+            <p className="text-[10px] text-surface-500">New sign-ups stay inactive until approved</p>
+          </div>
+          <button
+            type="button"
+            disabled={savingActivationPolicy}
+            onClick={() => void handleToggleActivationRequired(!activationRequired)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 disabled:opacity-50 ${
+              activationRequired ? "bg-aurora-600" : "bg-surface-700"
+            }`}
+            aria-pressed={activationRequired}
+            aria-label="Require admin approval on register"
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                activationRequired ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </PageHeader>
 
       {activationRequired && (
         <AdminGlassCard padding="md" className="border-amber-500/20 bg-amber-500/5">
@@ -455,6 +488,14 @@ function RolePill({ role }: { role: string }) {
 
 // Human: Short label for list rows — “Pending” when activation mode is on and the account is inactive.
 // Agent: PURE statusLabel(enabled, activationRequired); RETURNS Active|Pending approval|Disabled string.
+// Human: Match backend `app_settings::value_is_true` so admin toggles and banners stay in sync with register/login.
+// Agent: PURE; TRIMS; LOWERCASE; TRUE for true/1/yes/on.
+function settingValueIsTrue(value: string | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes" || v === "on";
+}
+
 function statusLabel(enabled: boolean, activationRequired: boolean): string {
   if (enabled) return "Active";
   return activationRequired ? "Pending approval" : "Disabled";

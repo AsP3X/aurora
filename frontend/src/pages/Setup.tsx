@@ -30,6 +30,7 @@ export default function Setup() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [instanceName, setInstanceName] = useState("Aurora Music");
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
+  const [requireAccountActivation, setRequireAccountActivation] = useState(false);
   const [musicDir, setMusicDir] = useState("/music");
   const [databaseDriver, setDatabaseDriver] = useState<DatabaseDriver>("postgres");
   const [databaseUrl, setDatabaseUrl] = useState(DEFAULT_POSTGRES_URL);
@@ -168,6 +169,7 @@ export default function Setup() {
         password,
         instance_name: instanceName.trim(),
         allow_public_registration: allowPublicRegistration,
+        require_account_activation: requireAccountActivation,
         music_dir: musicDir.trim(),
         database_url: databaseUrl.trim(),
       });
@@ -351,10 +353,37 @@ export default function Setup() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAllowPublicRegistration((v) => !v)}
+                    onClick={() =>
+                      setAllowPublicRegistration((v) => {
+                        const next = !v;
+                        if (!next) setRequireAccountActivation(false);
+                        return next;
+                      })
+                    }
                     className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${allowPublicRegistration ? "bg-aurora-600" : "bg-surface-700"}`}
+                    aria-pressed={allowPublicRegistration}
                   >
                     <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${allowPublicRegistration ? "right-1" : "left-1"}`} />
+                  </button>
+                </div>
+
+                {/* Human: When on, new sign-ups stay inactive until an admin approves them on the Users page. */}
+                {/* Agent: STATE requireAccountActivation; POST setup require_account_activation; DISABLED unless allowPublicRegistration. */}
+                <div className={`flex items-center justify-between py-1 ${!allowPublicRegistration ? "opacity-50" : ""}`}>
+                  <div>
+                    <p className="text-sm font-medium text-surface-200">Require admin approval on register</p>
+                    <p className="text-xs text-surface-500 mt-0.5">
+                      New accounts must be approved before they can sign in
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!allowPublicRegistration}
+                    onClick={() => setRequireAccountActivation((v) => !v)}
+                    className={`w-11 h-6 rounded-full relative shrink-0 transition-colors disabled:cursor-not-allowed ${requireAccountActivation ? "bg-aurora-600" : "bg-surface-700"}`}
+                    aria-pressed={requireAccountActivation}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${requireAccountActivation ? "right-1" : "left-1"}`} />
                   </button>
                 </div>
               </div>

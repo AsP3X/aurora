@@ -404,14 +404,23 @@ pub async fn list_users(
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
-    let users = sqlx::query_as::<_, (String, String, String, bool)>(
-        "SELECT id, email, role, enabled FROM users ORDER BY created_at DESC",
+    // Human: Cast `enabled` so SQLite INTEGER columns decode the same way as login and auth middleware.
+    // Agent: SELECT CAST(enabled AS INTEGER); MAPS !=0 → JSON boolean enabled.
+    let users = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT id, email, role, CAST(enabled AS INTEGER) AS enabled FROM users ORDER BY created_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
     let result: Vec<serde_json::Value> = users
         .into_iter()
-        .map(|(id, email, role, enabled)| serde_json::json!({"id": id, "email": email, "role": role, "enabled": enabled}))
+        .map(|(id, email, role, enabled_raw)| {
+            serde_json::json!({
+                "id": id,
+                "email": email,
+                "role": role,
+                "enabled": enabled_raw != 0,
+            })
+        })
         .collect();
     Ok(Json(result))
 }
@@ -435,8 +444,9 @@ pub async fn update_user_enabled(
         return Err(AppError::BadRequest("cannot change your own enabled status".into()));
     }
 
+    let enabled_flag: i64 = if body.enabled { 1 } else { 0 };
     sqlx::query("UPDATE users SET enabled = $1 WHERE id = $2")
-        .bind(body.enabled)
+        .bind(enabled_flag)
         .bind(&user_id)
         .execute(&state.pool)
         .await?;

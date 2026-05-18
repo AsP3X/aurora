@@ -122,7 +122,7 @@ pub async fn register(
     .await?;
 
     if let Some((value,)) = allow_public {
-        if value == "false" {
+        if crate::app_settings::value_is_false(&value) {
             return Err(AppError::Forbidden("public registration is disabled".into()));
         }
     }
@@ -133,20 +133,27 @@ pub async fn register(
     .fetch_optional(&state.pool)
     .await?;
 
-    let enabled = !require_activation.map(|(v,)| v == "true").unwrap_or(false);
+    // Human: New accounts start disabled when activation is required — parse loosely so admin UI typos still work.
+    // Agent: READS require_account_activation row; value_is_true → enabled false; DEFAULT enabled true when unset.
+    let activation_required = require_activation
+        .as_ref()
+        .map(|(v,)| crate::app_settings::value_is_true(v))
+        .unwrap_or(false);
+    let enabled = !activation_required;
 
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
     let user_id = Uuid::new_v4().to_string();
 
     let mut tx = state.pool.begin().await?;
 
+    let enabled_flag: i64 = if enabled { 1 } else { 0 };
     let result = sqlx::query_as::<_, (String,)>(
         "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'listener', $4) RETURNING id",
     )
     .bind(&user_id)
     .bind(&body.email)
     .bind(&password_hash)
-    .bind(enabled)
+    .bind(enabled_flag)
     .fetch_one(&mut *tx)
     .await;
 
