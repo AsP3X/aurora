@@ -2,6 +2,7 @@
 // Agent: PROPS playback state + handlers; OPTIONAL queueButtonRef+keyboardHintsId+artworkLink; RENDERS progress row + transport row matching PlayerBar.
 import { useCallback, useState, type RefObject } from "react";
 import ArtworkImage from "./ArtworkImage";
+import QueueDrawer from "./QueueDrawer";
 import { resolveTrackDuration } from "../lib/playbackDuration";
 import type { Song } from "../types";
 
@@ -116,7 +117,10 @@ export default function PlayerTransportPanel({
   const seekValue = trackDuration > 0 ? Math.min(progress, trackDuration) : progress;
 
   return (
-    <div className={`relative rounded-[32px] ${className}`.trim()}>
+    <div className={`relative ${className}`.trim()}>
+      <QueueDrawer returnFocusRef={queueButtonRef} />
+
+      <div className="relative rounded-[32px]">
       {/* Clipped background shell */}
       <div className="absolute inset-0 rounded-[32px] overflow-hidden">
         <div className="absolute inset-0 backdrop-blur-2xl bg-surface-950/35" />
@@ -201,8 +205,119 @@ export default function PlayerTransportPanel({
           </div>
         </div>
 
-        {/* Main row — artwork, transport, volume (same breakpoints and gaps as PlayerBar) */}
-        <div className="flex items-center justify-between gap-3 sm:gap-4">
+        {/* Mobile: elapsed / duration under the seek bar */}
+        <div className="flex items-center justify-between text-[11px] text-surface-500 font-mono lg:hidden">
+          <span>{formatTime(progress)}</span>
+          <span>{formatTime(trackDuration)}</span>
+        </div>
+
+        {/* Mobile — artwork + shuffle | centered prev/play/next | queue (no volume) */}
+        <div className="relative flex items-center min-h-10 lg:hidden">
+          <div className="flex flex-1 items-center gap-1.5 min-w-0">
+            {onArtworkClick ? (
+              <button
+                type="button"
+                onClick={onArtworkClick}
+                className="flex items-center min-w-0 group text-left shrink-0"
+              >
+                <div className="w-11 h-11 rounded-xl overflow-hidden bg-surface-900/80 ring-1 ring-white/10 shrink-0">
+                  <ArtworkImage
+                    songId={song.id}
+                    title={song.title}
+                    artist={song.artist}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </button>
+            ) : (
+              <div className="w-11 h-11 rounded-xl overflow-hidden bg-surface-900/80 ring-1 ring-white/10 shrink-0">
+                <ArtworkImage
+                  songId={song.id}
+                  title={song.title}
+                  artist={song.artist}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={onToggleShuffle}
+              className={`w-8 h-8 flex items-center justify-center transition-colors rounded-full hover:bg-white/5 ${shuffle ? "text-aurora-400" : "text-surface-400 hover:text-white"}`}
+              aria-label="Shuffle"
+              title="Shuffle"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center gap-1 pointer-events-none">
+            <button
+              type="button"
+              onClick={onPlayPrevious}
+              className="pointer-events-auto w-8 h-8 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
+              aria-label="Previous"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              onClick={onTogglePlay}
+              aria-label={isPlaying ? "Pause" : "Play"}
+              className="pointer-events-auto w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-white/10"
+            >
+              {isPlaying ? (
+                <svg className="w-4 h-4 text-surface-950" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-surface-950 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onPlayNext}
+              className="pointer-events-auto w-8 h-8 flex items-center justify-center text-surface-400 hover:text-white transition-colors rounded-full hover:bg-white/5"
+              aria-label="Next"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex flex-1 items-center justify-end gap-2 shrink-0">
+            <button
+              ref={queueButtonRef}
+              type="button"
+              onClick={onToggleQueue}
+              className={`text-surface-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-aurora-500/50 rounded-lg p-1 ${queueOpen ? "text-aurora-400" : ""}`}
+              aria-label="Queue"
+              aria-expanded={queueOpen}
+              aria-controls="playback-queue-drawer"
+              title="Queue (Q)"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop — artwork, transport, volume */}
+        <div className="hidden lg:flex items-center justify-between gap-3 sm:gap-4">
           {onArtworkClick ? (
             <button
               type="button"
@@ -299,7 +414,7 @@ export default function PlayerTransportPanel({
           </div>
 
           <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0">
-            <span className="text-[11px] text-surface-500 font-mono hidden lg:block">
+            <span className="text-[11px] text-surface-500 font-mono">
               {formatTime(progress)} / {formatTime(trackDuration)}
             </span>
 
@@ -383,6 +498,7 @@ export default function PlayerTransportPanel({
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

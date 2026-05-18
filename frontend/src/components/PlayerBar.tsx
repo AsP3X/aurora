@@ -1,5 +1,5 @@
 // Human: Drives the DOM `<audio>` element, wires HLS where needed, and syncs time/volume with PlayerContext.
-// Agent: READS currentStreamUrl; USES hls.js when URL ends with `/playlist`; CALLS logHistory/updateHistory; RENDERS QueueDrawer + hidden audio.
+// Agent: READS currentStreamUrl; USES hls.js when URL ends with `/playlist`; CALLS logHistory/updateHistory; RENDERS PlayerTransportPanel (queue sheet) + hidden audio.
 import { useCallback, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Hls from "hls.js";
@@ -7,7 +7,6 @@ import { usePlayer } from "../context/PlayerContext";
 import { logHistory, updateHistory } from "../api/client";
 import { clampProgressToTrack, readMediaDurationSeconds } from "../lib/playbackDuration";
 import PlayerTransportPanel from "./PlayerTransportPanel";
-import QueueDrawer from "./QueueDrawer";
 
 export default function PlayerBar() {
   const navigate = useNavigate();
@@ -257,8 +256,6 @@ export default function PlayerBar() {
         />
       </div>
       )}
-
-      <QueueDrawer returnFocusRef={queueButtonRef} />
 
       {/* Human: Shared element referenced by PlayerContext — all transport state funnels through this node. */}
       {/* Agent: ref=audioRef; WIRES time/metadata/end/error handlers; preload metadata. */}
