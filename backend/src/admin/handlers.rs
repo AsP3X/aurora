@@ -231,6 +231,13 @@ pub async fn list_settings(
     .fetch_all(&state.pool)
     .await?;
 
+    // Human: Migration progress keys are internal — the dedicated artwork migration card polls them instead.
+    // Agent: FILTER OUT keys starting with artwork_migration_; KEEP user-facing settings in the table.
+    let settings: Vec<AppSetting> = settings
+        .into_iter()
+        .filter(|s| !s.key.starts_with("artwork_migration_"))
+        .collect();
+
     let mut merged: std::collections::HashMap<String, AppSetting> =
         settings.into_iter().map(|s| (s.key.clone(), s)).collect();
 

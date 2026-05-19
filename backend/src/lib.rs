@@ -299,6 +299,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/stats", get(admin::handlers::get_admin_stats))
         .route("/api/v1/admin/settings", get(admin::handlers::list_settings))
         .route("/api/v1/admin/settings/{key}", axum::routing::put(admin::handlers::update_setting))
+        .route(
+            "/api/v1/admin/artwork-migration/status",
+            get(admin::artwork_migration::get_artwork_migration_status),
+        )
+        .route(
+            "/api/v1/admin/artwork-migration/start",
+            axum::routing::post(admin::artwork_migration::start_artwork_migration),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 
     let upload_routes = Router::new()

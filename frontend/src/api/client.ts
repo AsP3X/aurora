@@ -802,6 +802,32 @@ export async function retrySearchSync() {
   return apiFetch("/admin/search/retry-sync", { method: "POST" }) as Promise<SearchSyncStatus>;
 }
 
+// Human: Background migration of legacy cover blobs into seeker/library/detail WebP variants.
+// Agent: READS /admin/artwork-migration/status; DRIVES AdminSettingsPage migration card.
+export interface ArtworkMigrationStatus {
+  status: string;
+  progress: number;
+  processed: number;
+  total: number;
+  skipped: number;
+  failed: number;
+  /** Songs with cover art that still lack seeker/library/detail WebP files. */
+  pending_count: number;
+  error: string | null;
+}
+
+// Human: Poll how many songs still need WebP artwork derivatives.
+// Agent: GET /admin/artwork-migration/status; REQUIRES admin auth.
+export async function fetchArtworkMigrationStatus() {
+  return apiFetch("/admin/artwork-migration/status") as Promise<ArtworkMigrationStatus>;
+}
+
+// Human: Kick off one-shot migration for all songs with legacy artwork keys.
+// Agent: POST /admin/artwork-migration/start; HTTP 409 when already running.
+export async function startArtworkMigration() {
+  return apiFetch("/admin/artwork-migration/start", { method: "POST" }) as Promise<ArtworkMigrationStatus>;
+}
+
 export async function fetchAdminPlaylists() {
   return apiFetch("/admin/playlists") as Promise<Array<{
     id: string;

@@ -60,6 +60,22 @@ impl ArtworkVariant {
     }
 }
 
+/// Human: True when all three WebP derivatives exist under `artwork/{song_id}/`.
+/// Agent: READS storage exists seeker+library+detail keys; RETURNS bool.
+pub async fn has_optimized_variants(storage: &dyn Storage, song_id: &str) -> bool {
+    for variant in [
+        ArtworkVariant::Seeker,
+        ArtworkVariant::Library,
+        ArtworkVariant::Detail,
+    ] {
+        let key = storage_key(song_id, variant);
+        if !storage.exists(&key).await.unwrap_or(false) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Human: Object-storage path for one optimized variant of a song cover.
 /// Agent: RETURNS artwork/{song_id}/{stem}.webp; READ by get_artwork resolve.
 pub fn storage_key(song_id: &str, variant: ArtworkVariant) -> String {
