@@ -1,6 +1,6 @@
 // Human: Full-screen now-playing view — loads song by route id if needed and mirrors PlayerContext transport.
 // Agent: fetchSong+playSong when id differs; SYNCs audio element time to context on visit; BOTTOM BAR controls queue/shuffle when queue length > 0.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { fetchSong, fetchSongLyrics } from "../api/client";
@@ -10,6 +10,7 @@ import LyricsPanel, {
   type LyricsViewMode,
 } from "../components/LyricsPanel";
 import PlayerTransportPanel from "../components/PlayerTransportPanel";
+import PlayerAmbientLayout from "../components/PlayerAmbientLayout";
 import { readMediaDurationSeconds, resolveTrackDuration } from "../lib/playbackDuration";
 import type { Song, SongLyrics } from "../types";
 
@@ -162,6 +163,9 @@ export default function Player() {
   const [lyricsPanelOpen, setLyricsPanelOpen] = useState(false);
   // Human: Compact 3-line karaoke vs full scroll — remembered for the browser session.
   // Agent: STATE LyricsViewMode; READS sessionStorage aurora:lyrics-view-mode on mount; WRITES on change.
+  // Human: Login-style focus scrim centers on the now-playing stage (artwork + lyrics grid).
+  // Agent: REF forwarded to PlayerAmbientLayout → NetworkBackground auth focusTargetRef.
+  const playerStageRef = useRef<HTMLDivElement>(null);
   const [lyricsViewMode, setLyricsViewMode] = useState<LyricsViewMode>(() => {
     try {
       const stored = sessionStorage.getItem("aurora:lyrics-view-mode");
@@ -253,6 +257,7 @@ export default function Player() {
 
   if (loading) {
     return (
+      <PlayerAmbientLayout>
       <div className="flex flex-col items-center justify-center min-h-dvh px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="w-full max-w-md space-y-8">
           <div className="relative">
@@ -264,11 +269,13 @@ export default function Player() {
           </div>
         </div>
       </div>
+      </PlayerAmbientLayout>
     );
   }
 
   if (loadFailed || !currentSong) {
     return (
+      <PlayerAmbientLayout>
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-4 text-center">
         <p className="text-lg text-white">Could not load this track</p>
         <p className="max-w-sm text-sm text-surface-400">
@@ -296,6 +303,7 @@ export default function Player() {
           )}
         </div>
       </div>
+      </PlayerAmbientLayout>
     );
   }
 
@@ -324,8 +332,9 @@ export default function Player() {
   const lyricsScrollMode = showLyricsLayout && lyricsViewMode === "scroll";
 
   return (
+    <PlayerAmbientLayout focusTargetRef={playerStageRef}>
     <div
-      className={`flex flex-col min-h-dvh max-md:px-0 md:min-h-[calc(100dvh-7rem)] md:px-6 ${
+      className={`flex flex-col min-h-dvh max-md:px-0 md:min-h-dvh md:px-6 ${
         mobileLyricsChrome && !lyricsScrollMode ? "max-md:h-dvh max-md:overflow-hidden" : ""
       }`}
     >
@@ -400,8 +409,9 @@ export default function Player() {
       </div>
 
       {/* Human: Centered now-playing; lyrics grid lives below the desktop/mobile top bars. */}
-      {/* Agent: overflow-hidden only max-md lyrics chrome or md scroll; NO absolute lyrics controls. */}
+      {/* Agent: overflow-hidden only max-md lyrics chrome or md scroll; NO absolute lyrics controls; REF=playerStageRef for auth focus scrim. */}
       <div
+        ref={playerStageRef}
         className={`relative flex flex-1 flex-col min-h-0 w-full max-w-6xl mx-auto px-4 max-md:px-4 pb-2 sm:pb-8 md:pb-4 ${
           mobileLyricsChrome && !lyricsScrollMode ? "max-md:min-h-0 max-md:overflow-hidden" : ""
         } ${showLyricsLayout ? "md:min-h-0 md:flex-1 md:overflow-hidden" : ""}`}
@@ -567,5 +577,6 @@ export default function Player() {
         </div>
       </div>
     </div>
+    </PlayerAmbientLayout>
   );
 }

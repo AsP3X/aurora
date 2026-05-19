@@ -89,7 +89,9 @@ function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-surface-950 text-white relative">
+    <div
+      className={`relative min-h-screen text-white ${isPlayerPage ? "bg-transparent" : "bg-surface-950"}`}
+    >
       <SkipLink />
       {/* Human: Full-screen player is immersive on phones — no duplicate site header above its own back bar. */}
       {/* Agent: CONDITIONAL RENDER !isDashboard && !isPlayerPage for header block. */}
