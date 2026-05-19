@@ -76,15 +76,16 @@ function Layout({ children }: { children: React.ReactNode }) {
   const { currentSong } = usePlayer();
   const { pathname } = useLocation();
   const isDashboard = pathname === "/" || pathname === "/playlists" || pathname.startsWith("/playlist/");
+  const isPlayerPage = pathname.startsWith("/player/");
   const hasPlayer = !!currentSong;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-surface-950 text-white relative">
       <SkipLink />
-      {/* Human: DashboardLayout on library pages already provides its own top chrome — skip duplicate header here. */}
-      {/* Agent: CONDITIONAL RENDER !isDashboard for header block. */}
-      {!isDashboard && (
+      {/* Human: Full-screen player is immersive on phones — no duplicate site header above its own back bar. */}
+      {/* Agent: CONDITIONAL RENDER !isDashboard && !isPlayerPage for header block. */}
+      {!isDashboard && !isPlayerPage && (
         <header className="sticky top-0 z-50 border-b border-white/10 backdrop-blur-2xl bg-white/5">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
@@ -162,7 +163,11 @@ function Layout({ children }: { children: React.ReactNode }) {
       <main
         id="main-content"
         tabIndex={-1}
-        className={`${isDashboard ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} ${hasPlayer && !isDashboard && !pathname.startsWith("/player/") ? "pb-32" : ""}`}
+        className={`${
+          isDashboard || isPlayerPage
+            ? ""
+            : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+        } ${hasPlayer && !isDashboard && !isPlayerPage ? "pb-32" : ""}`}
       >
         {children}
       </main>
