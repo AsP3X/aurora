@@ -76,6 +76,7 @@ pub async fn retry_hls_encode(
             duration_seconds,
             staging_id: None,
             file_format: None,
+            pending_artwork: false,
         },
     );
 

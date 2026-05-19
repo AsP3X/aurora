@@ -220,6 +220,7 @@ export default function Player() {
                       songId={currentSong.id}
                       title={currentSong.title}
                       artist={currentSong.artist}
+                      size="detail"
                       className="h-full w-full object-cover"
                     />
                   </div>

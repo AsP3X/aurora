@@ -225,6 +225,7 @@ export default function PlayerTransportPanel({
                     songId={song.id}
                     title={song.title}
                     artist={song.artist}
+                    size="seeker"
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -235,6 +236,7 @@ export default function PlayerTransportPanel({
                   songId={song.id}
                   title={song.title}
                   artist={song.artist}
+                  size="seeker"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -329,6 +331,7 @@ export default function PlayerTransportPanel({
                   songId={song.id}
                   title={song.title}
                   artist={song.artist}
+                  size="seeker"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -346,6 +349,7 @@ export default function PlayerTransportPanel({
                   songId={song.id}
                   title={song.title}
                   artist={song.artist}
+                  size="seeker"
                   className="w-full h-full object-cover"
                 />
               </div>

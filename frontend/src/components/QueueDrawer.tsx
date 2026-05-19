@@ -151,6 +151,7 @@ export default function QueueDrawer({ returnFocusRef }: QueueDrawerProps) {
                           songId={song.id}
                           title={song.title}
                           artist={song.artist}
+                          size="seeker"
                           className="h-full w-full object-cover"
                         />
                       </div>

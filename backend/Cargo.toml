@@ -54,6 +54,8 @@ mime_guess = "2"
 bytes = "1"
 futures-util = "0.3"
 aes-gcm = "0.10"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+webp = "0.3"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

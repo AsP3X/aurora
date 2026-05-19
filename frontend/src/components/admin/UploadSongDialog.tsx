@@ -52,12 +52,82 @@ function ProgressBar({
   );
 }
 
-function ProcessingIndicator({ percent }: { percent: number }) {
+// Human: One row in the processing checklist — checkmark when done, spinner styling when active.
+// Agent: PROPS label, done, active; RENDERS icon + text for artwork/audio steps.
+function ProcessingStep({
+  label,
+  done,
+  active,
+}: {
+  label: string;
+  done: boolean;
+  active: boolean;
+}) {
   return (
-    <ProgressBar
-      percent={percent}
-      label="Converting audio for streaming…"
-    />
+    <li className="flex items-center gap-3 text-sm">
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+          done
+            ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-400"
+            : active
+              ? "border-aurora-500/50 bg-aurora-500/10 text-aurora-400"
+              : "border-surface-600 bg-surface-800 text-surface-500"
+        }`}
+        aria-hidden
+      >
+        {done ? (
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : active ? (
+          <span className="h-2 w-2 animate-pulse rounded-full bg-aurora-400" />
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-surface-600" />
+        )}
+      </span>
+      <span className={active ? "text-surface-200" : done ? "text-surface-400" : "text-surface-500"}>
+        {label}
+      </span>
+    </li>
+  );
+}
+
+// Human: After commit, show artwork WebP optimization (when applicable) then HLS audio conversion with shared progress.
+// Agent: READS percent, expectsArtwork, artworkReady; STEPS artwork 0–15% then audio; OVERALL bar uses conversion_progress.
+function ProcessingIndicator({
+  percent,
+  expectsArtwork,
+  artworkReady,
+}: {
+  percent: number;
+  expectsArtwork: boolean;
+  artworkReady: boolean;
+}) {
+  const artworkDone = !expectsArtwork || artworkReady || percent >= 15;
+  const artworkActive = expectsArtwork && !artworkDone;
+  const audioActive = artworkDone && percent < 100;
+  const phaseLabel = artworkActive
+    ? "Optimizing cover art (WebP)…"
+    : "Converting audio for streaming…";
+
+  return (
+    <div className="space-y-6 py-6">
+      <ul className="space-y-3" aria-label="Processing steps">
+        {expectsArtwork && (
+          <ProcessingStep
+            label="Optimize cover art for seeker, library, and detail views"
+            done={artworkDone}
+            active={artworkActive}
+          />
+        )}
+        <ProcessingStep
+          label="Convert audio for adaptive streaming (HLS)"
+          done={percent >= 100}
+          active={audioActive}
+        />
+      </ul>
+      <ProgressBar percent={percent} label={phaseLabel} />
+    </div>
   );
 }
 
@@ -74,6 +144,8 @@ export default function UploadSongDialog({
   const [error, setError] = useState<string | null>(null);
   const [committedSong, setCommittedSong] = useState<Song | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [expectsArtworkProcessing, setExpectsArtworkProcessing] = useState(false);
+  const [artworkReady, setArtworkReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -145,6 +217,9 @@ export default function UploadSongDialog({
     }
     setError(null);
     setUploadProgress(0);
+    setProcessingProgress(0);
+    setArtworkReady(false);
+    setExpectsArtworkProcessing(!!(croppedBlob || draft.has_artwork));
     setState("committing");
     try {
       const song = await commitSongWithProgress(
@@ -153,6 +228,7 @@ export default function UploadSongDialog({
         (pct) => setUploadProgress(pct)
       );
       setCommittedSong(song);
+      setArtworkReady(!!song.artwork_key);
       onSuccess(song);
       setState("processing");
     } catch (err) {
@@ -173,6 +249,9 @@ export default function UploadSongDialog({
         const song = await fetchSong(songId);
         if (cancelled) return;
         setProcessingProgress(song.conversion_progress);
+        if (song.artwork_key) {
+          setArtworkReady(true);
+        }
         if (song.hls_ready) {
           setProcessingProgress(100);
           setState("complete");
@@ -327,7 +406,11 @@ export default function UploadSongDialog({
         )}
 
         {state === "processing" && (
-          <ProcessingIndicator percent={processingProgress} />
+          <ProcessingIndicator
+            percent={processingProgress}
+            expectsArtwork={expectsArtworkProcessing}
+            artworkReady={artworkReady}
+          />
         )}
 
         {state === "complete" && committedSong && (

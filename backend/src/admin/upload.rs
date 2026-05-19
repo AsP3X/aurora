@@ -175,7 +175,7 @@ pub(crate) async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, App
 
 // Human: Probe staging bucket for known artwork file names so commit can copy forward without client re-upload.
 // Agent: READS Storage::exists staging/.../artwork.{jpg,png,...}; RETURNS key + mime tuple; USED by commit + get_staged_artwork.
-async fn find_staged_artwork_key(
+pub(crate) async fn find_staged_artwork_key(
     storage: &dyn crate::storage::Storage,
     staging_id: &str,
 ) -> Option<(String, String)> {
@@ -422,7 +422,6 @@ pub async fn commit_song(
 
     let mut metadata_json = String::new();
     let mut artwork_bytes: Option<Vec<u8>> = None;
-    let mut artwork_ext = "jpg".to_string();
 
     while let Some(field) = multipart
         .next_field()
@@ -442,11 +441,6 @@ pub async fn commit_song(
                 .map_err(|_| AppError::BadRequest("Invalid metadata encoding".into()))?;
             }
             "artwork" => {
-                artwork_ext = field
-                    .file_name()
-                    .and_then(|f| Path::new(f).extension().and_then(|e| e.to_str()))
-                    .unwrap_or("jpg")
-                    .to_lowercase();
                 artwork_bytes = Some(
                     field
                         .bytes()
@@ -508,44 +502,25 @@ pub async fn commit_song(
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
 
-    // Resolve artwork
-    let mut artwork_key: Option<String> = None;
-
+    // Human: Defer WebP optimization to the background encode job so the processing UI can show artwork progress.
+    // Agent: WRITES artwork_pending/{song_id}/upload when multipart art present; SETS pending_artwork flag on HlsEncodeJob; artwork_key NULL until job finishes.
+    let mut pending_artwork = false;
     if let Some(bytes) = artwork_bytes {
-        let art_ext = if matches!(artwork_ext.as_str(), "png" | "jpg" | "jpeg" | "webp") {
-            artwork_ext
-        } else {
-            "jpg".to_string()
-        };
-        let art_key = format!("artwork/{}.{}", song_id, art_ext);
-        let art_mime = format!("image/{}", art_ext);
+        let pending_key = format!("artwork_pending/{}/upload", song_id);
         state
             .storage
-            .put(&art_key, &art_mime, bytes)
+            .put(&pending_key, "application/octet-stream", bytes)
             .await
             .map_err(|e| AppError::Storage(e.to_string()))?;
-        artwork_key = Some(art_key);
-    } else if let Some((staged_key, staged_mime)) =
-        find_staged_artwork_key(state.storage.as_ref(), &req.staging_id).await
+        pending_artwork = true;
+    } else if find_staged_artwork_key(state.storage.as_ref(), &req.staging_id)
+        .await
+        .is_some()
     {
-        let staged_ext = Path::new(&staged_key)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("jpg");
-        let art_key = format!("artwork/{}.{}", song_id, staged_ext);
-        let (stream, _, _) = state
-            .storage
-            .get_stream(&staged_key)
-            .await
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-        let art_data = collect_stream(stream).await?;
-        state
-            .storage
-            .put(&art_key, &staged_mime, art_data)
-            .await
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-        artwork_key = Some(art_key);
+        pending_artwork = true;
     }
+
+    let artwork_key: Option<String> = None;
 
     let result: Result<crate::songs::model::SongDb, AppError> = async {
         let mut tx = state.pool.begin().await?;
@@ -632,6 +607,7 @@ pub async fn commit_song(
                     duration_seconds: req.duration_seconds,
                     staging_id: Some(req.staging_id.clone()),
                     file_format: Some(req.file_format.clone()),
+                    pending_artwork,
                 },
             );
 
@@ -664,10 +640,13 @@ pub async fn commit_song(
             if let Err(e) = state.storage.delete(&file_key).await {
                 tracing::warn!("Failed to clean up audio object after DB error: {}", e);
             }
-            if let Some(ref key) = artwork_key {
-                if let Err(e) = state.storage.delete(key).await {
-                    tracing::warn!("Failed to clean up artwork object after DB error: {}", e);
-                }
+            if artwork_key.is_some() {
+                crate::artwork::delete_all_for_song(
+                    state.storage.as_ref(),
+                    &song_id,
+                    artwork_key.as_deref(),
+                )
+                .await;
             }
             delete_staging_keys(
                 state.storage.as_ref(),

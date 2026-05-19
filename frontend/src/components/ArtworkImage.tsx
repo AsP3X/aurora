@@ -1,7 +1,7 @@
 // Human: Show artwork from the API when available; otherwise render a deterministic initial-based placeholder tile.
-// Agent: EFFECT fetchArtworkUrl per songId; STATE url+hasError; FALLBACK stringToHslColor(title+artist).
+// Agent: EFFECT fetchArtworkUrl per songId+size; STATE url+hasError; FALLBACK stringToHslColor(title+artist).
 import { useEffect, useState } from "react";
-import { fetchArtworkUrl } from "../api/client";
+import { fetchArtworkUrl, type ArtworkSize } from "../api/client";
 import { stringToHslColor } from "../utils/color";
 
 interface ArtworkImageProps {
@@ -9,22 +9,30 @@ interface ArtworkImageProps {
   title: string;
   artist?: string;
   className?: string;
+  /** Human: Request seeker (transport), library (cards), or detail (hero) WebP from the API. */
+  size?: ArtworkSize;
 }
 
 // Human: `songId` drives cache key; `title`/`artist` improve alt text and placeholder color entropy.
-// Agent: PROPS songId, title, optional artist; LAZY loads img; onError flips to placeholder.
-export default function ArtworkImage({ songId, title, artist = "", className = "" }: ArtworkImageProps) {
+// Agent: PROPS songId, title, optional artist, optional size; LAZY loads img; onError flips to placeholder.
+export default function ArtworkImage({
+  songId,
+  title,
+  artist = "",
+  className = "",
+  size = "library",
+}: ArtworkImageProps) {
   const [hasError, setHasError] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
 
-  // Human: Each new `songId` refetches presigned artwork — reset so we never flash the previous cover.
-  // Agent: CANCELS stale responses; CALLS fetchArtworkUrl; SETS hasError on failure.
+  // Human: Each new `songId` or size refetches presigned artwork — reset so we never flash the previous cover.
+  // Agent: CANCELS stale responses; CALLS fetchArtworkUrl(songId, size); SETS hasError on failure.
   useEffect(() => {
     let cancelled = false;
     setHasError(false);
     setUrl(null);
 
-    fetchArtworkUrl(songId)
+    fetchArtworkUrl(songId, size)
       .then((u) => {
         if (!cancelled) setUrl(u);
       })
@@ -32,8 +40,10 @@ export default function ArtworkImage({ songId, title, artist = "", className = "
         if (!cancelled) setHasError(true);
       });
 
-    return () => { cancelled = true; };
-  }, [songId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [songId, size]);
 
   if (hasError || !url) {
     const initial = title.charAt(0).toUpperCase();

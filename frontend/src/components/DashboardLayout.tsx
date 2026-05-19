@@ -342,6 +342,7 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
             songId={lastPlayed.id}
             title={lastPlayed.title}
             artist={lastPlayed.artist}
+            size="seeker"
             className="w-full h-full object-cover"
           />
         </div>

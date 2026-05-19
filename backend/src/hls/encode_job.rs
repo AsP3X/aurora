@@ -19,7 +19,14 @@ pub struct HlsEncodeJob {
     pub duration_seconds: i32,
     pub staging_id: Option<String>,
     pub file_format: Option<String>,
+    /// Human: When true, optimize cover art to WebP variants before ffmpeg (upload commit path).
+    /// Agent: READS artwork_pending/* or staging artwork; WRITES conversion_progress 0–15; SETS songs.artwork_key.
+    pub pending_artwork: bool,
 }
+
+/// Human: Progress band reserved for decode/resize/WebP upload of cover art during the processing dialog poll.
+/// Agent: CONST 0..=ARTWORK_PROGRESS_END; HLS transcode maps into ARTWORK_PROGRESS_END..55.
+const ARTWORK_PROGRESS_END: i32 = 15;
 
 // Human: Mark a song as actively transcoding before spawning the worker.
 // Agent: UPDATE songs SET hls_encode_status=processing, clears prior error text.
@@ -85,6 +92,19 @@ pub async fn run_hls_encode_job(
 
     mark_processing(&pool, &song_id).await;
 
+    if job.pending_artwork {
+        if let Err(e) = run_pending_artwork_phase(
+            &pool,
+            storage.as_ref(),
+            &song_id,
+            job.staging_id.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!(song_id = %song_id, error = %e, "Artwork optimization failed; continuing without cover art");
+        }
+    }
+
     let song_uuid = match Uuid::parse_str(&song_id) {
         Ok(u) => u,
         Err(e) => {
@@ -99,19 +119,24 @@ pub async fn run_hls_encode_job(
         .unwrap_or(&hls_tmp_dir)
         .join(format!("aurora_hls_out_{}", song_id));
 
-    set_progress(&pool, &song_id, 5).await;
+    let transcode_base = if job.pending_artwork {
+        ARTWORK_PROGRESS_END
+    } else {
+        5
+    };
+    set_progress(&pool, &song_id, transcode_base).await;
 
     match key_store.create_key_for_song(song_uuid).await {
         Ok((key_id, key)) => {
-            // Human: Reserve 0–5% for setup and map ffmpeg 0–100% into 5–50% before upload phase.
-            // Agent: watch channel from HlsEncoder; SCALES pct*0.45+5; WRITES conversion_progress until channel closes.
+            // Human: Map ffmpeg 0–100% into transcode_base..55 (after optional 0–15% artwork phase).
+            // Agent: watch channel from HlsEncoder; SCALES pct*0.40+transcode_base; WRITES conversion_progress until channel closes.
             let (progress_tx, mut progress_rx) = tokio::sync::watch::channel(0i32);
             let pool_for_progress = pool.clone();
             let song_id_for_progress = song_id.clone();
             let progress_handle = tokio::spawn(async move {
                 loop {
                     let pct = *progress_rx.borrow_and_update();
-                    let scaled = 5 + (pct as f64 * 0.45) as i32;
+                    let scaled = transcode_base + (pct as f64 * 0.40) as i32;
                     set_progress(&pool_for_progress, &song_id_for_progress, scaled).await;
                     if progress_rx.changed().await.is_err() {
                         break;
@@ -264,6 +289,75 @@ pub async fn run_hls_encode_job(
     }
 
     cleanup_dirs(&hls_tmp_dir, &hls_output_dir).await;
+}
+
+// Human: Load raw cover bytes from commit-time pending blob or staged upload, optimize to WebP, persist keys.
+// Agent: READS artwork_pending/{id}/upload OR staging artwork; CALLS ingest_artwork; UPDATE songs.artwork_key; PROGRESS 2→15.
+async fn run_pending_artwork_phase(
+    pool: &AnyPool,
+    storage: &dyn crate::storage::Storage,
+    song_id: &str,
+    staging_id: Option<&str>,
+) -> Result<(), String> {
+    set_progress(pool, song_id, 2).await;
+
+    let source = load_pending_artwork_source(storage, song_id, staging_id)
+        .await
+        .ok_or_else(|| "no artwork source found for pending optimization".to_string())?;
+
+    set_progress(pool, song_id, 5).await;
+    let db_key = crate::artwork::ingest_artwork(storage, song_id, source)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    set_progress(pool, song_id, ARTWORK_PROGRESS_END).await;
+
+    sqlx::query("UPDATE songs SET artwork_key = $1 WHERE id = $2")
+        .bind(&db_key)
+        .bind(song_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("update artwork_key: {e}"))?;
+
+    let pending_key = format!("artwork_pending/{song_id}/upload");
+    if storage.exists(&pending_key).await.unwrap_or(false) {
+        if let Err(e) = storage.delete(&pending_key).await {
+            tracing::debug!(key = %pending_key, error = %e, "pending artwork delete skipped");
+        }
+    }
+
+    Ok(())
+}
+
+// Human: Prefer explicit pending upload from commit multipart; fall back to staged embedded/extracted art.
+// Agent: READS storage keys; RETURNS Option<Vec<u8>>; CALLS collect_stream.
+async fn load_pending_artwork_source(
+    storage: &dyn crate::storage::Storage,
+    song_id: &str,
+    staging_id: Option<&str>,
+) -> Option<Vec<u8>> {
+    let pending_key = format!("artwork_pending/{song_id}/upload");
+    if storage.exists(&pending_key).await.unwrap_or(false) {
+        let (stream, _, _) = storage.get_stream(&pending_key).await.ok()?;
+        return collect_storage_stream(stream).await.ok();
+    }
+
+    let staging_id = staging_id?;
+    let (staged_key, _) =
+        crate::admin::upload::find_staged_artwork_key(storage, staging_id).await?;
+    let (stream, _, _) = storage.get_stream(&staged_key).await.ok()?;
+    collect_storage_stream(stream).await.ok()
+}
+
+async fn collect_storage_stream(
+    stream: crate::storage::StorageStream,
+) -> Result<Vec<u8>, String> {
+    use futures_util::TryStreamExt;
+    let chunks: Vec<_> = stream
+        .try_collect()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(chunks.into_iter().flat_map(|b| b.to_vec()).collect())
 }
 
 async fn cleanup_dirs(hls_tmp_dir: &Path, hls_output_dir: &Path) {

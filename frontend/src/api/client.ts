@@ -308,8 +308,16 @@ export async function fetchPlaylistUrl(id: string): Promise<string> {
   return apiFetchText(`/songs/${id}/playlist`);
 }
 
-export async function fetchArtworkUrl(id: string): Promise<string | null> {
-  const res = await apiFetch(`/songs/${id}/artwork-url`) as { url: string | null };
+/** Human: Which optimized cover derivative the API should sign (seeker bar, library grid, detail hero). */
+export type ArtworkSize = "seeker" | "library" | "detail";
+
+export async function fetchArtworkUrl(
+  id: string,
+  size: ArtworkSize = "library",
+): Promise<string | null> {
+  const res = (await apiFetch(
+    `/songs/${id}/artwork-url?size=${encodeURIComponent(size)}`,
+  )) as { url: string | null };
   return res.url;
 }
 

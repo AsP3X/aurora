@@ -10,6 +10,17 @@ use axum::{
 pub struct TicketParams {
     pub ticket: Option<String>,
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ArtworkUrlQuery {
+    pub size: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ArtworkTicketQuery {
+    pub ticket: Option<String>,
+    pub size: Option<String>,
+}
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -226,6 +237,7 @@ pub async fn get_artwork_url(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<Uuid>,
+    Query(query): Query<ArtworkUrlQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
@@ -235,17 +247,34 @@ pub async fn get_artwork_url(
         .await?;
 
     let (key,) = row.ok_or(AppError::NotFound)?;
-    if key.is_none() {
+    let Some(db_key) = key else {
+        return Ok(Json(serde_json::json!({ "url": null })));
+    };
+
+    let variant = crate::artwork::ArtworkVariant::from_query(query.size.as_deref());
+    let song_id = id.to_string();
+    let resolved = crate::artwork::resolve_storage_key(
+        state.storage.as_ref(),
+        &song_id,
+        &db_key,
+        variant,
+    )
+    .await;
+    if resolved.is_none() {
         return Ok(Json(serde_json::json!({ "url": null })));
     }
 
     let ticket = crate::stream_ticket::generate_ticket(
-        &id.to_string(),
+        &song_id,
         &claims.sub,
         &state.signing_secret,
         state.url_expiry_seconds,
     );
-    let artwork_url = format!("/api/v1/songs/{}/artwork?ticket={}", id, ticket);
+    let size_param = variant.as_query_str();
+    let artwork_url = format!(
+        "/api/v1/songs/{}/artwork?ticket={}&size={}",
+        id, ticket, size_param
+    );
     Ok(Json(serde_json::json!({ "url": artwork_url })))
 }
 
@@ -281,22 +310,37 @@ pub async fn stream_song(
 pub async fn get_artwork(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Query(params): Query<TicketParams>,
+    Query(params): Query<ArtworkTicketQuery>,
 ) -> Result<axum::response::Response, AppError> {
     let ticket = params.ticket.ok_or(AppError::Unauthorized)?;
-    crate::stream_ticket::validate_ticket(&ticket, &id.to_string(), &state.signing_secret)?;
+    let song_id = id.to_string();
+    crate::stream_ticket::validate_ticket(&ticket, &song_id, &state.signing_secret)?;
 
     let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1")
-        .bind(id.to_string())
+        .bind(&song_id)
         .fetch_optional(&state.pool)
         .await?;
 
-    let (key,) = row.ok_or(AppError::NotFound)?;
-    let Some(key) = key else {
+    let (db_key,) = row.ok_or(AppError::NotFound)?;
+    let Some(db_key) = db_key else {
         return Ok(StatusCode::NO_CONTENT.into_response());
     };
 
-    let (stream, size, mime) = state.storage.get_stream(&key).await.map_err(|e| AppError::Storage(e.to_string()))?;
+    let variant = crate::artwork::ArtworkVariant::from_query(params.size.as_deref());
+    let storage_key = crate::artwork::resolve_storage_key(
+        state.storage.as_ref(),
+        &song_id,
+        &db_key,
+        variant,
+    )
+    .await
+    .ok_or(AppError::NotFound)?;
+
+    let (stream, size, mime) = state
+        .storage
+        .get_stream(&storage_key)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
 
     let headers: axum::http::HeaderMap = [
         (axum::http::header::CONTENT_TYPE, mime.parse::<axum::http::HeaderValue>().unwrap()),

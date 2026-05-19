@@ -1,5 +1,5 @@
 // Human: Admin music table — glass DataTable, search/upload toolbar, HLS badges, context menu, edit in GlassDialog, glass pagination.
-// Agent: fetchAdminSongs offset+query; ContextMenu; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled; USES PageHeader DataTable GlassDialog GlassButton.
+// Agent: fetchAdminSongs offset+query order_by created_at DESC; ContextMenu; UploadSongDialog; updateAdminSong+deleteAdminSong+toggleEnabled; USES PageHeader DataTable GlassDialog GlassButton.
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -156,10 +156,12 @@ export default function AdminLibraryPage() {
     return Array.from(genres).sort();
   }, [songs]);
 
+  // Human: Load the current page from the API with newest uploads first so admins see recent additions at the top.
+  // Agent: CALLS fetchAdminSongs; order_by created_at → backend ORDER BY created_at DESC; PAGINATES limit/offset.
   const loadSongs = useCallback(async (q?: string, offset = 0) => {
     setSongLoading(true);
     try {
-      const data = await fetchAdminSongs({ q, limit: SONG_LIMIT, offset, order_by: "title" });
+      const data = await fetchAdminSongs({ q, limit: SONG_LIMIT, offset, order_by: "created_at" });
       setSongs(data);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load songs";

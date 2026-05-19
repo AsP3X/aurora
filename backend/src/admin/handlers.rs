@@ -77,12 +77,6 @@ pub async fn list_admin_songs(
 
 // Human: Best-effort object delete for optional blobs so failed primary deletes do not leave orphan keys in logs only.
 // Agent: CALLS Storage::delete; LOGS warn on failure; NO AppError propagation.
-async fn delete_storage_key(storage: &dyn crate::storage::Storage, key: &str) {
-    if let Err(e) = storage.delete(key).await {
-        tracing::warn!(key = %key, error = %e, "Failed to delete storage key");
-    }
-}
-
 // Human: Remove song blobs and DB row, then drop the Meilisearch document off the hot path.
 // Agent: DELETE storage file_key+artwork; DELETE songs; SPAWN notify_song_delete; HTTP 200 { ok }.
 pub async fn delete_song(
@@ -102,9 +96,7 @@ pub async fn delete_song(
     let (file_key, artwork_key) = row.ok_or(AppError::NotFound)?;
 
     state.storage.delete(&file_key).await.map_err(|e| AppError::Storage(e.to_string()))?;
-    if let Some(art) = &artwork_key {
-        let _ = state.storage.delete(art).await;
-    }
+    crate::artwork::delete_all_for_song(state.storage.as_ref(), &id, artwork_key.as_deref()).await;
 
     sqlx::query("DELETE FROM songs WHERE id = $1")
         .bind(&id)
@@ -487,16 +479,8 @@ pub async fn update_song(
     let mut should_clear_artwork = false;
 
     let new_artwork_key: Option<String> = if let Some(bytes) = artwork_bytes {
-        let ext = art_ext.ok_or_else(|| AppError::BadRequest("artwork file missing extension".into()))?;
-        let key = format!("artwork/{}.{}", id, ext);
-        let mime = match ext.as_str() {
-            "jpg" | "jpeg" => "image/jpeg",
-            "png" => "image/png",
-            "gif" => "image/gif",
-            "webp" => "image/webp",
-            _ => "application/octet-stream",
-        };
-        state.storage.put(&key, mime, bytes).await.map_err(|e| AppError::Storage(e.to_string()))?;
+        let _ext = art_ext.ok_or_else(|| AppError::BadRequest("artwork file missing extension".into()))?;
+        let key = crate::artwork::ingest_artwork(state.storage.as_ref(), &id, bytes).await?;
         should_clear_artwork = true;
         Some(key)
     } else if body.remove_artwork == Some(true) {
@@ -608,9 +592,12 @@ pub async fn update_song(
     tx.commit().await?;
 
     if should_clear_artwork {
-        if let Some(ref old_key) = current_artwork_key {
-            delete_storage_key(&*state.storage, old_key).await;
-        }
+        crate::artwork::delete_all_for_song(
+            state.storage.as_ref(),
+            &id,
+            current_artwork_key.as_deref(),
+        )
+        .await;
     }
 
     let mut song: crate::songs::model::Song = song_db.into();

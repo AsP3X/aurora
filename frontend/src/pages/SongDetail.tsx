@@ -192,6 +192,7 @@ export default function SongDetail() {
                 songId={song.id}
                 title={song.title}
                 artist={song.artist}
+                size="detail"
                 className="w-full h-full object-cover"
               />
             </div>
