@@ -208,7 +208,7 @@ function LyricsScrollView({
 
   return (
     <div
-      className={`lyrics-scroll-panel relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-y-contain scroll-smooth py-6 [mask-image:linear-gradient(to_bottom,transparent,black_12%,black_88%,transparent)] ${className.includes("max-w-") ? "" : "max-w-md mx-auto"} ${className}`}
+      className={`lyrics-scroll-panel relative w-full scroll-smooth py-4 [mask-image:linear-gradient(to_bottom,transparent,black_10%,black_90%,transparent)] ${className}`}
       aria-live="polite"
     >
       {content.map((entry, i) => {
@@ -243,7 +243,15 @@ export default function LyricsPanel({
   }
 
   if (mode === "scroll") {
-    return <LyricsScrollView content={content} activePos={activePos} className={className} />;
+    // Human: Outer column layout matches carousel; CSS caps height on .lyrics-scroll-panel only.
+    // Agent: WRAPPER w-full md:flex md:min-h-0 md:flex-1 md:items-center md:justify-center; CHILD LyricsScrollView.
+    return (
+      <div
+        className={`flex w-full min-h-0 flex-1 items-center justify-center max-md:flex-none ${className}`}
+      >
+        <LyricsScrollView content={content} activePos={activePos} className="" />
+      </div>
+    );
   }
 
   // Human: Carousel strip stays vertically centered in whatever space the player allots.

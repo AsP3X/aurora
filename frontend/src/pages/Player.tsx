@@ -155,7 +155,9 @@ export default function Player() {
     setQueueOpen,
     audioRef,
   } = usePlayer();
-  const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
+  // Human: Set when fetchSong/playSong fails so we can exit the skeleton and show “not found”.
+  // Agent: STATE boolean; RESET on id change; SET true in load catch.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
   const [lyricsPanelOpen, setLyricsPanelOpen] = useState(false);
   // Human: Compact 3-line karaoke vs full scroll — remembered for the browser session.
@@ -169,27 +171,40 @@ export default function Player() {
     }
   });
 
-  // Human: When opening `/player/:id` for a different track than what is loaded, fetch full metadata and start it via context.
-  // Agent: EFFECT [id, currentSong, playSong]; CANCELS on id change; SETS loading around fetchSong.
+  // Human: Skeleton while the URL id and PlayerContext track are out of sync (derived — no loading state flicker).
+  // Agent: BOOL id && !loadFailed && currentSong?.id !== id; FALSE when already playing this id or fetch failed.
+  const loading = Boolean(id && !loadFailed && currentSong?.id !== id);
+
+  // Human: Clear fetch-failed flag when navigating to another song route.
+  // Agent: EFFECT [id]; SETS loadFailed false.
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [id]);
+
+  // Human: When opening `/player/:id`, fetch metadata and start playback unless context already has that exact track.
+  // Agent: EFFECT [id, playSong, currentSong?.id]; SKIPS fetch when match; AWAITS playSong; SETS loadFailed on catch.
   useEffect(() => {
     if (!id) return;
-    if (currentSong?.id === id) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+    if (currentSong?.id === id) return;
+
     let cancelled = false;
-    fetchSong(id)
-      .then((song) => {
-        if (!cancelled) {
-          playSong(song);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [id, currentSong, playSong]);
+
+    const load = async () => {
+      try {
+        const song = await fetchSong(id);
+        if (cancelled) return;
+        await playSong(song);
+      } catch {
+        if (!cancelled) setLoadFailed(true);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, playSong, currentSong?.id]);
 
   // Human: If the global `<audio>` advanced while user was elsewhere, re-read element state when landing on this page.
   // Agent: EFFECT [currentSong]; READS audioRef currentTime/duration/buffered; WRITES context setters.
@@ -274,11 +289,14 @@ export default function Player() {
   // Human: On phones with lyrics open, lock page scroll so only the lyrics list moves under a sticky header.
   // Agent: BOOL mobileLyricsChrome; DRIVES h-dvh overflow-hidden + player-mobile-lyrics-chrome sticky block.
   const mobileLyricsChrome = showLyricsLayout;
+  // Human: Carousel fills the stage on small screens; scroll mode uses a capped box instead of full viewport height.
+  // Agent: BOOL lyricsScrollMode; INVERTS flex-1 / h-dvh fill rules for scroll vs carousel.
+  const lyricsScrollMode = showLyricsLayout && lyricsViewMode === "scroll";
 
   return (
     <div
       className={`flex flex-col min-h-dvh max-md:px-0 md:min-h-[calc(100dvh-7rem)] md:px-6 ${
-        mobileLyricsChrome ? "max-md:h-dvh max-md:overflow-hidden" : ""
+        mobileLyricsChrome && !lyricsScrollMode ? "max-md:h-dvh max-md:overflow-hidden" : ""
       }`}
     >
       {/* Human: Mobile top chrome — sticky nav row + genre chips when lyrics are open. */}
@@ -328,7 +346,9 @@ export default function Player() {
         )}
       </div>
 
-      <div className="hidden md:block py-4 px-4 sm:px-0">
+      {/* Human: Desktop top row — back on the left, lyrics + mode toggle on the right (not clipped by stage overflow). */}
+      {/* Agent: hidden md:flex justify-between; PlayerLyricsTopControls when hasLyrics; REPLACES absolute stage controls. */}
+      <div className="hidden md:flex items-center justify-between gap-4 py-4 px-4 sm:px-0">
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -339,33 +359,28 @@ export default function Player() {
           </svg>
           Back
         </button>
+        {hasLyrics && (
+          <PlayerLyricsTopControls
+            lyricsPanelOpen={lyricsPanelOpen}
+            lyricsViewMode={lyricsViewMode}
+            onToggleLyrics={toggleLyrics}
+            onLyricsViewModeChange={handleLyricsViewModeChange}
+          />
+        )}
       </div>
 
-      {/* Human: Centered now-playing; md+ lyrics/mode controls sit top-right above the stage grid. */}
-      {/* Agent: STATE lyricsPanelOpen; PlayerLyricsTopControls absolute md:flex; player-stage--open|--closed. */}
+      {/* Human: Centered now-playing; lyrics grid lives below the desktop/mobile top bars. */}
+      {/* Agent: overflow-hidden only max-md lyrics chrome or md scroll; NO absolute lyrics controls. */}
       <div
         className={`relative flex flex-1 flex-col min-h-0 w-full max-w-6xl mx-auto px-4 max-md:px-4 pb-2 sm:pb-8 md:pb-4 ${
-          mobileLyricsChrome ? "max-md:min-h-0 max-md:overflow-hidden" : ""
-        }`}
+          mobileLyricsChrome && !lyricsScrollMode ? "max-md:min-h-0 max-md:overflow-hidden" : ""
+        } ${showLyricsLayout ? "md:min-h-0 md:flex-1 md:overflow-hidden" : ""}`}
       >
-        {hasLyrics && (
-          <div className="absolute z-20 right-0 top-0 hidden md:flex sm:top-1">
-            <PlayerLyricsTopControls
-              lyricsPanelOpen={lyricsPanelOpen}
-              lyricsViewMode={lyricsViewMode}
-              onToggleLyrics={toggleLyrics}
-              onLyricsViewModeChange={handleLyricsViewModeChange}
-            />
-          </div>
-        )}
-
         <div
           className={`player-stage ${showLyricsLayout ? "player-stage--open" : "player-stage--closed"} ${
             mobileLyricsChrome ? "player-stage--mobile-lyrics" : ""
           } ${
-            mobileLyricsChrome && lyricsViewMode === "scroll"
-              ? "player-stage--mobile-lyrics-scroll"
-              : ""
+            showLyricsLayout && lyricsViewMode === "scroll" ? "player-stage--lyrics-scroll" : ""
           }`}
         >
           <div className={`player-track-cell ${mobileLyricsChrome ? "max-md:hidden" : ""}`}>
@@ -470,16 +485,15 @@ export default function Player() {
             </div>
           </div>
 
-          {hasLyrics && (
+          {/* Human: Mount lyrics column only when open — hidden full-text lyrics were collapsing the closed grid on reload. */}
+          {/* Agent: RENDER lyrics cell iff showLyricsLayout; AVOIDS LyricsPanel in 0fr column when panel closed. */}
+          {hasLyrics && showLyricsLayout && (
             <div
-              className={`player-lyrics-cell flex flex-col max-md:min-h-0 ${
-                showLyricsLayout ? "max-md:flex-1" : "max-md:hidden"
-              } ${
-                showLyricsLayout && lyricsViewMode === "scroll"
-                  ? "player-lyrics-cell--scroll justify-start items-stretch min-h-0 max-md:overflow-hidden"
-                  : "justify-center items-center"
+              className={`player-lyrics-cell flex flex-col min-h-0 ${
+                lyricsScrollMode
+                  ? "player-lyrics-cell--scroll max-md:flex-none justify-center items-center max-md:justify-start max-md:items-stretch"
+                  : "max-md:min-h-0 md:min-h-0 max-md:flex-1 justify-center items-center"
               }`}
-              aria-hidden={!showLyricsLayout}
             >
               <LyricsPanel
                 lines={lyrics!.lines}
@@ -487,8 +501,8 @@ export default function Player() {
                 synced={lyrics!.synced}
                 mode={lyricsViewMode}
                 className={
-                  lyricsViewMode === "scroll"
-                    ? "max-w-none mx-0 w-full h-full min-h-0 flex-1"
+                  lyricsScrollMode
+                    ? "max-w-none mx-0 w-full"
                     : "max-w-none mx-0 w-full max-md:max-w-lg max-md:mx-auto"
                 }
               />

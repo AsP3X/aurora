@@ -130,6 +130,12 @@
     grid-template-columns: minmax(0, 1fr) 0fr;
   }
 
+  /* Human: With lyrics panel closed, only the track cell is mounted — use a single column so art does not collapse. */
+  /* Agent: SELECTOR --closed:not(:has(.player-lyrics-cell)); grid-template-columns 1fr only. */
+  .player-stage--closed:not(:has(.player-lyrics-cell)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .player-stage--open {
     grid-template-columns: minmax(0, min(100%, 340px)) minmax(0, 1fr);
     column-gap: 1.25rem;
@@ -165,10 +171,14 @@
       padding-top: 0.25rem;
     }
 
-    /* Human: Full-scroll mode anchors lyrics to the top; carousel keeps vertical centering above. */
-    /* Agent: MODIFIER --mobile-lyrics-scroll + --scroll cell; justify-content flex-start. */
-    .player-stage--mobile-lyrics-scroll .player-lyrics-cell,
-    .player-lyrics-cell--scroll {
+    /* Human: Full-scroll on phones — centered box with capped height; carousel still fills leftover space. */
+    /* Agent: --lyrics-scroll stage justify center; --scroll cell flex 0 1 auto not flex-1. */
+    .player-stage--mobile-lyrics.player-stage--lyrics-scroll {
+      justify-content: center;
+    }
+
+    .player-stage--mobile-lyrics.player-stage--lyrics-scroll .player-lyrics-cell--scroll {
+      flex: 0 1 auto;
       justify-content: flex-start;
     }
 
@@ -211,8 +221,85 @@
   }
 
   @media (min-width: 768px) {
+    /* Human: Desktop lyrics open — flex row keeps left rail + lyrics pane stable across mode toggles. */
+    /* Agent: --open display flex; track flex 0 0 340px align-self center; lyrics flex-1 min-h-0; NOT grid. */
     .player-stage--open {
-      column-gap: 2rem;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 2rem;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .player-stage--open .player-track-cell {
+      flex: 0 0 auto;
+      width: min(100%, 340px);
+      max-width: 34%;
+      align-self: center;
+      grid-column: auto;
+      justify-self: auto;
+    }
+
+    .player-stage--open .player-lyrics-cell {
+      flex: 1 1 0%;
+      display: flex;
+      flex-direction: column;
+      align-self: stretch;
+      justify-content: center;
+      min-width: 0;
+      min-height: 0;
+      grid-column: auto;
+    }
+
+    /* Human: Scroll mode keeps the same two-column flex as carousel — only the inner pane is height-capped. */
+    /* Agent: --lyrics-scroll cell flex 1 1 0% stretch; scroll-panel max-height centered in column. */
+    .player-stage--open.player-stage--lyrics-scroll .player-lyrics-cell--scroll {
+      flex: 1 1 0%;
+      align-self: stretch;
+      justify-content: center;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .player-stage--open.player-stage--lyrics-scroll .player-lyrics-cell--scroll .lyrics-scroll-panel {
+      display: block;
+      width: 100%;
+      max-width: 36rem;
+      max-height: min(26rem, 52dvh);
+      margin-inline: auto;
+      padding-inline: 0.5rem;
+      padding-bottom: 2rem;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  /* Human: Phone scroll lyrics — capped box centered in the stage, not full viewport height. */
+  /* Agent: max-md player-lyrics-cell--scroll flex 0 1 auto; lyrics-scroll-panel max-height 42dvh. */
+  @media (max-width: 767px) {
+    .player-lyrics-cell--scroll {
+      flex: 0 1 auto;
+      align-self: center;
+      width: 100%;
+      min-height: 0;
+    }
+
+    .player-lyrics-cell--scroll .lyrics-scroll-panel {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      max-height: min(20rem, 42dvh);
+      margin-inline: auto;
+      padding-inline: 0.5rem;
+      padding-bottom: 2rem;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
     }
   }
 
