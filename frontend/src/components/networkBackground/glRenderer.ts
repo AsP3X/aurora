@@ -1,19 +1,5 @@
-// Human: WebGL renderer for the auth/setup network background — aurora base, mesh lines, soft points, GPU blur.
-// Agent: MULTI-PASS FBO; COMPILES GLSL programs; UPLOADS line/point buffers each frame; DISPOSE on unmount.
-
-export interface GlParticleInput {
-  x: number;
-  y: number;
-  radius: number;
-}
-
-export interface GlLineInput {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  alpha: number;
-}
+// Human: WebGL background — aurora sky, horizon glow, parallax silhouettes, bloom, auth focus scrim.
+// Agent: MULTI-PASS FBO; aurora→blur→bloom→composite; DISPOSE on unmount; uTime scaled in React.
 
 export interface GlFocusRect {
   centerX: number;
@@ -24,49 +10,10 @@ export interface GlFocusRect {
 }
 
 export interface GlFrameInput {
-  width: number;
-  height: number;
   time: number;
-  particles: GlParticleInput[];
-  lines: GlLineInput[];
-  mouseLines: GlLineInput[];
-  mouse: { x: number; y: number; active: boolean };
   focus: GlFocusRect;
   authMode: boolean;
 }
-
-// Human: Expand a line segment into two triangles so the fragment shader can render a thick glowing tube.
-// Agent: PURE math; READS endpoints+halfWidth; RETURNS 6 verts × 5 floats (xy, lineCoord.xy, alpha).
-function expandLineSegment(line: GlLineInput, halfWidth: number): number[] {
-  const dx = line.x2 - line.x1;
-  const dy = line.y2 - line.y1;
-  const length = Math.hypot(dx, dy);
-  if (length < 0.001) return [];
-
-  const nx = (-dy / length) * halfWidth;
-  const ny = (dx / length) * halfWidth;
-  const { x1, y1, x2, y2, alpha } = line;
-
-  const x1a = x1 - nx;
-  const y1a = y1 - ny;
-  const x1b = x1 + nx;
-  const y1b = y1 + ny;
-  const x2a = x2 + nx;
-  const y2a = y2 + ny;
-  const x2b = x2 - nx;
-  const y2b = y2 - ny;
-
-  return [
-    x1a, y1a, 0, -1, alpha,
-    x1b, y1b, 0, 1, alpha,
-    x2a, y2a, 1, 1, alpha,
-    x1a, y1a, 0, -1, alpha,
-    x2a, y2a, 1, 1, alpha,
-    x2b, y2b, 1, -1, alpha,
-  ];
-}
-
-type GlContext = WebGLRenderingContext | WebGL2RenderingContext;
 
 const AURORA_VERT = `
 attribute vec2 aPosition;
@@ -77,8 +24,8 @@ void main() {
 }
 `;
 
-// Human: Procedural aurora curtains — autonomous drift; pointer only affects mesh lines, not these blobs.
-// Agent: FRAG full-screen; UNIFORMS uTime uResolution; FBM noise bands; grain; OUTPUT opaque RGB.
+// Human: Aurora sky + horizon planet glow + parallax hill silhouettes; motion kept slow for comfort.
+// Agent: FRAG full-screen; UNIFORMS uTime uResolution; FBM layers; ridge masks; OUTPUT opaque RGB.
 const AURORA_FRAG = `
 precision highp float;
 varying vec2 vUv;
@@ -111,107 +58,136 @@ float fbm(vec2 p) {
   return v;
 }
 
+// Human: Three-octave FBM for secondary layers — cheaper than full fbm when we stack several samples.
+// Agent: PURE; 3 noise octaves; RETURNS 0..1 scalar.
+float fbmLite(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 3; i++) {
+    v += a * noise(p);
+    p *= 2.05;
+    a *= 0.5;
+  }
+  return v;
+}
+
+// Human: Slowly rotate UV around center so flow direction changes over time instead of a fixed diagonal pan.
+// Agent: PURE; READS uv center angle; RETURNS warped 0..1 uv.
+vec2 rotateUv(vec2 uv, float angle) {
+  vec2 c = uv - 0.5;
+  float cs = cos(angle);
+  float sn = sin(angle);
+  return vec2(c.x * cs - c.y * sn, c.x * sn + c.y * cs) + 0.5;
+}
+
+// Human: Procedural ridgeline — sine stack plus noise for organic hill silhouettes.
+// Agent: PURE; READS x base amp phase; RETURNS skyline height 0..1.
+float ridgeHeight(float x, float base, float amp, float phase) {
+  float xw = x * 5.8 + phase;
+  return base
+    + amp * (0.44 * sin(xw * 1.0 + 1.2) + 0.3 * sin(xw * 2.2 + 2.1) + 0.18 * sin(xw * 4.5 + 0.6))
+    + amp * 0.14 * (fbmLite(vec2(x * 3.2, 2.8)) - 0.5);
+}
+
+// Human: 1 below the ridge line, 0 above — used to paint parallax hill layers.
+// Agent: PURE; READS uv parallax base amp; RETURNS land mask.
+float silhouetteMask(vec2 uv, float parallax, float base, float amp) {
+  float ridge = ridgeHeight(uv.x + parallax, base, amp, parallax * 2.4);
+  return 1.0 - smoothstep(ridge - 0.01, ridge + 0.02, uv.y);
+}
+
+// Human: Soft planet limb and horizon band along the lower sky — sits behind near hills.
+// Agent: PURE; READS uv t; RETURNS scalar glow intensity.
+float horizonPlanetGlow(vec2 uv, float t) {
+  float horizonY = 0.21 + sin(t * 0.07) * 0.012 + sin(uv.x * 9.0 + t * 0.05) * 0.005;
+  float aboveHorizon = uv.y - horizonY;
+  float arcBand = exp(-aboveHorizon * aboveHorizon / 0.0016) * smoothstep(-0.02, 0.2, uv.y);
+  float upperHaze = smoothstep(0.14, 0.0, aboveHorizon) * smoothstep(-0.03, 0.05, aboveHorizon);
+
+  vec2 planetCenter = vec2(0.5 + sin(t * 0.04) * 0.02, -0.42);
+  vec2 pd = (uv - planetCenter) * vec2(1.0, 0.9);
+  float limb = smoothstep(0.78, 0.62, length(pd)) * smoothstep(0.5, 0.58, length(pd));
+
+  return arcBand * 0.55 + upperHaze * 0.35 + limb * 0.28;
+}
+
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
   vec3 base = vec3(0.059, 0.055, 0.078);
 
-  vec2 flow = vec2(uTime * 0.018, uTime * 0.012);
-  float curtain = fbm(vec2(uv.x * 1.6 + flow.x, uv.y * 2.4 - flow.y));
-  float band = smoothstep(0.38, 0.82, curtain);
+  float t = uTime;
+  float aspect = uResolution.x / max(uResolution.y, 1.0);
+  vec2 uvAspect = vec2((uv.x - 0.5) * aspect + 0.5, uv.y);
+
+  float orbit = t * 0.038;
+  vec2 flowA = vec2(cos(orbit * 0.9), sin(orbit * 1.1)) * t * 0.032;
+  vec2 flowB = vec2(sin(orbit * 1.35 + 1.7), cos(orbit * 0.75 + 0.4)) * t * 0.026;
+
+  vec2 rotUv = rotateUv(uvAspect, sin(t * 0.016) * 0.1);
+
+  vec2 warpSeed = rotUv * vec2(1.9, 2.6) + vec2(t * 0.014, -t * 0.011);
+  vec2 warp = vec2(
+    fbmLite(warpSeed + 2.4),
+    fbmLite(warpSeed + 8.1)
+  ) - 0.5;
+  warp *= 0.28;
+
+  float curtainWave = sin(uv.y * 11.0 + t * 0.2 + sin(uv.x * 5.0 + t * 0.12) * 1.6) * 0.07;
+  vec2 curtainUv = rotUv * vec2(1.55, 2.35) + warp + flowA;
+  curtainUv.x += curtainWave;
+  curtainUv.y += sin(uv.x * 7.0 - t * 0.16) * 0.035;
+  float curtain = fbm(curtainUv);
+
+  vec2 driftUv = rotateUv(uvAspect, -t * 0.022) * vec2(2.1, 1.65) - flowB + warp * 0.65;
+  driftUv += vec2(sin(t * 0.1 + uv.y * 4.0), cos(t * 0.08 + uv.x * 3.0)) * 0.08;
+  float drift = fbmLite(driftUv + vec2(fbmLite(rotUv * 3.0 + t * 0.018), 0.0));
+
+  vec2 wispUv = uvAspect + vec2(
+    sin(t * 0.07 + uv.y * 6.5) * 0.1,
+    cos(t * 0.06 + uv.x * 5.0) * 0.08
+  );
+  float wisps = fbmLite(wispUv * 3.8 + flowA * 0.6 + vec2(0.0, t * 0.028));
+
+  float mixField = curtain * 0.52 + drift * 0.33 + wisps * 0.22;
+  float band = smoothstep(0.34, 0.84, mixField);
+
   vec3 violet = vec3(0.545, 0.361, 0.965);
   vec3 deep = vec3(0.424, 0.157, 0.851);
-  vec3 aurora = mix(deep, violet, uv.y + 0.08 * sin(uTime * 0.25 + uv.x * 6.28)) * band * 0.24;
+  vec3 rose = vec3(0.62, 0.38, 0.92);
+  float colorShift = 0.5 + 0.5 * sin(t * 0.09 + uv.x * 5.5 + uv.y * 3.2 + fbmLite(rotUv * 2.0) * 2.5);
+  vec3 tint = mix(mix(deep, violet, colorShift), rose, band * 0.35);
+  float heightGlow = smoothstep(0.05, 0.75, uv.y) * (0.65 + 0.35 * sin(t * 0.11 + uv.x * 8.0));
+  vec3 aurora = tint * band * (0.2 + heightGlow * 0.12);
 
-  float pulse = 0.04 * sin(uTime * 0.4 + uv.x * 12.0) * smoothstep(0.2, 0.9, uv.y);
-  aurora += violet * pulse;
+  float breathe = 0.5 + 0.5 * sin(t * 0.14 + fbmLite(rotUv * 1.4 + t * 0.025) * 6.28);
+  float shimmer = sin(t * 0.18 + uv.y * 14.0 + mixField * 8.0) * smoothstep(0.12, 0.92, uv.y);
+  aurora += violet * shimmer * 0.016 * breathe;
+
+  vec3 sky = base + aurora;
+
+  vec3 horizonTint = mix(vec3(0.48, 0.3, 0.88), vec3(0.72, 0.58, 0.98), 0.5 + 0.5 * sin(t * 0.06));
+  float horizon = horizonPlanetGlow(uv, t);
+  sky += horizonTint * horizon * 0.32;
+
+  float maskFar = silhouetteMask(uv, t * 0.0035, 0.2, 0.055);
+  float maskMid = silhouetteMask(uv, t * 0.0065 + 0.4, 0.14, 0.085);
+  float maskNear = silhouetteMask(uv, t * 0.01 + 0.85, 0.09, 0.11);
+
+  vec3 colFar = vec3(0.048, 0.044, 0.062);
+  vec3 colMid = vec3(0.034, 0.031, 0.045);
+  vec3 colNear = vec3(0.022, 0.02, 0.032);
+
+  vec3 rgb = mix(sky, colFar, maskFar * 0.88);
+  rgb = mix(rgb, colMid, maskMid * 0.92);
+  rgb = mix(rgb, colNear, maskNear * 0.96);
 
   vec2 centered = (uv - 0.5) * vec2(1.0, 0.85);
   float vignette = 1.0 - dot(centered, centered) * 0.85;
 
-  float grain = (hash(uv * uResolution + uTime) - 0.5) * 0.018;
-  vec3 rgb = (base + aurora) * vignette + grain;
+  float grain = (hash(uv * uResolution + t) - 0.5) * 0.018;
+  rgb = rgb * vignette + grain;
 
   gl_FragColor = vec4(rgb, 1.0);
-}
-`;
-
-const LINE_VERT = `
-attribute vec2 aPosition;
-attribute vec2 aLineCoord;
-attribute float aAlpha;
-uniform vec2 uResolution;
-varying vec2 vLineCoord;
-varying float vAlpha;
-void main() {
-  vec2 clip = (aPosition / uResolution) * 2.0 - 1.0;
-  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
-  vLineCoord = aLineCoord;
-  vAlpha = aAlpha;
-}
-`;
-
-// Human: Each connection is a soft glowing tube — width falloff, end caps, and a subtle traveling shimmer.
-// Agent: FRAG reads vLineCoord.x=along vLineCoord.y=across; smoothstep tube; UNIFORM uTime uColor uGlowBoost.
-const LINE_FRAG = `
-precision mediump float;
-uniform vec3 uColor;
-uniform float uTime;
-uniform float uGlowBoost;
-varying vec2 vLineCoord;
-varying float vAlpha;
-
-void main() {
-  float along = vLineCoord.x;
-  float across = abs(vLineCoord.y);
-
-  float tube = smoothstep(1.0, 0.08, across);
-  tube = pow(tube, 0.55);
-
-  float endFade = smoothstep(0.0, 0.12, along) * smoothstep(1.0, 0.88, along);
-  float shimmer = 0.82 + 0.18 * sin(uTime * 1.8 + along * 14.0);
-
-  float core = smoothstep(0.42, 0.0, across);
-  vec3 rgb = mix(uColor, vec3(1.0, 0.98, 1.0), core * 0.45) * (0.75 + core * 0.55);
-
-  float alpha = vAlpha * tube * endFade * shimmer * uGlowBoost;
-  gl_FragColor = vec4(rgb * alpha, alpha);
-}
-`;
-
-const POINT_VERT = `
-attribute vec2 aPosition;
-attribute float aSize;
-attribute float aAlpha;
-uniform vec2 uResolution;
-varying float vAlpha;
-void main() {
-  vec2 clip = (aPosition / uResolution) * 2.0 - 1.0;
-  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
-  gl_PointSize = aSize;
-  vAlpha = aAlpha;
-}
-`;
-
-// Human: Balanced node marker — moderate halo with a clear core; visible after blur without dominating lines.
-// Agent: FRAG smoothstep halo 0.5→0.18; core 0.15→0; UNIFORM uCoreMix for pass tuning.
-const POINT_FRAG = `
-precision mediump float;
-uniform vec3 uColor;
-uniform float uCoreMix;
-varying float vAlpha;
-void main() {
-  vec2 centered = gl_PointCoord - 0.5;
-  float dist = length(centered);
-  if (dist > 0.5) discard;
-
-  float halo = smoothstep(0.5, 0.18, dist);
-  float core = smoothstep(0.15, 0.0, dist);
-  halo = pow(halo, 0.85);
-
-  vec3 coreColor = vec3(1.0, 0.99, 1.0);
-  vec3 rgb = mix(uColor * (halo * 1.05), coreColor, core * uCoreMix);
-  float alpha = vAlpha * (halo * 0.78 + core * 0.9);
-  gl_FragColor = vec4(rgb, min(alpha, 1.0));
 }
 `;
 
@@ -248,7 +224,7 @@ void main() {
 }
 `;
 
-// Human: Pull bright aurora pixels into a bloom buffer — mesh is composited later, unblurred.
+// Human: Pull bright aurora pixels into a bloom buffer for a soft halo in the composite pass.
 // Agent: FRAG samples uTexture (aurora layer); threshold luminance; OUTPUT rgb bloom seed.
 const BLOOM_EXTRACT_FRAG = `
 precision mediump float;
@@ -264,10 +240,10 @@ void main() {
 }
 `;
 
-// Human: Blurred aurora + bloom + auth focus scrim — background layer only; mesh draws sharp on top after.
-// Agent: FRAG samples uTexture (aurora) + uBloomTexture; UNIFORMS focus + bloom; no mesh in input.
+// Human: Merge blurred aurora + bloom and apply auth focus scrim with light film grain.
+// Agent: FRAG samples scene+bloom; UNIFORMS focus uTime uResolution; OUTPUT final RGB.
 const COMPOSITE_FRAG = `
-precision mediump float;
+precision highp float;
 varying vec2 vUv;
 uniform sampler2D uTexture;
 uniform sampler2D uBloomTexture;
@@ -307,10 +283,6 @@ void main() {
 
 const QUAD_POSITIONS = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
 
-const LINE_COLOR: [number, number, number] = [0.655, 0.545, 0.98];
-const MOUSE_LINE_COLOR: [number, number, number] = [0.847, 0.784, 1.0];
-const POINT_COLOR: [number, number, number] = [0.847, 0.784, 1.0];
-
 interface GlProgram {
   program: WebGLProgram;
   uniforms: Record<string, WebGLUniformLocation | null>;
@@ -336,6 +308,8 @@ function compileShader(gl: GlContext, type: number, source: string): WebGLShader
   return shader;
 }
 
+type GlContext = WebGLRenderingContext | WebGL2RenderingContext;
+
 function createProgram(gl: GlContext, vertSource: string, fragSource: string): GlProgram | null {
   const vert = compileShader(gl, gl.VERTEX_SHADER, vertSource);
   const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSource);
@@ -356,11 +330,18 @@ function createProgram(gl: GlContext, vertSource: string, fragSource: string): G
   }
 
   const uniformNames = [
-    "uTime", "uResolution", "uColor", "uTexture", "uBloomTexture", "uTexelSize", "uDirection",
-    "uGlowBoost", "uCoreMix", "uMouse", "uMouseActive", "uFocusCenter", "uFocusRadius",
-    "uFocusActive", "uBloomStrength",
+    "uTime",
+    "uResolution",
+    "uTexture",
+    "uBloomTexture",
+    "uTexelSize",
+    "uDirection",
+    "uFocusCenter",
+    "uFocusRadius",
+    "uFocusActive",
+    "uBloomStrength",
   ];
-  const attribNames = ["aPosition", "aAlpha", "aSize", "aLineCoord"];
+  const attribNames = ["aPosition"];
 
   const uniforms: Record<string, WebGLUniformLocation | null> = {};
   for (const name of uniformNames) {
@@ -419,52 +400,39 @@ function bindProgram(gl: GlContext, bundle: GlProgram) {
 export class NetworkBackgroundGlRenderer {
   private readonly gl: GlContext;
   private readonly auroraProgram: GlProgram;
-  private readonly lineProgram: GlProgram;
-  private readonly pointProgram: GlProgram;
   private readonly blurProgram: GlProgram;
   private readonly bloomExtractProgram: GlProgram;
   private readonly compositeProgram: GlProgram;
   private readonly quadBuffer: WebGLBuffer;
-  private readonly lineBuffer: WebGLBuffer;
-  private readonly pointBuffer: WebGLBuffer;
   private sceneTarget: FramebufferTarget;
   private blurTarget: FramebufferTarget;
   private bloomTarget: FramebufferTarget;
   private width = 0;
   private height = 0;
-  private dpr = 1;
 
   private constructor(
     gl: GlContext,
     auroraProgram: GlProgram,
-    lineProgram: GlProgram,
-    pointProgram: GlProgram,
     blurProgram: GlProgram,
     bloomExtractProgram: GlProgram,
     compositeProgram: GlProgram,
     quadBuffer: WebGLBuffer,
-    lineBuffer: WebGLBuffer,
-    pointBuffer: WebGLBuffer,
     sceneTarget: FramebufferTarget,
     blurTarget: FramebufferTarget,
     bloomTarget: FramebufferTarget,
   ) {
     this.gl = gl;
     this.auroraProgram = auroraProgram;
-    this.lineProgram = lineProgram;
-    this.pointProgram = pointProgram;
     this.blurProgram = blurProgram;
     this.bloomExtractProgram = bloomExtractProgram;
     this.compositeProgram = compositeProgram;
     this.quadBuffer = quadBuffer;
-    this.lineBuffer = lineBuffer;
-    this.pointBuffer = pointBuffer;
     this.sceneTarget = sceneTarget;
     this.blurTarget = blurTarget;
     this.bloomTarget = bloomTarget;
   }
 
-  // Human: Factory tries WebGL first; returns null when shaders or FBO setup fail so caller can fall back to 2D.
+  // Human: Factory tries WebGL first; returns null when shaders or FBO setup fail so caller can fall back to CSS.
   // Agent: CREATES context+programs+FBOs; RETURNS NetworkBackgroundGlRenderer|null.
   static create(canvas: HTMLCanvasElement): NetworkBackgroundGlRenderer | null {
     const gl =
@@ -488,19 +456,15 @@ export class NetworkBackgroundGlRenderer {
     if (!gl) return null;
 
     const auroraProgram = createProgram(gl, AURORA_VERT, AURORA_FRAG);
-    const lineProgram = createProgram(gl, LINE_VERT, LINE_FRAG);
-    const pointProgram = createProgram(gl, POINT_VERT, POINT_FRAG);
     const blurProgram = createProgram(gl, BLUR_VERT, BLUR_FRAG);
     const bloomExtractProgram = createProgram(gl, BLUR_VERT, BLOOM_EXTRACT_FRAG);
     const compositeProgram = createProgram(gl, BLUR_VERT, COMPOSITE_FRAG);
-    if (!auroraProgram || !lineProgram || !pointProgram || !blurProgram || !bloomExtractProgram || !compositeProgram) {
+    if (!auroraProgram || !blurProgram || !bloomExtractProgram || !compositeProgram) {
       return null;
     }
 
     const quadBuffer = gl.createBuffer();
-    const lineBuffer = gl.createBuffer();
-    const pointBuffer = gl.createBuffer();
-    if (!quadBuffer || !lineBuffer || !pointBuffer) return null;
+    if (!quadBuffer) return null;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, QUAD_POSITIONS, gl.STATIC_DRAW);
@@ -510,20 +474,13 @@ export class NetworkBackgroundGlRenderer {
     const bloomTarget = createFramebuffer(gl, 4, 4);
     if (!sceneTarget || !blurTarget || !bloomTarget) return null;
 
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
     return new NetworkBackgroundGlRenderer(
       gl,
       auroraProgram,
-      lineProgram,
-      pointProgram,
       blurProgram,
       bloomExtractProgram,
       compositeProgram,
       quadBuffer,
-      lineBuffer,
-      pointBuffer,
       sceneTarget,
       blurTarget,
       bloomTarget,
@@ -531,13 +488,13 @@ export class NetworkBackgroundGlRenderer {
   }
 
   // Human: Match canvas backing store to container CSS size and rebuild FBO textures when dimensions change.
-  // Agent: SETS canvas.width/height; RESIZES scene+blur FBOs; STORES dpr for point sizing.
+  // Agent: SETS canvas.width/height; RESIZES scene+blur+bloom FBOs.
   resize(cssWidth: number, cssHeight: number) {
     if (cssWidth <= 0 || cssHeight <= 0) return;
 
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const pixelWidth = Math.max(1, Math.round(cssWidth * this.dpr));
-    const pixelHeight = Math.max(1, Math.round(cssHeight * this.dpr));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+    const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
 
     const canvas = this.gl.canvas as HTMLCanvasElement;
     canvas.width = pixelWidth;
@@ -553,8 +510,8 @@ export class NetworkBackgroundGlRenderer {
     this.gl.viewport(0, 0, pixelWidth, pixelHeight);
   }
 
-  // Human: Aurora-only → blur blobs → bloom → composite background → sharp mesh overlay (mouse lines only on mesh).
-  // Agent: sceneTarget=aurora; blur aurora; composite to screen; drawLines/drawPoints on default FB unblurred.
+  // Human: Aurora → blur → bloom → composite with optional auth focus mask.
+  // Agent: sceneTarget=aurora; ping-pong blur; bloom extract+blur; composite to default framebuffer.
   render(frame: GlFrameInput) {
     if (this.width <= 0 || this.height <= 0) return;
 
@@ -576,16 +533,7 @@ export class NetworkBackgroundGlRenderer {
     this.runBlurBetween(this.sceneTarget, this.blurTarget, auroraBlurStrength, 1, 0);
     this.runBlurBetween(this.blurTarget, this.sceneTarget, auroraBlurStrength, 0, 1);
 
-    this.runCompositePass(frame, resolution, null);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.width, this.height);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    this.drawLines(frame.lines, LINE_COLOR, 1.65, 1.0, frame.time);
-    this.drawLines(frame.mouseLines, MOUSE_LINE_COLOR, 2.4, 1.35, frame.time);
-    this.drawPoints(frame.particles);
+    this.runCompositePass(frame, resolution);
   }
 
   // Human: Threshold bright scene pixels, then separable blur for bloom halo.
@@ -606,21 +554,15 @@ export class NetworkBackgroundGlRenderer {
     this.runBlurBetween(this.blurTarget, this.bloomTarget, bloomStrength, 0, 1);
   }
 
-  // Human: Merge blurred aurora and bloom, apply auth focus scrim — writes to screen or an FBO.
-  // Agent: DRAW compositeProgram; SAMPLING sceneTarget (blurred aurora) + bloomTarget; SETS focus uniforms.
-  private runCompositePass(
-    frame: GlFrameInput,
-    resolution: [number, number],
-    target: FramebufferTarget | null,
-  ) {
+  // Human: Merge blurred aurora and bloom, apply auth focus scrim to the screen.
+  // Agent: DRAW compositeProgram; SAMPLING sceneTarget + bloomTarget; SETS focus uniforms.
+  private runCompositePass(frame: GlFrameInput, resolution: [number, number]) {
     const gl = this.gl;
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.framebuffer : null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
-    if (!target) {
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    }
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     bindProgram(gl, this.compositeProgram);
 
@@ -679,114 +621,13 @@ export class NetworkBackgroundGlRenderer {
     gl.disableVertexAttribArray(loc);
   }
 
-  // Human: Thick line quads with shader tube glow — avoids GL_LINES which renders as 1px on most GPUs.
-  // Agent: EXPANDS each segment to 6 verts; DRAW TRIANGLES; UNIFORMS uTime uGlowBoost uColor uResolution.
-  private drawLines(
-    lines: GlLineInput[],
-    color: [number, number, number],
-    halfWidthCss: number,
-    glowBoost: number,
-    time: number,
-  ) {
-    if (lines.length === 0) return;
-
-    const gl = this.gl;
-    const halfWidth = halfWidthCss * this.dpr;
-    const scratch: number[] = [];
-    for (const line of lines) {
-      scratch.push(...expandLineSegment(line, halfWidth));
-    }
-    if (scratch.length === 0) return;
-
-    bindProgram(gl, this.lineProgram);
-    gl.uniform2f(this.lineProgram.uniforms.uResolution!, this.width, this.height);
-    gl.uniform3f(this.lineProgram.uniforms.uColor!, color[0], color[1], color[2]);
-    gl.uniform1f(this.lineProgram.uniforms.uTime!, time);
-    gl.uniform1f(this.lineProgram.uniforms.uGlowBoost!, glowBoost);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(scratch), gl.DYNAMIC_DRAW);
-
-    const stride = 5 * 4;
-    const posLoc = this.lineProgram.attribs.aPosition;
-    const lineCoordLoc = this.lineProgram.attribs.aLineCoord;
-    const alphaLoc = this.lineProgram.attribs.aAlpha;
-    gl.enableVertexAttribArray(posLoc);
-    gl.enableVertexAttribArray(lineCoordLoc);
-    gl.enableVertexAttribArray(alphaLoc);
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, stride, 0);
-    gl.vertexAttribPointer(lineCoordLoc, 2, gl.FLOAT, false, stride, 8);
-    gl.vertexAttribPointer(alphaLoc, 1, gl.FLOAT, false, stride, 16);
-    gl.drawArrays(gl.TRIANGLES, 0, scratch.length / 5);
-    gl.disableVertexAttribArray(posLoc);
-    gl.disableVertexAttribArray(lineCoordLoc);
-    gl.disableVertexAttribArray(alphaLoc);
-  }
-
-  // Human: Two moderate passes — soft outer glow plus a defined core, sized between the previous extremes.
-  // Agent: PASS1 sizeScale 5.8 additive halo; PASS2 sizeScale 3.6 normal core; cap 80px.
-  private drawPoints(particles: GlParticleInput[]) {
-    if (particles.length === 0) return;
-
-    const gl = this.gl;
-    this.uploadAndDrawPointPass(particles, 5.8, 0.4, 0.25, gl.ONE);
-    this.uploadAndDrawPointPass(particles, 3.6, 0.92, 0.9, gl.ONE_MINUS_SRC_ALPHA);
-  }
-
-  private uploadAndDrawPointPass(
-    particles: GlParticleInput[],
-    sizeScale: number,
-    alphaScale: number,
-    coreMix: number,
-    blendAlpha: number,
-  ) {
-    const gl = this.gl;
-    gl.blendFunc(gl.SRC_ALPHA, blendAlpha);
-
-    const data = new Float32Array(particles.length * 4);
-    let offset = 0;
-    for (const particle of particles) {
-      data[offset++] = particle.x;
-      data[offset++] = particle.y;
-      data[offset++] = Math.min(particle.radius * sizeScale * this.dpr, 80);
-      data[offset++] = alphaScale;
-    }
-
-    bindProgram(gl, this.pointProgram);
-    gl.uniform2f(this.pointProgram.uniforms.uResolution!, this.width, this.height);
-    gl.uniform3f(this.pointProgram.uniforms.uColor!, POINT_COLOR[0], POINT_COLOR[1], POINT_COLOR[2]);
-    gl.uniform1f(this.pointProgram.uniforms.uCoreMix!, coreMix);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-
-    const stride = 4 * 4;
-    const posLoc = this.pointProgram.attribs.aPosition;
-    const sizeLoc = this.pointProgram.attribs.aSize;
-    const alphaLoc = this.pointProgram.attribs.aAlpha;
-    gl.enableVertexAttribArray(posLoc);
-    gl.enableVertexAttribArray(sizeLoc);
-    gl.enableVertexAttribArray(alphaLoc);
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, stride, 0);
-    gl.vertexAttribPointer(sizeLoc, 1, gl.FLOAT, false, stride, 8);
-    gl.vertexAttribPointer(alphaLoc, 1, gl.FLOAT, false, stride, 12);
-    gl.drawArrays(gl.POINTS, 0, particles.length);
-    gl.disableVertexAttribArray(posLoc);
-    gl.disableVertexAttribArray(sizeLoc);
-    gl.disableVertexAttribArray(alphaLoc);
-  }
-
   dispose() {
     const gl = this.gl;
     gl.deleteProgram(this.auroraProgram.program);
-    gl.deleteProgram(this.lineProgram.program);
-    gl.deleteProgram(this.pointProgram.program);
     gl.deleteProgram(this.blurProgram.program);
     gl.deleteProgram(this.bloomExtractProgram.program);
     gl.deleteProgram(this.compositeProgram.program);
     gl.deleteBuffer(this.quadBuffer);
-    gl.deleteBuffer(this.lineBuffer);
-    gl.deleteBuffer(this.pointBuffer);
     gl.deleteFramebuffer(this.sceneTarget.framebuffer);
     gl.deleteTexture(this.sceneTarget.texture);
     gl.deleteFramebuffer(this.blurTarget.framebuffer);
