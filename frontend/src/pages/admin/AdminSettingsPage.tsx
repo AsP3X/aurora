@@ -22,6 +22,128 @@ interface Setting {
   updated_at: string;
 }
 
+type ArtworkStatusBadgeVariant = "scanning" | "ready" | "complete" | "pending";
+
+// Human: Two-part status badge (dark icon tile + colored label) for cover-art migration state.
+// Agent: PROPS scanning|status|pendingCount; LABELS plain-language WebP migration state; RENDERS inline-flex badge.
+function ArtworkMigrationStatusBadge({
+  scanning,
+  status,
+  pendingCount = 0,
+}: {
+  scanning: boolean;
+  status: string | undefined;
+  pendingCount?: number;
+}) {
+  const variant: ArtworkStatusBadgeVariant =
+    pendingCount > 0
+      ? "pending"
+      : scanning
+        ? "scanning"
+        : status === "complete"
+          ? "complete"
+          : "ready";
+
+  const config: Record<
+    ArtworkStatusBadgeVariant,
+    { label: string; panel: string; icon: string; ariaLabel: string }
+  > = {
+    scanning: {
+      label: "SCANNING COVERS",
+      panel: "bg-surface-600",
+      icon: "text-surface-300",
+      ariaLabel: "Scanning the library for cover art that still needs WebP conversion",
+    },
+    pending: {
+      label:
+        pendingCount === 1 ? "1 NEEDS WEBP" : `${pendingCount} NEED WEBP`,
+      panel: "bg-red-700",
+      icon: "text-red-400",
+      ariaLabel: `${pendingCount} cover${pendingCount === 1 ? "" : "s"} still need conversion to seeker, library, and detail WebP sizes`,
+    },
+    ready: {
+      label: "WEBP READY",
+      panel: "bg-emerald-700",
+      icon: "text-emerald-400",
+      ariaLabel:
+        "All cover art already uses optimized WebP sizes for seeker, library, and detail views",
+    },
+    complete: {
+      label: "MIGRATION DONE",
+      panel: "bg-emerald-600",
+      icon: "text-emerald-300",
+      ariaLabel:
+        "Cover art migration finished; legacy images were converted to WebP variants",
+    },
+  };
+
+  const { label, panel, icon, ariaLabel } = config[variant];
+
+  return (
+    <div
+      className="inline-flex -mt-2 overflow-hidden border border-white/10 shadow-sm"
+      role="status"
+      aria-live="polite"
+      aria-label={ariaLabel}
+    >
+      <div className="flex h-7 w-8 shrink-0 items-center justify-center bg-black">
+        {variant === "scanning" ? (
+          <span
+            className={`h-3 w-3 animate-pulse rounded-full bg-current ${icon}`}
+            aria-hidden
+          />
+        ) : variant === "pending" ? (
+          <svg
+            className={`h-4 w-4 ${icon}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+        ) : variant === "complete" ? (
+          <svg
+            className={`h-4 w-4 ${icon}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            aria-hidden
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg
+            className={`h-4 w-4 ${icon}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+            />
+          </svg>
+        )}
+      </div>
+      <div className={`flex h-7 min-h-7 items-center px-3 ${panel}`}>
+        <span className="whitespace-nowrap text-[10px] font-bold leading-none tracking-wide text-white uppercase">
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +236,18 @@ export default function AdminSettingsPage() {
     (artworkMigration != null &&
       !showArtworkMigrationPanel &&
       artworkMigration.status !== "running");
+
+  // Human: Red “NEEDS WEBP” badge when legacy covers still await conversion (not while a job is running).
+  // Agent: READS pending_count + status; RENDERS ArtworkMigrationStatusBadge variant pending.
+  const showArtworkPendingBadge =
+    artworkMigration != null &&
+    artworkMigration.pending_count > 0 &&
+    artworkMigration.status !== "running";
+
+  const migrationPanelNeedsAttention =
+    artworkMigration != null &&
+    artworkMigration.pending_count > 0 &&
+    artworkMigration.status !== "running";
 
   // Human: Match backend truthy parsing so toggles work even if a row was edited as `True` or `1`.
   // Agent: PURE; TRIMS; LOWERCASE; TRUE for true/1/yes/on.
@@ -287,22 +421,30 @@ export default function AdminSettingsPage() {
         </GlassButton>
       </PageHeader>
 
-      {/* Human: When every cover already has WebP variants, only a quiet line under the page title — no migration card. */}
-      {/* Agent: RENDERS showArtworkStatusChip; TEXT from scanning | up to date | complete. */}
+      {/* Human: Red badge when artworks await migration; green/gray badge when library is current. */}
+      {/* Agent: showArtworkPendingBadge → pendingCount; showArtworkStatusChip → scanning|ready|complete. */}
+      {showArtworkPendingBadge && artworkMigration && (
+        <ArtworkMigrationStatusBadge
+          scanning={false}
+          status={artworkMigration.status}
+          pendingCount={artworkMigration.pending_count}
+        />
+      )}
       {showArtworkStatusChip && (
-        <p className="text-xs text-surface-500 -mt-2">
-          {migrationScanning
-            ? "Checking cover art migration status…"
-            : artworkMigration?.status === "complete"
-              ? "Cover art migration complete — all covers use WebP variants."
-              : "Cover art is up to date (WebP variants)."}
-        </p>
+        <ArtworkMigrationStatusBadge
+          scanning={migrationScanning}
+          status={artworkMigration?.status}
+        />
       )}
 
       {/* Human: Expandable migration controls when legacy covers still need WebP processing. */}
       {/* Agent: COLLAPSIBLE AdminGlassCard; TOGGLE artworkMigrationExpanded; CONTAINS start + progress. */}
       {showArtworkMigrationPanel && artworkMigration && (
-        <AdminGlassCard className="!p-0 overflow-hidden">
+        <AdminGlassCard
+          className={`!p-0 overflow-hidden ${
+            migrationPanelNeedsAttention ? "ring-1 ring-red-800/70" : ""
+          }`}
+        >
           <button
             type="button"
             onClick={() => setArtworkMigrationExpanded((open) => !open)}
@@ -311,7 +453,11 @@ export default function AdminSettingsPage() {
           >
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white">Cover art (WebP)</h2>
-              <p className="text-xs text-surface-500 mt-0.5 truncate">
+              <p
+                className={`text-xs mt-0.5 truncate ${
+                  migrationPanelNeedsAttention ? "text-red-400" : "text-surface-500"
+                }`}
+              >
                 {artworkMigration.status === "running"
                   ? `Migrating — ${artworkMigration.processed} / ${artworkMigration.total} processed`
                   : artworkMigration.status === "failed"
