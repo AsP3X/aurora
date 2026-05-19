@@ -51,11 +51,13 @@ pnpm run dev:frontend
 
 ### Start with Docker (Postgres + Meilisearch)
 
-Generate secrets once (creates `.env` from `.env.example` with random values):
+Generate secrets once (creates `.env` from `.env.example` with random values, including `MEILI_MASTER_KEY` at 32+ characters):
 
 ```bash
 docker compose --profile init run --rm init-env
 ```
+
+If you already have a `.env` with the old `MEILI_MASTER_KEY=aurora-master-key` (17 characters), re-run `init-env` above or set a key of at least 32 characters—otherwise the backend exits on startup.
 
 Then start the stack (Compose requires `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, and `NOS_*` secrets in `.env`):
 
@@ -104,8 +106,9 @@ Unauthenticated `GET /api/v1/version` returns the crate version, optional `git_s
 | `JWT_SECRET` | `change-me-in-production` | JWT signing secret |
 | `MUSIC_DIR` | `/music` | Path to music library |
 | `BIND_ADDR` | `0.0.0.0:3000` | API listen address |
-| `MEILI_URL` | `http://localhost:7700` | Meilisearch URL |
-| `MEILI_MASTER_KEY` | `aurora-master-key` | Meilisearch master key |
+| `MEILI_URL` | (empty) | Meilisearch URL — leave empty to disable search indexing |
+| `MEILI_MASTER_KEY` | (empty) | Required (32+ chars) when `MEILI_URL` is set |
+| `CORS_ALLOWED_ORIGINS` | (empty) | Comma-separated origins; empty = permissive (dev) |
 | `AURORA_ENVIRONMENT` | `development` | Set to `production` to hide detailed query parse errors on 400 responses |
 | `GIT_SHA` | (unset) | Shown on `/api/v1/version`; set at build (`docker build --build-arg GIT_SHA=...`) or runtime |
 | `ADMIN_LISTENING_RPM` | `120` | Per-admin rolling cap (60s window) for aggregate listening API POST/GET |

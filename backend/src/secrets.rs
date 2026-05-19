@@ -8,6 +8,7 @@ pub const MIN_SECRET_LEN: usize = 32;
 
 /// Values that must never be used outside local experiments (see `docs/security-audit.md`).
 const KNOWN_WEAK_SECRETS: &[&str] = &[
+    "aurora-master-key",
     "change-me-in-production",
     "change-me-in-production-jwt-secret",
     "dev-jwt-secret-change-me",
@@ -52,6 +53,13 @@ pub fn validate_startup_secrets(config: &Config) -> anyhow::Result<()> {
     validate_field("SIGNING_SECRET", &config.signing_secret)?;
     validate_field("MASTER_SECRET", &config.master_secret)?;
     validate_field("OBJECT_STORAGE_JWT_SECRET", &config.object_storage_jwt_secret)?;
+
+    // Human: When Meilisearch URL is set, require a strong master key — not the old dev default.
+    // Agent: READS meili_url trim; IF non-empty THEN validate_field MEILI_MASTER_KEY.
+    if !config.meili_url.trim().is_empty() {
+        validate_field("MEILI_MASTER_KEY", &config.meili_master_key)?;
+    }
+
     Ok(())
 }
 
@@ -66,6 +74,13 @@ mod tests {
         }
         assert!(is_weak_secret("GENERATE_ME"));
         assert!(is_weak_secret(""));
+        assert!(is_weak_secret("aurora-master-key"));
+    }
+
+    #[test]
+    fn rejects_legacy_meili_master_key_length() {
+        let err = validate_field("MEILI_MASTER_KEY", "aurora-master-key").unwrap_err();
+        assert!(err.to_string().contains("MEILI_MASTER_KEY"));
     }
 
     #[test]

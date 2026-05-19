@@ -5,8 +5,12 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace
-    command: >
-      sh -c "tr -d '\r' < /workspace/init-env.sh > /tmp/init-env.sh && sh /tmp/init-env.sh"
+    # Human: Strip CRLF before run; never use tr -d '\r' in sh — single quotes make that delete every "r".
+    # Agent: sed removes trailing CR only; THEN exec init-env.sh from /tmp copy.
+    command:
+      - sh
+      - -c
+      - sed -e 's/\r$$//' /workspace/init-env.sh > /tmp/init-env.sh && sh /tmp/init-env.sh
     profiles:
       - init
 
@@ -31,7 +35,9 @@ services:
     image: getmeili/meilisearch:v1.12
     container_name: aurora-meilisearch
     environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
+      # Human: Meilisearch and Aurora reject keys shorter than 32 characters (legacy default was 17).
+      # Agent: COMPOSE default MEILI_MASTER_KEY; OVERRIDDEN by .env; MUST be >=32 chars when MEILI_URL set.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-docker-dev-meili-master-key-32ch}
     ports:
       - "7700:7700"
     volumes:
@@ -66,7 +72,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://aurora:aurora@postgres:5432/aurora}
       MEILI_URL: http://meilisearch:7700
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-master-key}
+      # Human: Meilisearch and Aurora reject keys shorter than 32 characters (legacy default was 17).
+      # Agent: COMPOSE default MEILI_MASTER_KEY; OVERRIDDEN by .env; MUST be >=32 chars when MEILI_URL set.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-aurora-docker-dev-meili-master-key-32ch}
       JWT_SECRET: ${JWT_SECRET:-}
       OBJECT_STORAGE_JWT_SECRET: ${NOS_JWT_SECRET:-}
       SIGNING_SECRET: ${SIGNING_SECRET:-}

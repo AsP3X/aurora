@@ -40,11 +40,53 @@ init_env_file() {
     echo "$env_file is ready."
 }
 
+# Human: Older examples used a 17-char Meilisearch key; Aurora and Meilisearch require 32+.
+# Agent: READS env_file; IF MEILI_MASTER_KEY is legacy/short THEN WRITE random hex from generate_secret.
+upgrade_meili_master_key() {
+    env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        return 0
+    fi
+    if ! grep -q '^MEILI_MASTER_KEY=' "$env_file"; then
+        return 0
+    fi
+    current="$(grep '^MEILI_MASTER_KEY=' "$env_file" | head -n 1 | cut -d= -f2- | tr -d '\r')"
+    case "$current" in
+        aurora-master-key|GENERATE_ME)
+            secret="$(generate_secret)"
+            tmp_file="${env_file}.meili.tmp"
+            awk -v secret="$secret" '
+                BEGIN { done = 0 }
+                /^MEILI_MASTER_KEY=/ && !done { print "MEILI_MASTER_KEY=" secret; done = 1; next }
+                { print }
+            ' "$env_file" > "$tmp_file"
+            mv "$tmp_file" "$env_file"
+            echo "Upgraded MEILI_MASTER_KEY in $env_file (previous value was too short or a placeholder)."
+            ;;
+    esac
+    # Human: Catch custom short keys not listed above (e.g. copied from old docs).
+    # Agent: LENGTH check on MEILI_MASTER_KEY value; REPLACE when <32 chars.
+    current="$(grep '^MEILI_MASTER_KEY=' "$env_file" | head -n 1 | cut -d= -f2- | tr -d '\r')"
+    if [ -n "$current" ] && [ "${#current}" -lt 32 ]; then
+        secret="$(generate_secret)"
+        tmp_file="${env_file}.meili.tmp"
+        awk -v secret="$secret" '
+            BEGIN { done = 0 }
+            /^MEILI_MASTER_KEY=/ && !done { print "MEILI_MASTER_KEY=" secret; done = 1; next }
+            { print }
+        ' "$env_file" > "$tmp_file"
+        mv "$tmp_file" "$env_file"
+        echo "Upgraded MEILI_MASTER_KEY in $env_file (must be at least 32 characters)."
+    fi
+}
+
 # Initialize root .env
 init_env_file ".env" ".env.example"
+upgrade_meili_master_key ".env"
 
 # Initialize backend .env
 init_env_file "backend/.env" "backend/.env.example"
+upgrade_meili_master_key "backend/.env"
 
 # Initialize nebula-os .env
 init_env_file "nebula-os/.env" "nebula-os/.env.example"

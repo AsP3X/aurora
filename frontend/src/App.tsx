@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PlayerProvider, usePlayer } from "./context/PlayerContext";
+import { LibraryShellProvider } from "./context/LibraryShellContext";
 import PlayerBar from "./components/PlayerBar";
 import { setupStatus } from "./api/client";
 import Login from "./pages/Login";
@@ -75,7 +76,12 @@ function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, can } = useAuth();
   const { currentSong } = usePlayer();
   const { pathname } = useLocation();
-  const isDashboard = pathname === "/" || pathname === "/playlists" || pathname.startsWith("/playlist/");
+  const isDashboard =
+    pathname === "/" ||
+    pathname === "/playlists" ||
+    pathname.startsWith("/playlist/") ||
+    pathname === "/stats" ||
+    pathname.startsWith("/song/");
   const isPlayerPage = pathname.startsWith("/player/");
   const hasPlayer = !!currentSong;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -213,15 +219,15 @@ function RequireAuthNoLayout({ children }: { children: React.ReactNode }) {
 }
 
 // Human: First-run wizard gate — if the API says setup is incomplete, only `/setup` is reachable until finished.
-// Agent: CALLS setupStatus; ON ERROR assumes setup complete; NAVIGATES between /setup and / or /login; DEPENDS token for re-fetch.
+// Agent: SINGLE instance wraps all routes; CALLS setupStatus; ON ERROR treats as incomplete; CLEARS stale JWT when no users.
 function SetupGuard({ children }: { children: React.ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
 
   // Human: Load setup completion whenever token changes (e.g. after setup finishes and JWT appears).
-  // Agent: CALLS setupStatus; SETS setupComplete; CATCH sets true; cancellation guard on unmount.
+  // Agent: CALLS setupStatus; SETS setupComplete; CATCH sets false (never assume complete — that caused /setup ↔ /login loops).
   useEffect(() => {
     let cancelled = false;
     setupStatus()
@@ -229,10 +235,18 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
         if (!cancelled) setSetupComplete(s.setup_complete);
       })
       .catch(() => {
-        if (!cancelled) setSetupComplete(true);
+        if (!cancelled) setSetupComplete(false);
       });
     return () => { cancelled = true; };
   }, [token]);
+
+  // Human: After a DB reset, an old browser token makes the app hit protected APIs and bounce between routes.
+  // Agent: IF setupComplete===false AND token THEN logout(); PREVENTS 401 storm from LibraryShellProvider.
+  useEffect(() => {
+    if (setupComplete === false && token) {
+      logout();
+    }
+  }, [setupComplete, token, logout]);
 
   // Human: Keep URL aligned with setup state — bounce users away from `/setup` once done, or force setup until complete.
   // Agent: READS setupComplete pathname token; NAVIGATES replace to /setup or / or /login.
@@ -278,6 +292,7 @@ function NavigationLogger() {
   const { user } = useAuth();
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const timestamp = new Date().toISOString();
     const page = location.pathname + location.search;
     const userInfo = user ? `${user.email} (${user.role})` : "anonymous";
@@ -290,40 +305,40 @@ function NavigationLogger() {
   return null;
 }
 
-// Human: Declarative route table — every leaf is wrapped with SetupGuard; admin subtree nests under `/admin/*`.
+// Human: Declarative route table — SetupGuard wraps the whole tree once so setup state survives route changes.
 // Agent: DEFINES Routes + nested admin Route; USES RequireAdmin inside AdminLayout outlet.
 function AppRoutes() {
   return (
     <>
       <NavigationLogger />
-      <Routes>
-        <Route path="/setup" element={<SetupGuard><Setup /></SetupGuard>} />
-        <Route path="/login" element={<SetupGuard><Login /></SetupGuard>} />
-        <Route path="/" element={<SetupGuard><RequireAuth><Library /></RequireAuth></SetupGuard>} />
-        <Route path="/player/:id" element={<SetupGuard><RequireAuth><Player /></RequireAuth></SetupGuard>} />
-        <Route path="/playlists" element={<SetupGuard><RequireAuth><Playlists /></RequireAuth></SetupGuard>} />
-        <Route path="/playlist/:id" element={<SetupGuard><RequireAuth><PlaylistDetail /></RequireAuth></SetupGuard>} />
-        <Route path="/song/:id" element={<SetupGuard><RequireAuth><SongDetail /></RequireAuth></SetupGuard>} />
-        <Route path="/stats" element={<SetupGuard><RequireAuth><StatsPage /></RequireAuth></SetupGuard>} />
-        <Route path="/admin/*" element={
-          <SetupGuard>
+      <SetupGuard>
+        <Routes>
+          <Route path="/setup" element={<Setup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<RequireAuth><Library /></RequireAuth>} />
+          <Route path="/player/:id" element={<RequireAuth><Player /></RequireAuth>} />
+          <Route path="/playlists" element={<RequireAuth><Playlists /></RequireAuth>} />
+          <Route path="/playlist/:id" element={<RequireAuth><PlaylistDetail /></RequireAuth>} />
+          <Route path="/song/:id" element={<RequireAuth><SongDetail /></RequireAuth>} />
+          <Route path="/stats" element={<RequireAuth><StatsPage /></RequireAuth>} />
+          <Route path="/admin/*" element={
             <RequireAuthNoLayout>
               <RequireAdmin>
                 <AdminLayout />
               </RequireAdmin>
             </RequireAuthNoLayout>
-          </SetupGuard>
-        }>
-          <Route index element={<AdminOverviewPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="listening" element={<AdminUserListeningPage />} />
-          <Route path="groups" element={<AdminGroupsPage />} />
-          <Route path="library" element={<AdminLibraryPage />} />
-          <Route path="library/:songId/lyrics" element={<AdminLyricsEditorPage />} />
-          <Route path="playlists" element={<AdminPlaylistsPage />} />
-          <Route path="settings" element={<AdminSettingsPage />} />
-        </Route>
-      </Routes>
+          }>
+            <Route index element={<AdminOverviewPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="listening" element={<AdminUserListeningPage />} />
+            <Route path="groups" element={<AdminGroupsPage />} />
+            <Route path="library" element={<AdminLibraryPage />} />
+            <Route path="library/:songId/lyrics" element={<AdminLyricsEditorPage />} />
+            <Route path="playlists" element={<AdminPlaylistsPage />} />
+            <Route path="settings" element={<AdminSettingsPage />} />
+          </Route>
+        </Routes>
+      </SetupGuard>
     </>
   );
 }
@@ -335,7 +350,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <PlayerProvider>
-          <AppRoutes />
+          <LibraryShellProvider>
+            <AppRoutes />
+          </LibraryShellProvider>
         </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>
