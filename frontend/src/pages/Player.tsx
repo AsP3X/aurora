@@ -5,10 +5,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { usePlayer } from "../context/PlayerContext";
 import { fetchSong, fetchSongLyrics } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
-import LyricsPanel from "../components/LyricsPanel";
+import LyricsPanel, {
+  LyricsViewModeToggle,
+  type LyricsViewMode,
+} from "../components/LyricsPanel";
 import PlayerTransportPanel from "../components/PlayerTransportPanel";
 import { readMediaDurationSeconds, resolveTrackDuration } from "../lib/playbackDuration";
-import type { SongLyrics } from "../types";
+import type { Song, SongLyrics } from "../types";
 
 // Human: Shared lyrics toggle affordance — used in the mobile top bar and the desktop floating control.
 // Agent: PURE UI; CALLS onToggle; aria-expanded from lyricsPanelOpen; STYLES active vs idle border/background.
@@ -44,6 +47,88 @@ function LyricsToggleButton({
   );
 }
 
+// Human: Genre/format chips under the title on mobile lyrics view, or below artwork when lyrics are closed.
+// Agent: PURE; compact slices genres to 3 when showLyricsLayout; HIDES bitrate/studio when lyrics open.
+function PlayerGenreChips({
+  song,
+  showLyricsLayout,
+  className = "",
+}: {
+  song: Song;
+  showLyricsLayout: boolean;
+  className?: string;
+}) {
+  const genres = showLyricsLayout ? song.genres.slice(0, 3) : song.genres;
+
+  return (
+    <div
+      className={`player-chips-row flex w-full gap-2 overflow-hidden ${
+        showLyricsLayout
+          ? "max-md:flex-nowrap max-md:overflow-x-auto max-md:justify-start max-md:pb-0 max-md:[scrollbar-width:none] max-h-16 md:flex-wrap md:justify-center md:max-h-24"
+          : "flex-wrap max-h-40 justify-center"
+      } ${className}`}
+    >
+      {genres.map((genre) => (
+        <span
+          key={genre}
+          className={`shrink-0 rounded-full bg-white/5 font-medium text-surface-400 ${
+            showLyricsLayout
+              ? "px-2 py-0.5 text-[10px] md:px-2.5 md:py-1 md:text-xs"
+              : "px-2.5 py-1 text-xs"
+          }`}
+        >
+          {genre}
+        </span>
+      ))}
+      {showLyricsLayout && song.genres.length > 3 && (
+        <span className="shrink-0 text-[10px] text-surface-500 md:text-xs">
+          +{song.genres.length - 3}
+        </span>
+      )}
+      <span
+        className={`shrink-0 rounded-full bg-white/5 font-medium uppercase text-surface-400 ${
+          showLyricsLayout ? "px-2 py-0.5 text-[10px] md:px-2.5 md:py-1 md:text-xs" : "px-2.5 py-1 text-xs"
+        }`}
+      >
+        {song.file_format}
+      </span>
+      {!showLyricsLayout && song.bitrate_kbps && (
+        <span className="shrink-0 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-surface-400">
+          {song.bitrate_kbps} kbps
+        </span>
+      )}
+      {!showLyricsLayout && song.studio && (
+        <span className="shrink-0 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-surface-400">
+          {song.studio}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Human: Top-bar cluster — show/hide lyrics always; layout toggle only while lyrics panel is open.
+// Agent: RENDERS LyricsViewModeToggle iff lyricsPanelOpen; ALWAYS LyricsToggleButton.
+function PlayerLyricsTopControls({
+  lyricsPanelOpen,
+  lyricsViewMode,
+  onToggleLyrics,
+  onLyricsViewModeChange,
+}: {
+  lyricsPanelOpen: boolean;
+  lyricsViewMode: LyricsViewMode;
+  onToggleLyrics: () => void;
+  onLyricsViewModeChange: (mode: LyricsViewMode) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {lyricsPanelOpen && (
+        <LyricsViewModeToggle mode={lyricsViewMode} onModeChange={onLyricsViewModeChange} />
+      )}
+      <LyricsToggleButton lyricsPanelOpen={lyricsPanelOpen} onToggle={onToggleLyrics} />
+    </div>
+  );
+}
+
 export default function Player() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -73,6 +158,16 @@ export default function Player() {
   const [loading, setLoading] = useState(!currentSong || currentSong.id !== id);
   const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
   const [lyricsPanelOpen, setLyricsPanelOpen] = useState(false);
+  // Human: Compact 3-line karaoke vs full scroll — remembered for the browser session.
+  // Agent: STATE LyricsViewMode; READS sessionStorage aurora:lyrics-view-mode on mount; WRITES on change.
+  const [lyricsViewMode, setLyricsViewMode] = useState<LyricsViewMode>(() => {
+    try {
+      const stored = sessionStorage.getItem("aurora:lyrics-view-mode");
+      return stored === "scroll" ? "scroll" : "carousel";
+    } catch {
+      return "carousel";
+    }
+  });
 
   // Human: When opening `/player/:id` for a different track than what is loaded, fetch full metadata and start it via context.
   // Agent: EFFECT [id, currentSong, playSong]; CANCELS on id change; SETS loading around fetchSong.
@@ -165,11 +260,35 @@ export default function Player() {
   const showLyricsLayout = hasLyrics && lyricsPanelOpen;
   const toggleLyrics = () => setLyricsPanelOpen((open) => !open);
 
+  // Human: Persist lyrics layout choice so the next track opens the same way.
+  // Agent: CALLS sessionStorage.setItem aurora:lyrics-view-mode when lyricsViewMode changes.
+  function handleLyricsViewModeChange(mode: LyricsViewMode) {
+    setLyricsViewMode(mode);
+    try {
+      sessionStorage.setItem("aurora:lyrics-view-mode", mode);
+    } catch {
+      // ignore private mode / quota errors
+    }
+  }
+
+  // Human: On phones with lyrics open, lock page scroll so only the lyrics list moves under a sticky header.
+  // Agent: BOOL mobileLyricsChrome; DRIVES h-dvh overflow-hidden + player-mobile-lyrics-chrome sticky block.
+  const mobileLyricsChrome = showLyricsLayout;
+
   return (
-    <div className="flex flex-col min-h-dvh max-md:px-0 md:min-h-[calc(100dvh-7rem)] md:px-6">
-      {/* Human: Phones get a compact native top bar (back + optional title + lyrics); desktop keeps the glass pill. */}
-      {/* Agent: max-md flex header safe-area; md:hidden vs hidden md:block; NAVIGATES -1; TOGGLES lyricsPanelOpen. */}
-      <div className="max-md:flex md:hidden items-center gap-2 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 shrink-0">
+    <div
+      className={`flex flex-col min-h-dvh max-md:px-0 md:min-h-[calc(100dvh-7rem)] md:px-6 ${
+        mobileLyricsChrome ? "max-md:h-dvh max-md:overflow-hidden" : ""
+      }`}
+    >
+      {/* Human: Mobile top chrome — sticky nav row + genre chips when lyrics are open. */}
+      {/* Agent: CLASS player-mobile-lyrics-chrome; CONTAINS back/title/controls + PlayerGenreChips. */}
+      <div
+        className={`max-md:flex md:hidden flex-col shrink-0 ${
+          mobileLyricsChrome ? "player-mobile-lyrics-chrome" : ""
+        }`}
+      >
+        <div className="flex items-center gap-2 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2">
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -191,7 +310,21 @@ export default function Player() {
         {!showLyricsLayout && <div className="flex-1" aria-hidden />}
 
         {hasLyrics && (
-          <LyricsToggleButton lyricsPanelOpen={lyricsPanelOpen} onToggle={toggleLyrics} />
+          <PlayerLyricsTopControls
+            lyricsPanelOpen={lyricsPanelOpen}
+            lyricsViewMode={lyricsViewMode}
+            onToggleLyrics={toggleLyrics}
+            onLyricsViewModeChange={handleLyricsViewModeChange}
+          />
+        )}
+        </div>
+
+        {mobileLyricsChrome && (
+          <PlayerGenreChips
+            song={currentSong}
+            showLyricsLayout={showLyricsLayout}
+            className="px-4 pb-2.5"
+          />
         )}
       </div>
 
@@ -208,21 +341,30 @@ export default function Player() {
         </button>
       </div>
 
-      {/* Human: Centered now-playing by default; on md+ the music icon slides the grid to show lyrics beside art. */}
-      {/* Agent: STATE lyricsPanelOpen; showLyricsLayout; player-stage--open|--closed; SINGLE artwork rounded-3xl aspect-square. */}
-      <div className="relative flex flex-1 flex-col min-h-0 w-full max-w-6xl mx-auto px-4 max-md:px-4 pb-2 sm:pb-8 md:pb-4">
+      {/* Human: Centered now-playing; md+ lyrics/mode controls sit top-right above the stage grid. */}
+      {/* Agent: STATE lyricsPanelOpen; PlayerLyricsTopControls absolute md:flex; player-stage--open|--closed. */}
+      <div
+        className={`relative flex flex-1 flex-col min-h-0 w-full max-w-6xl mx-auto px-4 max-md:px-4 pb-2 sm:pb-8 md:pb-4 ${
+          mobileLyricsChrome ? "max-md:min-h-0 max-md:overflow-hidden" : ""
+        }`}
+      >
         {hasLyrics && (
-          <LyricsToggleButton
-            lyricsPanelOpen={lyricsPanelOpen}
-            onToggle={toggleLyrics}
-            className="absolute z-20 right-0 top-0 hidden md:flex sm:top-1"
-          />
+          <div className="absolute z-20 right-0 top-0 hidden md:flex sm:top-1">
+            <PlayerLyricsTopControls
+              lyricsPanelOpen={lyricsPanelOpen}
+              lyricsViewMode={lyricsViewMode}
+              onToggleLyrics={toggleLyrics}
+              onLyricsViewModeChange={handleLyricsViewModeChange}
+            />
+          </div>
         )}
 
         <div
-          className={`player-stage ${showLyricsLayout ? "player-stage--open" : "player-stage--closed"}`}
+          className={`player-stage ${showLyricsLayout ? "player-stage--open" : "player-stage--closed"} ${
+            mobileLyricsChrome ? "player-stage--mobile-lyrics" : ""
+          }`}
         >
-          <div className="player-track-cell">
+          <div className={`player-track-cell ${mobileLyricsChrome ? "max-md:hidden" : ""}`}>
             <div
               className={`player-track-inner flex w-full flex-col ${
                 showLyricsLayout
@@ -316,61 +458,37 @@ export default function Player() {
                 </div>
               </div>
 
-              <div
-                className={`player-chips-row flex w-full gap-2 overflow-hidden ${
-                  showLyricsLayout
-                    ? "max-md:flex-nowrap max-md:overflow-x-auto max-md:justify-start max-md:pb-1 max-md:[scrollbar-width:none] max-h-16 md:flex-wrap md:justify-center md:max-h-24"
-                    : "flex-wrap max-h-40 justify-center"
-                }`}
-              >
-                {(showLyricsLayout ? currentSong.genres.slice(0, 3) : currentSong.genres).map((genre) => (
-                  <span
-                    key={genre}
-                    className={`shrink-0 rounded-full bg-white/5 font-medium text-surface-400 ${
-                      showLyricsLayout
-                        ? "px-2 py-0.5 text-[10px] md:px-2.5 md:py-1 md:text-xs"
-                        : "px-2.5 py-1 text-xs"
-                    }`}
-                  >
-                    {genre}
-                  </span>
-                ))}
-                {showLyricsLayout && currentSong.genres.length > 3 && (
-                  <span className="shrink-0 text-[10px] text-surface-500 md:text-xs">
-                    +{currentSong.genres.length - 3}
-                  </span>
-                )}
-                <span
-                  className={`shrink-0 rounded-full bg-white/5 font-medium uppercase text-surface-400 ${
-                    showLyricsLayout ? "px-2 py-0.5 text-[10px] md:px-2.5 md:py-1 md:text-xs" : "px-2.5 py-1 text-xs"
-                  }`}
-                >
-                  {currentSong.file_format}
-                </span>
-                {!showLyricsLayout && currentSong.bitrate_kbps && (
-                  <span className="shrink-0 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-surface-400">
-                    {currentSong.bitrate_kbps} kbps
-                  </span>
-                )}
-                {!showLyricsLayout && currentSong.studio && (
-                  <span className="shrink-0 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-surface-400">
-                    {currentSong.studio}
-                  </span>
-                )}
-              </div>
+              <PlayerGenreChips
+                song={currentSong}
+                showLyricsLayout={showLyricsLayout}
+                className={showLyricsLayout ? "max-md:hidden" : ""}
+              />
             </div>
           </div>
 
           {hasLyrics && (
             <div
-              className="player-lyrics-cell flex flex-col justify-center max-md:flex-1 max-md:min-h-0"
+              className={`player-lyrics-cell flex flex-col max-md:min-h-0 ${
+                showLyricsLayout ? "max-md:flex-1" : "max-md:hidden"
+              } ${
+                mobileLyricsChrome
+                  ? "justify-start items-stretch min-h-0 max-md:overflow-hidden"
+                  : showLyricsLayout && lyricsViewMode === "scroll"
+                    ? "justify-start items-stretch min-h-0"
+                    : "justify-center"
+              }`}
               aria-hidden={!showLyricsLayout}
             >
               <LyricsPanel
                 lines={lyrics!.lines}
                 currentTimeMs={Math.round(progress * 1000)}
                 synced={lyrics!.synced}
-                className="max-w-none mx-0 w-full max-md:max-w-lg max-md:mx-auto"
+                mode={lyricsViewMode}
+                className={
+                  lyricsViewMode === "scroll"
+                    ? "max-w-none mx-0 w-full h-full min-h-0 flex-1"
+                    : "max-w-none mx-0 w-full max-md:max-w-lg max-md:mx-auto"
+                }
               />
             </div>
           )}

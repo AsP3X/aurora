@@ -106,6 +106,12 @@
     backface-visibility: hidden;
   }
 
+  /* Human: Full-song lyrics panel — touch-friendly scroll with edge fade via mask on the element. */
+  /* Agent: CLASS lyrics-scroll-panel; overflow-y auto; mask on component; used in scroll view mode. */
+  .lyrics-scroll-panel {
+    -webkit-overflow-scrolling: touch;
+  }
+
   /* Human: Player stage animates grid columns so art + metadata slide left when lyrics open. */
   /* Agent: CLASS player-stage; MODIFIERS --open|--closed; CELLS track+lyrics; TRANSITION grid-template-columns 650ms. */
   .player-stage {
@@ -130,6 +136,35 @@
   }
 
   @media (max-width: 767px) {
+    /* Human: Sticky mobile header (nav + genre chips) while full lyrics scroll underneath. */
+    /* Agent: CLASS player-mobile-lyrics-chrome; sticky top-0 z-30; bg surface-950/92 + blur + border-b. */
+    .player-mobile-lyrics-chrome {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: color-mix(in oklab, var(--color-surface-950) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgb(255 255 255 / 0.06);
+    }
+
+    /* Human: Lyrics stage fills space below sticky chrome; only the lyrics panel scrolls. */
+    /* Agent: CLASS player-stage--mobile-lyrics; flex-1 min-h-0 overflow hidden; lyrics-cell flex-1. */
+    .player-stage--mobile-lyrics {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      justify-content: flex-start;
+    }
+
+    .player-stage--mobile-lyrics .player-lyrics-cell {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      justify-content: flex-start;
+      padding-top: 0.25rem;
+    }
+
     /* Human: Phones use a vertical flex stack so lyrics can grow into leftover viewport height. */
     /* Agent: max-md; player-stage display flex column flex-1 min-h-0; OPEN lyrics-cell flex-1 centered. */
     .player-stage {
