@@ -11,13 +11,11 @@ import {
 } from "../../api/client";
 import type { SongDraft, Song } from "../../types";
 import SongMetadataForm from "./SongMetadataForm";
-import ArtworkCropper from "./ArtworkCropper";
-
+import ArtworkDialog from "./ArtworkDialog";
 // Human: Mobile Safari and several mobile WebViews treat `accept="audio/*"` as a strict MIME filter, which often hides `.wav` and other valid files even though the OS can open them; we combine `audio/*` with concrete extensions and MIME tokens that mirror the backend stage allowlist.
 // Agent: READS only by `<input accept>`; MUST stay aligned with `allowed` in `backend/src/admin/upload.rs` (mp3, flac, ogg, opus, m4a, aac, wma, wav); BROADENS picker on iOS/Android without relaxing server validation.
 const ADMIN_AUDIO_UPLOAD_ACCEPT =
   "audio/*,.mp3,.flac,.ogg,.opus,.m4a,.aac,.wma,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/flac,audio/x-flac,audio/ogg,audio/opus,audio/aac,audio/x-ms-wma,audio/wav,audio/x-wav,audio/wave";
-
 type UploadState =
   | "idle"
   | "uploading"
@@ -25,12 +23,10 @@ type UploadState =
   | "committing"
   | "processing"
   | "complete";
-
 interface UploadSongDialogProps {
   onClose: () => void;
   onSuccess: (song: Song) => void;
 }
-
 function ProgressBar({
   percent,
   label,
@@ -51,7 +47,6 @@ function ProgressBar({
     </div>
   );
 }
-
 // Human: After commit, label reflects artwork WebP pass (0–15%) then HLS conversion — progress bar only.
 // Agent: READS percent, expectsArtwork, artworkReady; RETURNS ProgressBar with phase-specific label.
 function ProcessingIndicator({
@@ -67,10 +62,8 @@ function ProcessingIndicator({
   const phaseLabel = artworkActive
     ? "Optimizing cover art (WebP)…"
     : "Converting audio for streaming…";
-
   return <ProgressBar percent={percent} label={phaseLabel} />;
 }
-
 export default function UploadSongDialog({
   onClose,
   onSuccess,
@@ -81,6 +74,7 @@ export default function UploadSongDialog({
   const [draft, setDraft] = useState<SongDraft | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
+  const [artworkDialogOpen, setArtworkDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [committedSong, setCommittedSong] = useState<Song | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -88,14 +82,22 @@ export default function UploadSongDialog({
   const [artworkReady, setArtworkReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const titleId = useId();
   const fileInputId = useId();
-
   useFocusTrap(true, panelRef);
-
+  // Human: Revoke blob preview URLs when the dialog unmounts so repeated uploads do not leak memory.
+  // Agent: EFFECT cleanup; READS previewUrlRef; CALLS URL.revokeObjectURL.
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
   const isBusy =
     state === "uploading" || state === "committing" || state === "processing";
-
   // Human: Stage binary on server — progress callback wired to the same bar reused during commit upload.
   // Agent: stageSongWithProgress; SETS draft+imageSrc from has_artwork; TRANSITIONS to editing/idle on result.
   const handleFileSelect = useCallback(
@@ -110,6 +112,11 @@ export default function UploadSongDialog({
           setUploadProgress(pct)
         );
         setDraft(result);
+        setCroppedBlob(null);
+        if (previewUrlRef.current) {
+          URL.revokeObjectURL(previewUrlRef.current);
+          previewUrlRef.current = null;
+        }
         if (result.has_artwork) {
           setImageSrc(stagedArtworkUrl(result.staging_id));
         } else {
@@ -121,32 +128,25 @@ export default function UploadSongDialog({
         setState("idle");
       }
     },
-    []
+    [],
   );
-
-  // Human: User replaced embedded art locally — reset crop blob until they apply a fresh square crop.
-  // Agent: FileReader readAsDataURL; SETS imageSrc; CLEARS croppedBlob.
-  const handleReplaceArtwork = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageSrc(reader.result as string);
-      setCroppedBlob(null);
-    };
-    reader.readAsDataURL(file);
-  }, []);
-
-  // Human: Apply square crop produces the blob submitted on commit — preview swaps to object URL immediately.
-  // Agent: SETS croppedBlob; REVOKES prior object URL implicitly by overwrite; sets imageSrc to blob URL.
-  const handleCropComplete = useCallback((blob: Blob) => {
-    setCroppedBlob(blob);
-    setImageSrc(URL.createObjectURL(blob));
-  }, []);
-
-  const handleRemoveArtwork = useCallback(() => {
-    setImageSrc(null);
-    setCroppedBlob(null);
-  }, []);
-
+  // Human: Artwork dialog commits its local crop/generate state back into the upload form.
+  // Agent: SETS imageSrc+croppedBlob; CLEARS previewUrlRef when parent imageSrc is remote/staged URL.
+  const handleArtworkApply = useCallback(
+    (nextImageSrc: string | null, nextCroppedBlob: Blob | null) => {
+      if (previewUrlRef.current && previewUrlRef.current !== nextImageSrc) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      if (nextImageSrc?.startsWith("blob:")) {
+        previewUrlRef.current = nextImageSrc;
+      }
+      setImageSrc(nextImageSrc);
+      setCroppedBlob(nextCroppedBlob);
+    },
+    [],
+  );
+  const hasArtworkSelected = Boolean(croppedBlob || imageSrc);
   // Human: Persist staged audio + metadata + optional cropped JPEG — then move to processing state while HLS transcodes.
   // Agent: commitSongWithProgress; onSuccess(song); SET state processing; REUSES upload progress for PUTs.
   const handleCommit = useCallback(async () => {
@@ -176,13 +176,11 @@ export default function UploadSongDialog({
       setState("editing");
     }
   }, [draft, croppedBlob, onSuccess]);
-
   // Human: After commit succeeds, poll until `hls_ready` so the success screen reflects real streaming availability.
   // Agent: EFFECT [state, committedSong]; INTERVAL 2s fetchSong; SET processingProgress; state complete at 100%.
   useEffect(() => {
     if (state !== "processing" || !committedSong) return;
     let cancelled = false;
-
     const songId = committedSong.id;
     async function poll() {
       try {
@@ -200,7 +198,6 @@ export default function UploadSongDialog({
         // ignore polling errors, will retry
       }
     }
-
     poll();
     const interval = setInterval(poll, 2000);
     return () => {
@@ -208,27 +205,23 @@ export default function UploadSongDialog({
       clearInterval(interval);
     };
   }, [state, committedSong]);
-
   const handleClose = useCallback(() => {
     if (isBusy) return;
     onClose();
   }, [isBusy, onClose]);
-
   const handleViewSong = useCallback(() => {
     if (committedSong) {
       navigate(`/song/${committedSong.id}`);
     }
     onClose();
   }, [committedSong, navigate, onClose]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isBusy) handleClose();
+      if (e.key === "Escape" && !isBusy && !artworkDialogOpen) handleClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isBusy, handleClose]);
-
+  }, [isBusy, artworkDialogOpen, handleClose]);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -259,13 +252,11 @@ export default function UploadSongDialog({
             ✕
           </button>
         </div>
-
         {error && (
           <div className="mb-4 rounded-md bg-red-900/30 px-3 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
-
         {state === "idle" && (
           <div className="flex flex-col items-center gap-4 py-8">
             <div className="rounded-full bg-surface-900 p-4">
@@ -305,25 +296,57 @@ export default function UploadSongDialog({
             />
           </div>
         )}
-
         {state === "uploading" && (
           <ProgressBar percent={uploadProgress} label="Uploading audio file…" />
         )}
-
         {state === "editing" && draft && (
           <div className="flex flex-col gap-6">
             <SongMetadataForm draft={draft} onChange={setDraft} />
-
             <div>
               <h3 className="mb-2 text-sm font-medium text-white">Artwork</h3>
-              <ArtworkCropper
-                imageSrc={imageSrc}
-                onCropComplete={handleCropComplete}
-                onReplace={handleReplaceArtwork}
-                onRemove={handleRemoveArtwork}
-              />
+              <div className="flex items-center gap-4 rounded-lg border border-surface-800 bg-surface-900/50 p-4">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-800">
+                  {imageSrc ? (
+                    <img
+                      src={imageSrc}
+                      alt="Cover art preview"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <svg
+                      className="h-8 w-8 text-surface-600"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-sm text-surface-300">
+                    {hasArtworkSelected
+                      ? draft.has_artwork && !croppedBlob
+                        ? "Using embedded cover from the audio file."
+                        : "Custom cover art selected."
+                      : "No cover art yet. Upload an image or generate one from the song metadata."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setArtworkDialogOpen(true)}
+                    className="rounded-md bg-aurora-600 px-4 py-2 text-sm font-medium text-white hover:bg-aurora-500"
+                  >
+                    {hasArtworkSelected ? "Edit artwork" : "Add artwork"}
+                  </button>
+                </div>
+              </div>
             </div>
-
             <div className="flex justify-end gap-2">
               <button
                 onClick={handleClose}
@@ -340,11 +363,9 @@ export default function UploadSongDialog({
             </div>
           </div>
         )}
-
         {state === "committing" && (
           <ProgressBar percent={uploadProgress} label="Saving to library…" />
         )}
-
         {state === "processing" && (
           <ProcessingIndicator
             percent={processingProgress}
@@ -352,7 +373,6 @@ export default function UploadSongDialog({
             artworkReady={artworkReady}
           />
         )}
-
         {state === "complete" && committedSong && (
           <div className="py-8 flex flex-col items-center gap-6">
             <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
@@ -395,6 +415,16 @@ export default function UploadSongDialog({
           </div>
         )}
       </div>
+      {draft ? (
+        <ArtworkDialog
+          open={artworkDialogOpen}
+          onClose={() => setArtworkDialogOpen(false)}
+          draft={draft}
+          imageSrc={imageSrc}
+          croppedBlob={croppedBlob}
+          onApply={handleArtworkApply}
+        />
+      ) : null}
     </div>
   );
 }
