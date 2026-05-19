@@ -1,19 +1,13 @@
-// Human: Shooting stars with cruise → flare → fade burn-up; ~38% fragment into smaller streaks near the surface.
-// Agent: MeteorField.update(dt); burn01 0..1 drives shader; SURFACE_CEILING; EMITS GlMeteorSlot[].
+// Human: Shooting stars with cruise → flare → fade burn-up; optional fragment breakup; tier-aware spawn caps.
+// Agent: MeteorField.update(dt); config maxConcurrent/spawnCooldownScale; SURFACE_CEILING; EMITS GlMeteorSlot[].
 
-/** Maximum concurrent meteors (parent + fragments) sent to the shader. */
+/** Shader uniform array size — slots beyond maxConcurrent stay empty. */
 export const MAX_METEORS = 8;
 
-/** Meteors ablate before this Y — must match aurora shader uSurfaceCeiling. */
 export const SURFACE_CEILING = 0.36;
 
-/** Head Y below this starts the burn-up sequence (still above hills). */
 const BURN_ZONE_START = 0.5;
-
-/** Seconds to run through brightening then fade (real time). */
 const BURN_DURATION = 0.85;
-
-/** Chance the head flares then splits into debris streaks. */
 const BREAKUP_CHANCE = 0.38;
 
 export interface GlMeteorSlot {
@@ -26,6 +20,12 @@ export interface GlMeteorSlot {
   life01: number;
   burn01: number;
   phase: number;
+}
+
+export interface MeteorFieldConfig {
+  maxConcurrent: number;
+  spawnCooldownScale: number;
+  enabled: boolean;
 }
 
 interface ActiveMeteor {
@@ -54,6 +54,12 @@ const EMPTY_SLOT: GlMeteorSlot = {
   life01: 0,
   burn01: 0,
   phase: 0,
+};
+
+const DEFAULT_CONFIG: MeteorFieldConfig = {
+  maxConcurrent: MAX_METEORS,
+  spawnCooldownScale: 1,
+  enabled: true,
 };
 
 const MINERAL_WEIGHTS = [0, 0, 1, 1, 1, 1, 1, 2, 3, 4];
@@ -91,8 +97,6 @@ function spawnMeteor(): ActiveMeteor {
   };
 }
 
-// Human: Debris pieces diverging from a parent during breakup — already in the flare phase.
-// Agent: READS parent; SPAWNS 2–3 ActiveMeteor fragments with high burn01 and short life.
 function spawnFragments(parent: ActiveMeteor): ActiveMeteor[] {
   const count = Math.random() > 0.45 ? 3 : 2;
   const pieces: ActiveMeteor[] = [];
@@ -136,13 +140,36 @@ function toSlot(meteor: ActiveMeteor): GlMeteorSlot {
 
 export class MeteorField {
   private readonly active: ActiveMeteor[] = [];
+  private config: MeteorFieldConfig = { ...DEFAULT_CONFIG };
   private spawnCooldown = randBetween(4, 12);
 
+  // Human: React quality tier changes update spawn limits without recreating the field.
+  // Agent: MUTATES config; CLAMPS maxConcurrent to MAX_METEORS.
+  setConfig(config: MeteorFieldConfig) {
+    this.config = {
+      maxConcurrent: Math.min(Math.max(1, config.maxConcurrent), MAX_METEORS),
+      spawnCooldownScale: Math.max(0.5, config.spawnCooldownScale),
+      enabled: config.enabled,
+    };
+  }
+
   update(dt: number): GlMeteorSlot[] {
+    const slots: GlMeteorSlot[] = [];
+    for (let i = 0; i < MAX_METEORS; i++) {
+      slots.push(EMPTY_SLOT);
+    }
+
+    if (!this.config.enabled) {
+      return slots;
+    }
+
+    const maxActive = this.config.maxConcurrent;
+    const cooldownScale = this.config.spawnCooldownScale;
+
     this.spawnCooldown -= dt;
-    if (this.spawnCooldown <= 0 && this.active.length < MAX_METEORS - 2) {
+    if (this.spawnCooldown <= 0 && this.active.length < maxActive - 1) {
       this.active.push(spawnMeteor());
-      this.spawnCooldown = randBetween(5, 14);
+      this.spawnCooldown = randBetween(5, 14) * cooldownScale;
     }
 
     const pendingFragments: ActiveMeteor[] = [];
@@ -164,7 +191,8 @@ export class MeteorField {
           meteor.willBreakup &&
           !meteor.fragmentSpawned &&
           !meteor.isFragment &&
-          meteor.burn01 > 0.34
+          meteor.burn01 > 0.34 &&
+          maxActive >= 3
         ) {
           meteor.fragmentSpawned = true;
           meteor.tailLength *= 0.32;
@@ -191,15 +219,13 @@ export class MeteorField {
     }
 
     for (const fragment of pendingFragments) {
-      if (this.active.length < MAX_METEORS) {
+      if (this.active.length < maxActive) {
         this.active.push(fragment);
       }
     }
 
-    const slots: GlMeteorSlot[] = [];
-    for (let i = 0; i < MAX_METEORS; i++) {
-      const meteor = this.active[i];
-      slots.push(meteor ? toSlot(meteor) : EMPTY_SLOT);
+    for (let i = 0; i < this.active.length && i < MAX_METEORS; i++) {
+      slots[i] = toSlot(this.active[i]);
     }
 
     return slots;

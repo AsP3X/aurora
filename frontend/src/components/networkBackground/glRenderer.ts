@@ -1,6 +1,7 @@
 // Human: WebGL background — aurora, meteors, horizon, silhouettes, bloom, auth focus scrim.
 // Agent: MULTI-PASS FBO; aurora→blur→bloom→composite; DISPOSE on unmount; meteors from MeteorField.
 
+import type { BackgroundQualitySettings } from "./backgroundQuality";
 import { MAX_METEORS, SURFACE_CEILING, type GlMeteorSlot } from "./meteors";
 
 export interface GlFocusRect {
@@ -17,6 +18,7 @@ export interface GlFrameInput {
   authMode: boolean;
   meteors: GlMeteorSlot[];
   meteorCount: number;
+  quality: BackgroundQualitySettings;
 }
 
 const AURORA_VERT = `
@@ -572,8 +574,12 @@ export class NetworkBackgroundGlRenderer {
   private sceneTarget: FramebufferTarget;
   private blurTarget: FramebufferTarget;
   private bloomTarget: FramebufferTarget;
+  /** Canvas backing-store pixels (display resolution). */
   private width = 0;
   private height = 0;
+  /** Internal aurora/bloom FBO size — may be lower than canvas on mobile tier. */
+  private renderWidth = 0;
+  private renderHeight = 0;
 
   private constructor(
     gl: GlContext,
@@ -702,14 +708,15 @@ export class NetworkBackgroundGlRenderer {
     }
   }
 
-  // Human: Match canvas backing store to container CSS size and rebuild FBO textures when dimensions change.
-  // Agent: SETS canvas.width/height; RESIZES scene+blur+bloom FBOs.
-  resize(cssWidth: number, cssHeight: number) {
+  // Human: Canvas at tier DPR cap; FBOs optionally render smaller and upscale on composite (mobile savings).
+  // Agent: SETS width/height + renderWidth/Height; RESIZES FBOs to render size.
+  resize(cssWidth: number, cssHeight: number, quality: BackgroundQualitySettings) {
     if (cssWidth <= 0 || cssHeight <= 0) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap);
     const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
     const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+    const scale = Math.max(0.4, Math.min(1, quality.renderScale));
 
     const canvas = this.gl.canvas as HTMLCanvasElement;
     canvas.width = pixelWidth;
@@ -717,63 +724,65 @@ export class NetworkBackgroundGlRenderer {
 
     this.width = pixelWidth;
     this.height = pixelHeight;
+    this.renderWidth = Math.max(1, Math.round(pixelWidth * scale));
+    this.renderHeight = Math.max(1, Math.round(pixelHeight * scale));
 
-    resizeFramebuffer(this.gl, this.sceneTarget, pixelWidth, pixelHeight);
-    resizeFramebuffer(this.gl, this.blurTarget, pixelWidth, pixelHeight);
-    resizeFramebuffer(this.gl, this.bloomTarget, pixelWidth, pixelHeight);
-
-    this.gl.viewport(0, 0, pixelWidth, pixelHeight);
+    resizeFramebuffer(this.gl, this.sceneTarget, this.renderWidth, this.renderHeight);
+    resizeFramebuffer(this.gl, this.blurTarget, this.renderWidth, this.renderHeight);
+    resizeFramebuffer(this.gl, this.bloomTarget, this.renderWidth, this.renderHeight);
   }
 
   // Human: Aurora → blur → bloom → composite with optional auth focus mask.
   // Agent: sceneTarget=aurora; ping-pong blur; bloom extract+blur; composite to default framebuffer.
   render(frame: GlFrameInput) {
-    if (this.width <= 0 || this.height <= 0) return;
+    if (this.width <= 0 || this.height <= 0 || this.renderWidth <= 0 || this.renderHeight <= 0) {
+      return;
+    }
 
     const gl = this.gl;
-    const resolution: [number, number] = [this.width, this.height];
-    const auroraBlurStrength = 2.6;
+    const renderResolution: [number, number] = [this.renderWidth, this.renderHeight];
+    const { auroraBlurStrength, bloomBlurStrength, bloomStrengthMultiplier } = frame.quality;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneTarget.framebuffer);
-    gl.viewport(0, 0, this.width, this.height);
+    gl.viewport(0, 0, this.renderWidth, this.renderHeight);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     bindProgram(gl, this.auroraProgram);
     gl.uniform1f(this.auroraProgram.uniforms.uTime!, frame.time);
-    gl.uniform2f(this.auroraProgram.uniforms.uResolution!, resolution[0], resolution[1]);
+    gl.uniform2f(this.auroraProgram.uniforms.uResolution!, renderResolution[0], renderResolution[1]);
     this.uploadMeteorUniforms(frame.meteors, frame.meteorCount);
     this.drawQuad(this.auroraProgram);
 
-    this.runBloomPipeline();
+    this.runBloomPipeline(bloomBlurStrength);
     this.runBlurBetween(this.sceneTarget, this.blurTarget, auroraBlurStrength, 1, 0);
     this.runBlurBetween(this.blurTarget, this.sceneTarget, auroraBlurStrength, 0, 1);
 
-    this.runCompositePass(frame, resolution);
+    this.runCompositePass(frame, bloomStrengthMultiplier);
   }
 
   // Human: Threshold bright scene pixels, then separable blur for bloom halo.
   // Agent: sceneTarget → bloomTarget extract; blur H/V ping-pong blurTarget↔bloomTarget.
-  private runBloomPipeline() {
+  private runBloomPipeline(bloomBlurStrength: number) {
     const gl = this.gl;
-    const bloomStrength = 3.2;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomTarget.framebuffer);
-    gl.viewport(0, 0, this.width, this.height);
+    gl.viewport(0, 0, this.renderWidth, this.renderHeight);
     bindProgram(gl, this.bloomExtractProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneTarget.texture);
     gl.uniform1i(this.bloomExtractProgram.uniforms.uTexture!, 0);
     this.drawQuad(this.bloomExtractProgram);
 
-    this.runBlurBetween(this.bloomTarget, this.blurTarget, bloomStrength, 1, 0);
-    this.runBlurBetween(this.blurTarget, this.bloomTarget, bloomStrength, 0, 1);
+    this.runBlurBetween(this.bloomTarget, this.blurTarget, bloomBlurStrength, 1, 0);
+    this.runBlurBetween(this.blurTarget, this.bloomTarget, bloomBlurStrength, 0, 1);
   }
 
-  // Human: Merge blurred aurora and bloom, apply auth focus scrim to the screen.
-  // Agent: DRAW compositeProgram; SAMPLING sceneTarget + bloomTarget; SETS focus uniforms.
-  private runCompositePass(frame: GlFrameInput, resolution: [number, number]) {
+  // Human: Merge blurred aurora and bloom, apply auth focus scrim — upscales to full canvas if renderScale < 1.
+  // Agent: DRAW compositeProgram; viewport=canvas size; SAMPLING lower-res FBOs with linear filter.
+  private runCompositePass(frame: GlFrameInput, bloomStrengthMultiplier: number) {
     const gl = this.gl;
+    const displayResolution: [number, number] = [this.width, this.height];
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
@@ -790,8 +799,9 @@ export class NetworkBackgroundGlRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.bloomTarget.texture);
     gl.uniform1i(this.compositeProgram.uniforms.uBloomTexture!, 1);
 
-    gl.uniform2f(this.compositeProgram.uniforms.uResolution!, resolution[0], resolution[1]);
-    gl.uniform1f(this.compositeProgram.uniforms.uBloomStrength!, frame.authMode ? 0.85 : 0.65);
+    gl.uniform2f(this.compositeProgram.uniforms.uResolution!, displayResolution[0], displayResolution[1]);
+    const bloomBase = frame.authMode ? 0.85 : 0.65;
+    gl.uniform1f(this.compositeProgram.uniforms.uBloomStrength!, bloomBase * bloomStrengthMultiplier);
     gl.uniform1f(this.compositeProgram.uniforms.uTime!, frame.time);
 
     const focusActive = frame.authMode && frame.focus.active ? 1 : 0;
@@ -816,12 +826,16 @@ export class NetworkBackgroundGlRenderer {
     const gl = this.gl;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
-    gl.viewport(0, 0, this.width, this.height);
+    gl.viewport(0, 0, this.renderWidth, this.renderHeight);
     bindProgram(gl, this.blurProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, source.texture);
     gl.uniform1i(this.blurProgram.uniforms.uTexture!, 0);
-    gl.uniform2f(this.blurProgram.uniforms.uTexelSize!, strength / this.width, strength / this.height);
+    gl.uniform2f(
+      this.blurProgram.uniforms.uTexelSize!,
+      strength / this.renderWidth,
+      strength / this.renderHeight,
+    );
     gl.uniform2f(this.blurProgram.uniforms.uDirection!, dirX, dirY);
     this.drawQuad(this.blurProgram);
   }

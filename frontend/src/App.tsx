@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PlayerProvider, usePlayer } from "./context/PlayerContext";
 import { LibraryShellProvider } from "./context/LibraryShellContext";
+import { BackendConnectionProvider } from "./context/BackendConnectionContext";
 import PlayerBar from "./components/PlayerBar";
-import { setupStatus } from "./api/client";
+import { isBackendUnreachableError, setupStatus } from "./api/client";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Library from "./pages/Library";
@@ -219,40 +220,65 @@ function RequireAuthNoLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Human: First-run wizard gate — if the API says setup is incomplete, only `/setup` is reachable until finished.
-// Agent: SINGLE instance wraps all routes; CALLS setupStatus; ON ERROR treats as incomplete; CLEARS stale JWT when no users.
+// Human: First-run wizard gate — incomplete setup forces `/setup`; unreachable API keeps users on `/login` with a banner.
+// Agent: SINGLE instance wraps routes; CALLS setupStatus; ON network/gateway failure phase=unreachable; CLEARS stale JWT when setup incomplete.
+type SetupGatePhase = "loading" | "ready" | "unreachable";
+
 function SetupGuard({ children }: { children: React.ReactNode }) {
+  const [phase, setPhase] = useState<SetupGatePhase>("loading");
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { token, logout } = useAuth();
+  const setupCheckIdRef = useRef(0);
 
-  // Human: Load setup completion whenever token changes (e.g. after setup finishes and JWT appears).
-  // Agent: CALLS setupStatus; SETS setupComplete; CATCH sets false (never assume complete — that caused /setup ↔ /login loops).
-  useEffect(() => {
-    let cancelled = false;
+  // Human: Probe setup completion on mount and when auth changes; unreachable errors are not treated as "needs setup".
+  // Agent: CALLS setupStatus; SETS phase ready+setupComplete; ON isBackendUnreachableError SETS phase unreachable; ELSE incomplete setup.
+  const checkSetupStatus = useCallback(() => {
+    const checkId = ++setupCheckIdRef.current;
+    setPhase("loading");
+    setSetupComplete(null);
     setupStatus()
       .then((s) => {
-        if (!cancelled) setSetupComplete(s.setup_complete);
+        if (checkId !== setupCheckIdRef.current) return;
+        setSetupComplete(s.setup_complete);
+        setPhase("ready");
       })
-      .catch(() => {
-        if (!cancelled) setSetupComplete(false);
+      .catch((err: unknown) => {
+        if (checkId !== setupCheckIdRef.current) return;
+        if (isBackendUnreachableError(err)) {
+          setSetupComplete(null);
+          setPhase("unreachable");
+          return;
+        }
+        setSetupComplete(false);
+        setPhase("ready");
       });
-    return () => { cancelled = true; };
-  }, [token]);
+  }, []);
+
+  useEffect(() => {
+    checkSetupStatus();
+  }, [token, checkSetupStatus]);
 
   // Human: After a DB reset, an old browser token makes the app hit protected APIs and bounce between routes.
-  // Agent: IF setupComplete===false AND token THEN logout(); PREVENTS 401 storm from LibraryShellProvider.
+  // Agent: IF phase ready AND setupComplete===false AND token THEN logout(); SKIPPED when backend unreachable.
   useEffect(() => {
-    if (setupComplete === false && token) {
+    if (phase === "ready" && setupComplete === false && token) {
       logout();
     }
-  }, [setupComplete, token, logout]);
+  }, [phase, setupComplete, token, logout]);
 
-  // Human: Keep URL aligned with setup state — bounce users away from `/setup` once done, or force setup until complete.
-  // Agent: READS setupComplete pathname token; NAVIGATES replace to /setup or / or /login.
+  // Human: Keep URL aligned with setup state — setup wizard, login banner path, or post-setup library entry.
+  // Agent: READS phase setupComplete pathname token; NAVIGATES replace to /setup /login / or /login.
   useEffect(() => {
-    if (setupComplete === null) return;
+    if (phase === "loading") return;
+
+    if (phase === "unreachable") {
+      if (pathname !== "/login") {
+        navigate("/login", { replace: true });
+      }
+      return;
+    }
 
     if (setupComplete && pathname === "/setup") {
       if (token) {
@@ -262,12 +288,12 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!setupComplete && pathname !== "/setup") {
+    if (setupComplete === false && pathname !== "/setup") {
       navigate("/setup", { replace: true });
     }
-  }, [setupComplete, pathname, token, navigate]);
+  }, [phase, setupComplete, pathname, token, navigate]);
 
-  if (setupComplete === null) {
+  if (phase === "loading") {
     return (
       <div className="min-h-screen bg-surface-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -278,15 +304,28 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (setupComplete && pathname === "/setup") {
+  if (phase === "unreachable" && pathname !== "/login") {
     return null;
   }
 
-  if (!setupComplete && pathname !== "/setup") {
+  if (phase === "ready" && setupComplete && pathname === "/setup") {
     return null;
   }
 
-  return <>{children}</>;
+  if (phase === "ready" && setupComplete === false && pathname !== "/setup") {
+    return null;
+  }
+
+  return (
+    <BackendConnectionProvider
+      value={{
+        backendUnreachable: phase === "unreachable",
+        retryConnectionCheck: checkSetupStatus,
+      }}
+    >
+      {children}
+    </BackendConnectionProvider>
+  );
 }
 
 // Human: Dev-oriented navigation trace — logs each pathname change with timestamp and current user role/email.

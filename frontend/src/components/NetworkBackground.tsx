@@ -1,10 +1,17 @@
-// Human: Auth/setup background — aurora, sporadic meteors, horizon, hills; CSS fallback if no WebGL.
-// Agent: PROPS variant focusTargetRef; MeteorField real-time dt; TIME_SCALE on aurora uTime only.
+// Human: Auth/setup background — aurora + meteors; mobile tier, reduced motion, and tab visibility aware.
+// Agent: MeteorField+quality tier; pause rAF when hidden; STATIC fallback for no WebGL or reduce motion.
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { NetworkBackgroundGlRenderer, type GlFocusRect } from "./networkBackground/glRenderer";
+import {
+  STATIC_BACKGROUND_STYLE,
+  detectBackgroundQualityTier,
+  getBackgroundQualitySettings,
+  subscribeBackgroundQualityTier,
+  type BackgroundQualitySettings,
+} from "./networkBackground/backgroundQuality";
 import { MAX_METEORS, MeteorField } from "./networkBackground/meteors";
 
-/** Scales shader time — lower = slower aurora/silhouette drift (reduces motion discomfort). */
+/** Scales shader time — lower = slower aurora drift (reduces motion discomfort). */
 const TIME_SCALE = 0.34;
 
 export interface NetworkBackgroundProps {
@@ -51,34 +58,112 @@ function measureFocusRect(
   };
 }
 
-// Human: Aurora, mineral meteors, horizon hills; auth variant dims around the login/setup card.
-// Agent: WEBGL bloom+composite; MeteorField per frame; CSS gradient fallback when WebGL unavailable.
+// Human: Count GPU meteor slots with non-zero life for uMeteorCount.
+// Agent: PURE; READS slots life01; RETURNS count capped by maxSlots.
+function countActiveMeteors(slots: { life01: number }[], maxSlots: number): number {
+  let count = 0;
+  for (let i = 0; i < maxSlots; i++) {
+    if (slots[i].life01 > 0.01) count++;
+  }
+  return count;
+}
+
+// Human: Bridge quality tier into meteor spawn limits.
+// Agent: PURE; READS BackgroundQualitySettings; RETURNS MeteorFieldConfig.
+function meteorConfigFromQuality(quality: BackgroundQualitySettings) {
+  return {
+    maxConcurrent: quality.maxMeteors,
+    spawnCooldownScale: quality.spawnCooldownScale,
+    enabled: quality.meteorsEnabled,
+  };
+}
+
+// Human: WebGL aurora when allowed; static CSS when reduced motion or WebGL unavailable; mobile cost tier.
+// Agent: matchMedia reduce motion; visibility pause; quality subscription; passes quality to renderer.
 export default function NetworkBackground({
   variant = "default",
   focusTargetRef,
 }: NetworkBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const glRendererRef = useRef<NetworkBackgroundGlRenderer | null>(null);
+  const meteorFieldRef = useRef<MeteorField | null>(null);
+  const qualityRef = useRef<BackgroundQualitySettings>(
+    getBackgroundQualitySettings(detectBackgroundQualityTier()),
+  );
+
   const authMode = variant === "auth";
   const focusRectRef = useRef<GlFocusRect>(DEFAULT_FOCUS);
+
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
   const [webglActive, setWebglActive] = useState(false);
+  const [quality, setQuality] = useState<BackgroundQualitySettings>(() =>
+    getBackgroundQualitySettings(detectBackgroundQualityTier()),
+  );
+
+  const useAnimatedWebgl = webglActive && !prefersReducedMotion;
+  const useStaticFallback = !useAnimatedWebgl;
 
   useEffect(() => {
+    qualityRef.current = quality;
+    meteorFieldRef.current?.setConfig(meteorConfigFromQuality(quality));
+
+    const container = containerRef.current;
+    if (container && glRendererRef.current) {
+      glRendererRef.current.resize(container.clientWidth, container.clientHeight, quality);
+    }
+  }, [quality]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onMotionChange = () => {
+      setPrefersReducedMotion(motionQuery.matches);
+    };
+
+    motionQuery.addEventListener("change", onMotionChange);
+    return () => {
+      motionQuery.removeEventListener("change", onMotionChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    setQuality(getBackgroundQualitySettings(detectBackgroundQualityTier()));
+    return subscribeBackgroundQualityTier(setQuality);
+  }, []);
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setWebglActive(false);
+      glRendererRef.current?.dispose();
+      glRendererRef.current = null;
+      return;
+    }
+
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
     const glRenderer = NetworkBackgroundGlRenderer.create(canvas);
+    glRendererRef.current = glRenderer;
     setWebglActive(glRenderer !== null);
+    if (!glRenderer) return;
+
+    const meteorField = new MeteorField();
+    meteorField.setConfig(meteorConfigFromQuality(qualityRef.current));
+    meteorFieldRef.current = meteorField;
 
     let animationFrameId = 0;
     let startTime = performance.now();
     let lastFrameTime = startTime;
-    const meteorField = new MeteorField();
 
     function updateFocusRect() {
       focusRectRef.current = measureFocusRect(
-        container!,
+        container,
         focusTargetRef?.current ?? null,
         authMode,
       );
@@ -86,7 +171,7 @@ export default function NetworkBackground({
 
     function handleLayoutChange(w: number, h: number) {
       if (w <= 0 || h <= 0) return;
-      glRenderer?.resize(w, h);
+      glRenderer.resize(w, h, qualityRef.current);
       updateFocusRect();
     }
 
@@ -100,23 +185,47 @@ export default function NetworkBackground({
       lastFrameTime = now;
 
       const meteorSlots = meteorField.update(dt);
-      let meteorCount = 0;
-      for (let i = 0; i < MAX_METEORS; i++) {
-        if (meteorSlots[i].life01 > 0.01) meteorCount++;
-      }
 
-      glRenderer?.render({
+      glRenderer.render({
         time: ((now - startTime) / 1000) * TIME_SCALE,
         focus: focusRectRef.current,
         authMode,
         meteors: meteorSlots,
-        meteorCount,
+        meteorCount: countActiveMeteors(meteorSlots, MAX_METEORS),
+        quality: qualityRef.current,
       });
     }
 
-    function animate() {
+    function stopLoop() {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = 0;
+      }
+    }
+
+    function frame() {
+      if (!document.hidden) {
+        drawFrame();
+        animationFrameId = requestAnimationFrame(frame);
+      } else {
+        animationFrameId = 0;
+      }
+    }
+
+    function startLoop() {
+      if (animationFrameId || document.hidden) return;
+      lastFrameTime = performance.now();
+      frame();
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        stopLoop();
+        return;
+      }
+      lastFrameTime = performance.now();
       drawFrame();
-      animationFrameId = requestAnimationFrame(animate);
+      startLoop();
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -124,22 +233,24 @@ export default function NetworkBackground({
     });
 
     handleLayoutChange(container.clientWidth, container.clientHeight);
-    if (glRenderer) {
-      animate();
-    }
+    startLoop();
 
     resizeObserver.observe(container);
     window.addEventListener("resize", updateFocusRect);
     window.addEventListener("scroll", updateFocusRect, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      stopLoop();
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateFocusRect);
       window.removeEventListener("scroll", updateFocusRect, true);
-      glRenderer?.dispose();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      glRenderer.dispose();
+      glRendererRef.current = null;
+      meteorFieldRef.current = null;
     };
-  }, [authMode, focusTargetRef]);
+  }, [authMode, focusTargetRef, prefersReducedMotion]);
 
   return (
     <div
@@ -150,17 +261,11 @@ export default function NetworkBackground({
       <canvas
         ref={canvasRef}
         className="h-full w-full"
-        style={{ display: webglActive ? "block" : "none" }}
+        style={{ display: useAnimatedWebgl ? "block" : "none" }}
+        aria-hidden
       />
-      {!webglActive && (
-        <div
-          className="aurora-glow absolute inset-0"
-          aria-hidden
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 50% at 50% 20%, rgba(139, 92, 246, 0.18), transparent 60%), radial-gradient(ellipse 70% 22% at 50% 88%, rgba(124, 58, 237, 0.2), transparent 70%), linear-gradient(180deg, #0f0e14 0%, #12101a 45%, #08070c 100%)",
-          }}
-        />
+      {useStaticFallback && (
+        <div className="aurora-glow absolute inset-0" aria-hidden style={STATIC_BACKGROUND_STYLE} />
       )}
     </div>
   );

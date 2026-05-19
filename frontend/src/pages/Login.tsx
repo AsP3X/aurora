@@ -11,7 +11,9 @@ import {
   ApiError,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useBackendConnection } from "../context/BackendConnectionContext";
 import NetworkBackground from "../components/NetworkBackground";
+import ApiErrorBanner from "../components/ApiErrorBanner";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -23,6 +25,7 @@ export default function Login() {
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
   const [activationRequired, setActivationRequired] = useState(false);
   const { setAuth } = useAuth();
+  const { backendUnreachable, retryConnectionCheck } = useBackendConnection();
   const navigate = useNavigate();
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -104,6 +107,13 @@ export default function Login() {
         </div>
 
         <div className="bg-surface-900/50 backdrop-blur-sm border border-white/5 rounded-2xl p-8 shadow-2xl">
+          {backendUnreachable && (
+            <ApiErrorBanner
+              message="Could not connect to the Aurora server. Check that the backend is running and try again."
+              onRetry={retryConnectionCheck}
+            />
+          )}
+
           <h1 className="text-2xl font-semibold text-center mb-2">
             {isRegister ? "Create your account" : "Welcome back"}
           </h1>

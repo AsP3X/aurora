@@ -63,6 +63,13 @@ export function apiErrorFromResponse(path: string, status: number, raw: string):
   });
 }
 
+// Human: True when fetch failed outright or the server/gateway is down — distinct from 4xx/5xx app errors.
+// Agent: READS ApiError.status; TRUE for status 0 (network) or 502/503/504 (unreachable upstream).
+export function isBackendUnreachableError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  return err.status === 0 || err.status === 502 || err.status === 503 || err.status === 504;
+}
+
 // Human: Session expired — clear token and send the user to login (same behavior as apiFetch).
 // Agent: WRITES localStorage remove; NAVIGATES /login; THROWS ApiError 401 (never returns).
 function clearAuthAndRedirect(path: string): never {
