@@ -1,7 +1,8 @@
-// Human: Full-viewport auth/setup background — aurora, horizon glow, parallax hills; CSS fallback if no WebGL.
-// Agent: PROPS variant auth + focusTargetRef; rAF; TIME_SCALE slows shader motion; passes time+focus to glRenderer.
+// Human: Auth/setup background — aurora, sporadic meteors, horizon, hills; CSS fallback if no WebGL.
+// Agent: PROPS variant focusTargetRef; MeteorField real-time dt; TIME_SCALE on aurora uTime only.
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { NetworkBackgroundGlRenderer, type GlFocusRect } from "./networkBackground/glRenderer";
+import { MAX_METEORS, MeteorField } from "./networkBackground/meteors";
 
 /** Scales shader time — lower = slower aurora/silhouette drift (reduces motion discomfort). */
 const TIME_SCALE = 0.34;
@@ -50,8 +51,8 @@ function measureFocusRect(
   };
 }
 
-// Human: Aurora with horizon and hill silhouettes; auth variant dims around the login/setup card.
-// Agent: WEBGL bloom+composite; TIME_SCALE on uTime; CSS gradient fallback when WebGL unavailable.
+// Human: Aurora, mineral meteors, horizon hills; auth variant dims around the login/setup card.
+// Agent: WEBGL bloom+composite; MeteorField per frame; CSS gradient fallback when WebGL unavailable.
 export default function NetworkBackground({
   variant = "default",
   focusTargetRef,
@@ -72,6 +73,8 @@ export default function NetworkBackground({
 
     let animationFrameId = 0;
     let startTime = performance.now();
+    let lastFrameTime = startTime;
+    const meteorField = new MeteorField();
 
     function updateFocusRect() {
       focusRectRef.current = measureFocusRect(
@@ -92,10 +95,22 @@ export default function NetworkBackground({
         updateFocusRect();
       }
 
+      const now = performance.now();
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+
+      const meteorSlots = meteorField.update(dt);
+      let meteorCount = 0;
+      for (let i = 0; i < MAX_METEORS; i++) {
+        if (meteorSlots[i].life01 > 0.01) meteorCount++;
+      }
+
       glRenderer?.render({
-        time: ((performance.now() - startTime) / 1000) * TIME_SCALE,
+        time: ((now - startTime) / 1000) * TIME_SCALE,
         focus: focusRectRef.current,
         authMode,
+        meteors: meteorSlots,
+        meteorCount,
       });
     }
 

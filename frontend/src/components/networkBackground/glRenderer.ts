@@ -1,5 +1,7 @@
-// Human: WebGL background — aurora sky, horizon glow, parallax silhouettes, bloom, auth focus scrim.
-// Agent: MULTI-PASS FBO; aurora→blur→bloom→composite; DISPOSE on unmount; uTime scaled in React.
+// Human: WebGL background — aurora, meteors, horizon, silhouettes, bloom, auth focus scrim.
+// Agent: MULTI-PASS FBO; aurora→blur→bloom→composite; DISPOSE on unmount; meteors from MeteorField.
+
+import { MAX_METEORS, SURFACE_CEILING, type GlMeteorSlot } from "./meteors";
 
 export interface GlFocusRect {
   centerX: number;
@@ -13,6 +15,8 @@ export interface GlFrameInput {
   time: number;
   focus: GlFocusRect;
   authMode: boolean;
+  meteors: GlMeteorSlot[];
+  meteorCount: number;
 }
 
 const AURORA_VERT = `
@@ -24,13 +28,22 @@ void main() {
 }
 `;
 
-// Human: Aurora sky + horizon planet glow + parallax hill silhouettes; motion kept slow for comfort.
-// Agent: FRAG full-screen; UNIFORMS uTime uResolution; FBM layers; ridge masks; OUTPUT opaque RGB.
+// Human: Aurora sky, mineral meteors, horizon glow, parallax hills; motion kept slow for comfort.
+// Agent: FRAG full-screen; UNIFORMS uTime uMeteors[]; FBM; ridge masks; OUTPUT opaque RGB.
 const AURORA_FRAG = `
 precision highp float;
 varying vec2 vUv;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform int uMeteorCount;
+uniform float uSurfaceCeiling;
+uniform vec4 uMeteorKinematics[8];
+uniform vec4 uMeteorProps[8];
+uniform float uMeteorPhase[8];
+
+const float HORIZON_Y = 0.21;
+const float PLANET_CENTER_X = 0.5;
+const float PLANET_CENTER_Y = -0.42;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -96,19 +109,161 @@ float silhouetteMask(vec2 uv, float parallax, float base, float amp) {
   return 1.0 - smoothstep(ridge - 0.01, ridge + 0.02, uv.y);
 }
 
-// Human: Soft planet limb and horizon band along the lower sky — sits behind near hills.
-// Agent: PURE; READS uv t; RETURNS scalar glow intensity.
-float horizonPlanetGlow(vec2 uv, float t) {
-  float horizonY = 0.21 + sin(t * 0.07) * 0.012 + sin(uv.x * 9.0 + t * 0.05) * 0.005;
+// Human: Static planet limb and horizon band — no time drift so the surface stays fixed.
+// Agent: PURE; READS uv only; CONST HORIZON_Y; RETURNS scalar glow intensity.
+float horizonPlanetGlow(vec2 uv) {
+  float horizonY = HORIZON_Y + sin(uv.x * 9.0) * 0.004;
   float aboveHorizon = uv.y - horizonY;
   float arcBand = exp(-aboveHorizon * aboveHorizon / 0.0016) * smoothstep(-0.02, 0.2, uv.y);
   float upperHaze = smoothstep(0.14, 0.0, aboveHorizon) * smoothstep(-0.03, 0.05, aboveHorizon);
 
-  vec2 planetCenter = vec2(0.5 + sin(t * 0.04) * 0.02, -0.42);
+  vec2 planetCenter = vec2(PLANET_CENTER_X, PLANET_CENTER_Y);
   vec2 pd = (uv - planetCenter) * vec2(1.0, 0.9);
   float limb = smoothstep(0.78, 0.62, length(pd)) * smoothstep(0.5, 0.58, length(pd));
 
   return arcBand * 0.55 + upperHaze * 0.35 + limb * 0.28;
+}
+
+// Human: Meteor emission colors by mineral — Na yellow, Fe orange, Mg blue-white, Ca violet, Si gold.
+// Agent: PURE; mineral index 0..4; RETURNS rgb head/tail/ember triplet helpers.
+vec3 meteorHeadColor(float mineral) {
+  if (mineral < 0.5) return vec3(1.0, 0.96, 0.58);
+  if (mineral < 1.5) return vec3(1.0, 0.86, 0.42);
+  if (mineral < 2.5) return vec3(0.82, 0.94, 1.0);
+  if (mineral < 3.5) return vec3(1.0, 0.72, 0.82);
+  return vec3(1.0, 0.9, 0.62);
+}
+
+vec3 meteorTailColor(float mineral) {
+  if (mineral < 0.5) return vec3(1.0, 0.84, 0.32);
+  if (mineral < 1.5) return vec3(0.95, 0.52, 0.12);
+  if (mineral < 2.5) return vec3(0.48, 0.72, 0.95);
+  if (mineral < 3.5) return vec3(0.88, 0.38, 0.52);
+  return vec3(0.96, 0.72, 0.28);
+}
+
+vec3 meteorEmberColor(float mineral) {
+  if (mineral < 0.5) return vec3(1.0, 0.62, 0.15);
+  if (mineral < 1.5) return vec3(0.82, 0.32, 0.06);
+  if (mineral < 2.5) return vec3(0.35, 0.58, 0.88);
+  if (mineral < 3.5) return vec3(0.68, 0.22, 0.42);
+  return vec3(0.88, 0.48, 0.1);
+}
+
+// Human: Distance to a line segment — core of streak geometry.
+// Agent: PURE; READS uv segment ab; RETURNS along 0..1 and perpendicular distance.
+vec3 segmentClosest(vec2 uv, vec2 a, vec2 b) {
+  vec2 pa = uv - a;
+  vec2 ba = b - a;
+  float denom = max(dot(ba, ba), 0.000001);
+  float along = clamp(dot(pa, ba) / denom, 0.0, 1.0);
+  vec2 closest = a + ba * along;
+  return vec3(along, length(uv - closest), 0.0);
+}
+
+// Human: Burn envelope — ramp bright through sin peak, then alpha falls off (flare then fade).
+// Agent: PURE; READS burn01 0..1; RETURNS multiplier boost and fade factor.
+vec2 burnEnvelope(float burn01) {
+  if (burn01 < 0.001) return vec2(1.0, 1.0);
+  float flare = sin(clamp(burn01, 0.0, 1.0) * 3.14159265);
+  float ramp = smoothstep(0.0, 0.38, burn01);
+  float boost = 1.0 + flare * 3.2 * ramp;
+  float fade = 1.0 - smoothstep(0.5, 1.0, burn01) * 0.94;
+  return vec2(boost, fade);
+}
+
+// Human: Realistic meteor — flare/fade burn-up, optional fragment scale, sparks and ion halo.
+// Agent: READS kin+props; burn01 in props.w; uSurfaceCeiling; RETURNS additive rgb.
+vec3 renderMeteor(vec2 uv, vec4 kin, vec4 props, float phase) {
+  vec2 head = kin.xy;
+  vec2 vel = kin.zw;
+  float tailLen = props.x;
+  float mineral = props.y;
+  float life = props.z;
+  float burn01 = props.w;
+
+  if (life < 0.02 || length(vel) < 0.0001) return vec3(0.0);
+
+  vec2 dir = normalize(vel);
+  vec2 tail = head - dir * tailLen;
+  vec3 seg = segmentClosest(uv, tail, head);
+  float along = seg.x;
+  float perp = seg.y;
+
+  float skyGate = smoothstep(uSurfaceCeiling - 0.02, uSurfaceCeiling + 0.14, uv.y);
+  float trailY = mix(tail.y, head.y, along);
+  float ablate = smoothstep(uSurfaceCeiling - 0.04, uSurfaceCeiling + 0.1, trailY);
+  float lifeFade = smoothstep(0.0, 0.12, life) * pow(life, 0.55);
+
+  vec2 burn = burnEnvelope(burn01);
+  float burnBoost = burn.x;
+  float burnFade = burn.y;
+  float fragWt = step(tailLen, 0.16) * step(0.42, burn01);
+
+  float taperMax = mix(0.009, 0.006, fragWt);
+  float taper = mix(0.001, taperMax, pow(along, 0.72));
+  float streakTight = smoothstep(taper, 0.0, perp);
+  float streakWide = smoothstep(taper * 3.6, 0.0, perp) * mix(0.48, 0.35, fragWt);
+
+  float lum = exp(-(1.0 - along) * mix(5.8, 4.2, fragWt));
+  float tailEnvelope = smoothstep(0.0, 0.06, along) * smoothstep(1.0, 0.68, along);
+
+  vec2 headDelta = uv - head;
+  float headDist2 = dot(headDelta, headDelta);
+  float nucleus = exp(-headDist2 / mix(0.000035, 0.00005, fragWt));
+  float corona = exp(-headDist2 / 0.00026) * (0.5 + burn01 * 0.65);
+  float ionRing = exp(-headDist2 / 0.00085) * 0.22;
+
+  vec3 headCol = meteorHeadColor(mineral);
+  vec3 tailCol = meteorTailColor(mineral);
+  vec3 emberCol = meteorEmberColor(mineral);
+  vec3 ionGreen = vec3(0.62, 0.95, 0.78);
+
+  float sparkSum = 0.0;
+  for (int s = 0; s < 5; s++) {
+    if (fragWt > 0.5 && s > 2) continue;
+    float fi = float(s);
+    float seed = hash(vec2(phase + fi * 3.7, floor(along * 28.0 + fi)));
+    if (seed < mix(0.78, 0.7, fragWt)) continue;
+    float sparkAlong = fract(seed * 13.1 + fi * 0.17);
+    vec2 sparkPos = mix(tail, head, sparkAlong);
+    float sparkD2 = dot(uv - sparkPos, uv - sparkPos);
+    sparkSum += exp(-sparkD2 / 0.00002) * (0.35 + seed * 0.65);
+  }
+
+  float trainNoise = fbmLite(vec2(along * 32.0 + phase, perp * 140.0 + phase * 0.3));
+  float debrisWisp = trainNoise * streakTight * smoothstep(1.0, 0.12, along) * (0.3 + burn01 * 0.45);
+
+  float ablationBloom = 0.0;
+  if (burn01 > 0.2) {
+    float bloomAlong = exp(-(1.0 - along) * 2.8) * streakWide;
+    ablationBloom = bloomAlong * sin(burn01 * 3.14159265) * 1.1;
+  }
+
+  vec3 streak = mix(tailCol, headCol, pow(along, 0.42)) * lum * (streakTight + streakWide);
+  streak += emberCol * debrisWisp;
+  streak += vec3(1.0, 0.98, 0.94) * nucleus * (1.5 + burn01 * 1.2);
+  streak += mix(headCol, vec3(1.0), 0.65) * corona;
+  streak += ionGreen * ionRing * (0.4 + 0.3 * step(1.5, mineral));
+  streak += vec3(1.0, 0.92, 0.72) * sparkSum * tailEnvelope;
+  streak += vec3(1.0, 0.88, 0.62) * ablationBloom;
+  streak *= burnBoost;
+
+  float alpha = (streakTight * lum + streakWide * 0.6 + nucleus + corona * 0.5);
+  alpha *= tailEnvelope * skyGate * ablate * lifeFade * burnFade;
+
+  return streak * alpha;
+}
+
+// Human: Additive blend of active meteors into the sky layer.
+// Agent: LOOP i<8; READS uniforms+uMeteorPhase; ACCUM rgb.
+vec3 addMeteors(vec2 uv) {
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    if (i >= uMeteorCount) continue;
+    sum += renderMeteor(uv, uMeteorKinematics[i], uMeteorProps[i], uMeteorPhase[i]);
+  }
+  return sum;
 }
 
 void main() {
@@ -165,13 +320,15 @@ void main() {
 
   vec3 sky = base + aurora;
 
-  vec3 horizonTint = mix(vec3(0.48, 0.3, 0.88), vec3(0.72, 0.58, 0.98), 0.5 + 0.5 * sin(t * 0.06));
-  float horizon = horizonPlanetGlow(uv, t);
+  vec3 horizonTint = mix(vec3(0.48, 0.3, 0.88), vec3(0.72, 0.58, 0.98), 0.62);
+  float horizon = horizonPlanetGlow(uv);
   sky += horizonTint * horizon * 0.32;
 
-  float maskFar = silhouetteMask(uv, t * 0.0035, 0.2, 0.055);
-  float maskMid = silhouetteMask(uv, t * 0.0065 + 0.4, 0.14, 0.085);
-  float maskNear = silhouetteMask(uv, t * 0.01 + 0.85, 0.09, 0.11);
+  sky += addMeteors(uv);
+
+  float maskFar = silhouetteMask(uv, 0.0, 0.2, 0.055);
+  float maskMid = silhouetteMask(uv, 0.4, 0.14, 0.085);
+  float maskNear = silhouetteMask(uv, 0.85, 0.09, 0.11);
 
   vec3 colFar = vec3(0.048, 0.044, 0.062);
   vec3 colMid = vec3(0.034, 0.031, 0.045);
@@ -332,6 +489,11 @@ function createProgram(gl: GlContext, vertSource: string, fragSource: string): G
   const uniformNames = [
     "uTime",
     "uResolution",
+    "uMeteorCount",
+    "uSurfaceCeiling",
+    "uMeteorKinematics[0]",
+    "uMeteorProps[0]",
+    "uMeteorPhase[0]",
     "uTexture",
     "uBloomTexture",
     "uTexelSize",
@@ -404,6 +566,9 @@ export class NetworkBackgroundGlRenderer {
   private readonly bloomExtractProgram: GlProgram;
   private readonly compositeProgram: GlProgram;
   private readonly quadBuffer: WebGLBuffer;
+  private readonly meteorKinematicsLoc: WebGLUniformLocation | null;
+  private readonly meteorPropsLoc: WebGLUniformLocation | null;
+  private readonly meteorPhaseLoc: WebGLUniformLocation | null;
   private sceneTarget: FramebufferTarget;
   private blurTarget: FramebufferTarget;
   private bloomTarget: FramebufferTarget;
@@ -417,6 +582,9 @@ export class NetworkBackgroundGlRenderer {
     bloomExtractProgram: GlProgram,
     compositeProgram: GlProgram,
     quadBuffer: WebGLBuffer,
+    meteorKinematicsLoc: WebGLUniformLocation | null,
+    meteorPropsLoc: WebGLUniformLocation | null,
+    meteorPhaseLoc: WebGLUniformLocation | null,
     sceneTarget: FramebufferTarget,
     blurTarget: FramebufferTarget,
     bloomTarget: FramebufferTarget,
@@ -427,6 +595,9 @@ export class NetworkBackgroundGlRenderer {
     this.bloomExtractProgram = bloomExtractProgram;
     this.compositeProgram = compositeProgram;
     this.quadBuffer = quadBuffer;
+    this.meteorKinematicsLoc = meteorKinematicsLoc;
+    this.meteorPropsLoc = meteorPropsLoc;
+    this.meteorPhaseLoc = meteorPhaseLoc;
     this.sceneTarget = sceneTarget;
     this.blurTarget = blurTarget;
     this.bloomTarget = bloomTarget;
@@ -474,6 +645,10 @@ export class NetworkBackgroundGlRenderer {
     const bloomTarget = createFramebuffer(gl, 4, 4);
     if (!sceneTarget || !blurTarget || !bloomTarget) return null;
 
+    const meteorKinematicsLoc = gl.getUniformLocation(auroraProgram.program, "uMeteorKinematics[0]");
+    const meteorPropsLoc = gl.getUniformLocation(auroraProgram.program, "uMeteorProps[0]");
+    const meteorPhaseLoc = gl.getUniformLocation(auroraProgram.program, "uMeteorPhase[0]");
+
     return new NetworkBackgroundGlRenderer(
       gl,
       auroraProgram,
@@ -481,10 +656,50 @@ export class NetworkBackgroundGlRenderer {
       bloomExtractProgram,
       compositeProgram,
       quadBuffer,
+      meteorKinematicsLoc,
+      meteorPropsLoc,
+      meteorPhaseLoc,
       sceneTarget,
       blurTarget,
       bloomTarget,
     );
+  }
+
+  // Human: Pack CPU meteor slots into vec4 arrays for the aurora fragment shader.
+  // Agent: WRITES uniform4fv uMeteorKinematics+uMeteorProps; SETS uMeteorCount.
+  private uploadMeteorUniforms(meteors: GlMeteorSlot[], meteorCount: number) {
+    const gl = this.gl;
+    bindProgram(gl, this.auroraProgram);
+    gl.uniform1i(this.auroraProgram.uniforms.uMeteorCount!, meteorCount);
+    gl.uniform1f(this.auroraProgram.uniforms.uSurfaceCeiling!, SURFACE_CEILING);
+
+    const kinematics = new Float32Array(MAX_METEORS * 4);
+    const props = new Float32Array(MAX_METEORS * 4);
+    const phases = new Float32Array(MAX_METEORS);
+
+    for (let i = 0; i < MAX_METEORS; i++) {
+      const meteor = meteors[i];
+      const offset = i * 4;
+      kinematics[offset] = meteor.headX;
+      kinematics[offset + 1] = meteor.headY;
+      kinematics[offset + 2] = meteor.velX;
+      kinematics[offset + 3] = meteor.velY;
+      props[offset] = meteor.tailLength;
+      props[offset + 1] = meteor.mineral;
+      props[offset + 2] = meteor.life01;
+      props[offset + 3] = meteor.burn01;
+      phases[i] = meteor.phase;
+    }
+
+    if (this.meteorKinematicsLoc) {
+      gl.uniform4fv(this.meteorKinematicsLoc, kinematics);
+    }
+    if (this.meteorPropsLoc) {
+      gl.uniform4fv(this.meteorPropsLoc, props);
+    }
+    if (this.meteorPhaseLoc) {
+      gl.uniform1fv(this.meteorPhaseLoc, phases);
+    }
   }
 
   // Human: Match canvas backing store to container CSS size and rebuild FBO textures when dimensions change.
@@ -527,6 +742,7 @@ export class NetworkBackgroundGlRenderer {
     bindProgram(gl, this.auroraProgram);
     gl.uniform1f(this.auroraProgram.uniforms.uTime!, frame.time);
     gl.uniform2f(this.auroraProgram.uniforms.uResolution!, resolution[0], resolution[1]);
+    this.uploadMeteorUniforms(frame.meteors, frame.meteorCount);
     this.drawQuad(this.auroraProgram);
 
     this.runBloomPipeline();
