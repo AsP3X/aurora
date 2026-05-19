@@ -3,7 +3,7 @@
 use sqlx::any::AnyPoolOptions;
 use sqlx::migrate::{MigrateDatabase, Migrator};
 use sqlx::AnyPool;
-use std::path::Path;
+use std::path::PathBuf;
 
 // Human: Classify a connection string so setup UI and migrations pick the right driver family.
 // Agent: READS url prefix; RETURNS "postgres" | "sqlite" | None when unsupported.
@@ -51,13 +51,18 @@ pub async fn init_pool(database_url: &str) -> anyhow::Result<AnyPool> {
             .await?;
     }
 
+    // Human: Resolve migrations from the crate directory so systemd/Docker need not set CWD to `backend/`.
+    // Agent: READS CARGO_MANIFEST_DIR/migrations/{sqlite|postgres}; OVERRIDE via AURORA_MIGRATIONS_DIR optional.
+    let migrations_root = std::env::var("AURORA_MIGRATIONS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations"));
     let migrations_dir = if database_url.starts_with("sqlite:") {
-        "./migrations/sqlite"
+        migrations_root.join("sqlite")
     } else {
-        "./migrations/postgres"
+        migrations_root.join("postgres")
     };
 
-    let migrator = Migrator::new(Path::new(migrations_dir)).await?;
+    let migrator = Migrator::new(migrations_dir).await?;
     migrator.run(&pool).await?;
 
     Ok(pool)

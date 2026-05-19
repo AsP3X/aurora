@@ -452,5 +452,9 @@ pub async fn update_user_enabled(
         .execute(&state.pool)
         .await?;
 
+    // Human: Drop cached activation state so the next request sees the admin toggle immediately.
+    // Agent: INVALIDATES user_enabled_cache for user_id.
+    state.user_enabled_cache.invalidate(&user_id);
+
     Ok(Json(serde_json::json!({"ok": true})))
 }

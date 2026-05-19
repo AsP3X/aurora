@@ -106,25 +106,29 @@ export default function PlaylistDetail() {
 
   const totalDuration = songs.reduce((sum, s) => sum + s.duration_seconds, 0);
 
-  // Human: Opening the add dialog pulls a large slice of the library once — filtered client-side for snappy typing.
-  // Agent: WHEN showAddDialog; fetchSongs limit 10000; MAP to SongOption; SETS librarySongs.
+  // Human: Debounced server search keeps the add dialog fast on large libraries.
+  // Agent: WHEN showAddDialog; DEBOUNCE addSearchQuery 250ms; fetchSongs q+limit 50.
   useEffect(() => {
     if (!showAddDialog) return;
     setAddDialogLoading(true);
-    fetchSongs({ order_by: "title", limit: 10000 })
-      .then((data) => {
-        const mapped: SongOption[] = data.map((s) => ({
-          id: s.id,
-          title: s.title,
-          artist: s.artist,
-          album: s.album,
-          duration_seconds: s.duration_seconds,
-        }));
-        setLibrarySongs(mapped);
-      })
-      .catch(() => setLibrarySongs([]))
-      .finally(() => setAddDialogLoading(false));
-  }, [showAddDialog]);
+    const q = addSearch.trim();
+    const timer = setTimeout(() => {
+      fetchSongs({ order_by: "title", limit: 50, q: q || undefined })
+        .then((data) => {
+          const mapped: SongOption[] = data.map((s) => ({
+            id: s.id,
+            title: s.title,
+            artist: s.artist,
+            album: s.album,
+            duration_seconds: s.duration_seconds,
+          }));
+          setLibrarySongs(mapped);
+        })
+        .catch(() => setLibrarySongs([]))
+        .finally(() => setAddDialogLoading(false));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [showAddDialog, addSearch]);
 
   // Human: Focus the add dialog search field shortly after open for keyboard-first workflows.
   // Agent: TIMEOUT 100ms focus; CLEANUP clears timeout.

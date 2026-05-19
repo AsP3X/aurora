@@ -7,13 +7,18 @@ use axum::{
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use axum::http::{HeaderValue, Method};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing::{info, Level};
 
 pub mod admin;
 pub mod artwork;
 pub mod app_settings;
 pub mod auth;
+pub mod health;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -62,6 +67,10 @@ pub struct AppState {
     pub search_sync: Arc<search::sync_queue::SearchSyncService>,
     /// Active `DATABASE_URL` the process connected with at startup (used to compare setup wizard input).
     pub database_url: String,
+    /// Short TTL cache for `users.enabled` checks inside auth middleware.
+    pub user_enabled_cache: auth::UserEnabledCache,
+    /// Comma-separated browser origins allowed for CORS; empty means permissive (dev).
+    pub cors_allowed_origins: String,
 }
 
 fn install_sqlx_drivers() {
@@ -186,12 +195,49 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         search_indexer,
         search_sync,
         database_url: config.database_url.clone(),
+        user_enabled_cache: auth::UserEnabledCache::default(),
+        cors_allowed_origins: config.cors_allowed_origins.clone(),
     }))
 }
 
+// Human: Build CORS layer — permissive when unset (local dev), otherwise restrict to configured origins.
+// Agent: READS cors_allowed_origins comma list; RETURNS CorsLayer permissive OR AllowOrigin::list.
+fn build_cors_layer(cors_allowed_origins: &str) -> CorsLayer {
+    let trimmed = cors_allowed_origins.trim();
+    if trimmed.is_empty() {
+        return CorsLayer::permissive();
+    }
+
+    let origins: Vec<HeaderValue> = trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    if origins.is_empty() {
+        return CorsLayer::permissive();
+    }
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE])
+}
+
 pub fn create_router(state: Arc<AppState>) -> Router {
+    let cors_layer = build_cors_layer(&state.cors_allowed_origins);
+
     let public_routes = Router::new()
         .route("/api/v1/version", get(setup::handlers::release_info))
+        .route("/api/v1/health/ready", get(health::readiness))
         .route("/api/v1/setup/status", get(setup::handlers::setup_status))
         .route("/api/v1/setup/database", get(setup::handlers::setup_database_info))
         .route(
@@ -320,7 +366,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .merge(protected_routes)
         .merge(upload_routes)
         .with_state(state)
-        .layer(CorsLayer::permissive())
+        .layer(cors_layer)
         // Human: Scrub ticket/signature query params from request spans so tower_http=debug stays safe.
         // Agent: TraceLayer make_span_with CALLS redact::uri_for_log on each request URI.
         .layer(

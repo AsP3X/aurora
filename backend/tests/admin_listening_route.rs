@@ -24,6 +24,8 @@ async fn test_config(db_url: &str, music_dir: &str) -> Config {
         "test-object-storage-jwt-not-default-value",
     );
     std::env::set_var("AURORA_ENVIRONMENT", "development");
+    std::env::set_var("MEILI_URL", "");
+    std::env::set_var("MEILI_MASTER_KEY", "");
     Config::from_env().expect("test config")
 }
 

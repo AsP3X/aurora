@@ -27,9 +27,6 @@ argon2 = "0.5"
 password-hash = { version = "0.5", default-features = false }
 rand = "0.8"
 
-utoipa = { version = "5", features = ["axum_extras", "uuid"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
-
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

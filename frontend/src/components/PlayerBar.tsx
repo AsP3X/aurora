@@ -1,6 +1,6 @@
 // Human: Drives the DOM `<audio>` element, wires HLS where needed, and syncs time/volume with PlayerContext.
 // Agent: READS currentStreamUrl; USES hls.js when URL ends with `/playlist`; CALLS logHistory/updateHistory; RENDERS PlayerTransportPanel (queue sheet) + hidden audio.
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Hls from "hls.js";
 import { usePlayer } from "../context/PlayerContext";
@@ -46,6 +46,7 @@ export default function PlayerBar() {
   const historySessionId = useRef<string | null>(null);
   const listenAccumulator = useRef(0);
   const lastTimeUpdate = useRef<{ time: number; ts: number } | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   // Human: When switching tracks or stream URLs, flush partial listen time to the server (best-effort).
   // Agent: CLEANUP on effect; READS historySessionId+listenAccumulator; CALLS updateHistory.
@@ -203,12 +204,17 @@ export default function PlayerBar() {
     }
   }, [currentSong, queue, playNext]);
 
-  // Human: Surface element errors to the console — the UI does not show a toast here today.
-  // Agent: onError; LOGS audio.error.
+  // Human: Show a recoverable message on the transport bar when the stream fails.
+  // Agent: onError; SETS playbackError; LOGS audio.error at debug.
   const handleAudioError = useCallback(() => {
     const audio = audioRef.current;
     console.error("Audio element error:", audio?.error);
+    setPlaybackError("Could not play this track. Check your connection or try again.");
   }, [audioRef]);
+
+  useEffect(() => {
+    setPlaybackError(null);
+  }, [currentStreamUrl, currentSong?.id]);
 
   // Human: Dragging the range resets listen-sample anchors so we don’t count seek jumps as listening time.
   // Agent: CLEARS lastTimeUpdate; CALLS seek(seconds).
@@ -234,6 +240,11 @@ export default function PlayerBar() {
             isDashboard ? "md:left-72 left-4" : "md:left-8 left-4"
           } right-4 md:right-8`}
         >
+        {playbackError && (
+          <p className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-center text-xs text-red-200" role="alert">
+            {playbackError}
+          </p>
+        )}
         <PlayerTransportPanel
           song={currentSong}
           isPlaying={isPlaying}

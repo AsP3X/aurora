@@ -71,6 +71,8 @@ pub async fn list_values(
 ) -> Result<Json<Vec<String>>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
+    let (limit, _) = super::limits::clamp_pagination(params.limit, 0);
+
     if params.field == "genre" {
         let sql = format!(
             "SELECT name FROM genres
@@ -80,7 +82,7 @@ pub async fn list_values(
         );
         let values: Vec<(String,)> = sqlx::query_as(&sql)
             .bind(params.q)
-            .bind(params.limit)
+            .bind(limit)
             .fetch_all(&state.pool)
             .await?;
         return Ok(Json(values.into_iter().map(|v| v.0).collect()));
@@ -105,7 +107,7 @@ pub async fn list_values(
 
     let values: Vec<(String,)> = sqlx::query_as(&sql)
         .bind(params.q)
-        .bind(params.limit)
+        .bind(limit)
         .fetch_all(&state.pool)
         .await?;
 
@@ -152,6 +154,7 @@ pub async fn list_songs(
 ) -> Result<Json<Vec<super::model::Song>>, AppError> {
     require_permission(&state.pool, &claims.sub, "library.view").await?;
 
+    let (limit, offset) = super::limits::clamp_pagination(params.limit, params.offset);
     let order_clause = sanitize_order_by(params.order_by);
     let sql = format!(
         "SELECT * FROM songs
@@ -167,8 +170,8 @@ pub async fn list_songs(
     let songs_db = sqlx::query_as::<_, super::model::SongDb>(&sql)
         .bind(params.artist.map(|a| format!("%{}%", a)))
         .bind(params.album.map(|a| format!("%{}%", a)))
-        .bind(params.limit)
-        .bind(params.offset)
+        .bind(limit)
+        .bind(offset)
         .bind(params.q.map(|q| format!("%{}%", q)))
         .fetch_all(&state.pool)
         .await?;
@@ -288,10 +291,12 @@ pub async fn stream_song(
     let ticket = params.ticket.ok_or(AppError::Unauthorized)?;
     crate::stream_ticket::validate_ticket(&ticket, &id.to_string(), &state.signing_secret)?;
 
-    let row = sqlx::query_as::<_, (String,)>("SELECT file_key FROM songs WHERE id = $1")
-        .bind(id.to_string())
-        .fetch_optional(&state.pool)
-        .await?;
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT file_key FROM songs WHERE id = $1 AND enabled = true",
+    )
+    .bind(id.to_string())
+    .fetch_optional(&state.pool)
+    .await?;
 
     let (file_key,) = row.ok_or(AppError::NotFound)?;
     let (stream, size, mime) = state.storage.get_stream(&file_key).await.map_err(|e| AppError::Storage(e.to_string()))?;
@@ -316,10 +321,12 @@ pub async fn get_artwork(
     let song_id = id.to_string();
     crate::stream_ticket::validate_ticket(&ticket, &song_id, &state.signing_secret)?;
 
-    let row = sqlx::query_as::<_, (Option<String>,)>("SELECT artwork_key FROM songs WHERE id = $1")
-        .bind(&song_id)
-        .fetch_optional(&state.pool)
-        .await?;
+    let row = sqlx::query_as::<_, (Option<String>,)>(
+        "SELECT artwork_key FROM songs WHERE id = $1 AND enabled = true",
+    )
+    .bind(&song_id)
+    .fetch_optional(&state.pool)
+    .await?;
 
     let (db_key,) = row.ok_or(AppError::NotFound)?;
     let Some(db_key) = db_key else {

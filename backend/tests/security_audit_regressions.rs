@@ -47,6 +47,7 @@ fn test_config(db_url: &str, music_dir: &str) -> Config {
         auth_register_rpm: 5,
         upload_rpm: 20,
         hls_segment_rpm: 480,
+        cors_allowed_origins: String::new(),
     }
 }
 
@@ -71,7 +72,7 @@ async fn app_with_migrated_db() -> TestApp {
 // Agent: POST /auth/register; READS app_settings; EXPECT 403 when value is false.
 #[tokio::test]
 async fn register_returns_forbidden_when_public_registration_disabled() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'false')",
@@ -101,7 +102,7 @@ async fn register_returns_forbidden_when_public_registration_disabled() {
 // Agent: listener + user_permissions users.manage; PUT admin/users/{id}/role; EXPECT 403.
 #[tokio::test]
 async fn update_user_role_forbidden_for_listener_with_users_manage() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     let moderator_id = "11111111-1111-1111-1111-111111111111";
     let target_id = "22222222-2222-2222-2222-222222222222";
@@ -168,7 +169,7 @@ async fn update_user_role_forbidden_for_listener_with_users_manage() {
 // Agent: PUT own user id; EXPECT 400 Bad Request.
 #[tokio::test]
 async fn update_user_role_rejects_self_targeting() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     let admin_id = "44444444-4444-4444-4444-444444444444";
     let ph = hash_password("password123").unwrap();
@@ -268,7 +269,7 @@ fn weak_secret_helper_covers_documented_defaults() {
 // Agent: POST register with allow_public_registration true; EXPECT 200 + token shape.
 #[tokio::test]
 async fn register_succeeds_when_public_registration_enabled() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true')",
@@ -298,7 +299,7 @@ async fn register_succeeds_when_public_registration_enabled() {
 // Agent: POST register; READS users.enabled; ASSERT token absent + pending_activation in JSON body.
 #[tokio::test]
 async fn register_creates_disabled_user_without_token_when_activation_required() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true'), ('require_account_activation', 'true')",
@@ -345,7 +346,7 @@ async fn register_creates_disabled_user_without_token_when_activation_required()
 // Agent: INSERT disabled user; POST login; EXPECT 403; UPDATE enabled; POST login; EXPECT 200 + token.
 #[tokio::test]
 async fn login_blocked_until_account_enabled() {
-    let TestApp { router: app, state, .. } = app_with_migrated_db().await;
+    let TestApp { router: app, state, _tmpdir: _db_dir, .. } = app_with_migrated_db().await;
 
     let user_id = "55555555-5555-5555-5555-555555555555";
     let ph = hash_password("password12345").unwrap();

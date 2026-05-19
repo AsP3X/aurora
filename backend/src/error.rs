@@ -52,6 +52,9 @@ pub enum AppError {
 
     #[error("storage error: {0}")]
     Storage(String),
+
+    #[error("not implemented: {0}")]
+    NotImplemented(String),
 }
 
 // Human: Map each failure variant to a safe client string while logging richer context for server-side triage only.
@@ -77,6 +80,7 @@ impl IntoResponse for AppError {
                 error!("Storage error: {}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, "storage error")
             }
+            AppError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg.as_str()),
         };
 
         let body = Json(json!({

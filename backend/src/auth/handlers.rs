@@ -115,6 +115,9 @@ pub async fn register(
 
     info!(email_redacted = %crate::redact::email_for_log(&body.email), "register attempt");
 
+    let email = normalize_registration_email(&body.email)?;
+    validate_registration_password(&body.password)?;
+
     let allow_public: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
     )
@@ -152,7 +155,7 @@ pub async fn register(
         "INSERT INTO users (id, email, password_hash, role, enabled) VALUES ($1, $2, $3, 'listener', $4) RETURNING id",
     )
     .bind(&user_id)
-    .bind(&body.email)
+    .bind(&email)
     .bind(&password_hash)
     .bind(enabled)
     .fetch_one(&mut *tx)
@@ -190,7 +193,7 @@ pub async fn register(
             // Agent: WHEN enabled THEN create_token Some; ELSE token None + pending_activation true.
             let token = if enabled {
                 Some(
-                    create_token(id, body.email.clone(), "listener".into(), &state.jwt_secret)
+                    create_token(id, email.clone(), "listener".into(), &state.jwt_secret)
                         .map_err(|e| AppError::Internal(e.into()))?,
                 )
             } else {
@@ -202,7 +205,7 @@ pub async fn register(
                 pending_activation: !enabled,
                 user: UserDto {
                     id: user_id,
-                    email: body.email,
+                    email,
                     role: "listener".into(),
                     enabled,
                     permissions,
@@ -307,13 +310,37 @@ pub async fn me(
     }))
 }
 
-// Human: Stub route kept for future OAuth wiring; today it only acknowledges the provider name in JSON.
-// Agent: HTTP 200 JSON message; NO DB; READS path provider string; PLACEHOLDER until real OAuth flow exists.
+// Human: OAuth is not implemented yet — return 501 so clients do not treat this as a working login path.
+// Agent: HTTP 501 NotImplemented; READS path provider; NO DB.
 pub async fn oauth_placeholder(
     axum::extract::Path(provider): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    Ok(Json(serde_json::json!({
-        "message": "OAuth not yet implemented. Use local auth for now.",
-        "provider": provider
-    })))
+    Err(AppError::NotImplemented(format!(
+        "OAuth provider '{provider}' is not implemented. Use email/password login."
+    )))
+}
+
+// Human: Normalize and sanity-check registration emails (trim, lowercase, basic shape).
+// Agent: PURE; RETURNS trimmed lowercase email; ERRORS BadRequest when empty/invalid.
+fn normalize_registration_email(email: &str) -> Result<String, AppError> {
+    let email = email.trim().to_lowercase();
+    if email.is_empty() || email.len() > 254 {
+        return Err(AppError::BadRequest("invalid email".into()));
+    }
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() || !parts[1].contains('.') {
+        return Err(AppError::BadRequest("invalid email".into()));
+    }
+    Ok(email)
+}
+
+// Human: Match setup wizard policy — passwords must be at least eight characters.
+// Agent: PURE; ERRORS BadRequest when len < 8.
+fn validate_registration_password(password: &str) -> Result<(), AppError> {
+    if password.len() < 8 {
+        return Err(AppError::BadRequest(
+            "password must be at least 8 characters".into(),
+        ));
+    }
+    Ok(())
 }

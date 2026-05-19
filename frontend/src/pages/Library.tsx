@@ -12,6 +12,8 @@ import {
 import SongCard from "../components/SongCard";
 import DashboardLayout from "../components/DashboardLayout";
 import ArtworkImage from "../components/ArtworkImage";
+import StatCard from "../components/StatCard";
+import ApiErrorBanner from "../components/ApiErrorBanner";
 import type { Song } from "../types";
 
 // Human: Short human-readable duration for aggregate stats (hours appear when large).
@@ -27,32 +29,6 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
-// Human: Small KPI tile used in the stats row — icon + value + uppercase label.
-// Agent: PRESENTATIONAL; PROPS label/value/icon/colorClass.
-function StatCard({
-  label,
-  value,
-  icon,
-  colorClass,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  colorClass: string;
-}) {
-  return (
-    <div className="bg-surface-900 border border-white/5 rounded-2xl p-5 flex items-center gap-4 hover:border-white/10 transition-colors">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${colorClass}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
-        <p className="text-xs text-surface-400 font-medium uppercase tracking-wider">{label}</p>
-      </div>
-    </div>
-  );
-}
-
 export default function Library() {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -63,6 +39,8 @@ export default function Library() {
   const [topPlays, setTopPlays] = useState<Array<{ song_id: string; title: string; artist: string; album: string | null; artwork_key: string | null; duration_seconds: number; play_count: number; last_played_at: string | null }> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Human: Vim-style focus — "/" jumps to search unless user is already typing in an input.
@@ -80,25 +58,29 @@ export default function Library() {
 
   // Human: On mount pull all dashboard slices — failures degrade to empty/null segments rather than hard error page.
   // Agent: Promise.all fetchStats, fetchRecentSongs, fetchHistory, fetchTopPlays; SETS loading false in then.
-  useEffect(() => {
-    let mounted = true;
+  const loadDashboard = () => {
     setLoading(true);
-
+    setLoadError(null);
     Promise.all([
-      fetchStats().catch(() => null),
-      fetchRecentSongs(12).catch(() => []),
-      fetchHistory().catch(() => []),
-      fetchTopPlays().catch(() => []),
-    ]).then(([statsData, recent, historyData, topPlaysData]) => {
-      if (!mounted) return;
-      setStats(statsData);
-      setRecentSongs(recent);
-      setHistory(historyData);
-      setTopPlays(topPlaysData);
-      setLoading(false);
-    });
+      fetchStats(),
+      fetchRecentSongs(12),
+      fetchHistory(),
+      fetchTopPlays(),
+    ])
+      .then(([statsData, recent, historyData, topPlaysData]) => {
+        setStats(statsData);
+        setRecentSongs(recent);
+        setHistory(historyData);
+        setTopPlays(topPlaysData);
+      })
+      .catch(() => {
+        setLoadError("Could not load your library. Check your connection and try again.");
+      })
+      .finally(() => setLoading(false));
+  };
 
-    return () => { mounted = false; };
+  useEffect(() => {
+    loadDashboard();
   }, []);
 
   // Human: Debounce typing so we do not hit `/songs` on every keystroke while still feeling instant.
@@ -106,16 +88,26 @@ export default function Library() {
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);
+      setSearchLoading(false);
       return;
     }
+    setSearchLoading(true);
     const timer = setTimeout(() => {
-      fetchSongs({ q: searchQuery.trim(), limit: 12 }).then(setSearchResults).catch(() => setSearchResults([]));
+      fetchSongs({ q: searchQuery.trim(), limit: 50 })
+        .then((results) => {
+          setSearchResults(results);
+          setSearchLoading(false);
+        })
+        .catch(() => {
+          setSearchResults([]);
+          setSearchLoading(false);
+        });
     }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const displaySongs = searchResults !== null ? searchResults : recentSongs;
   const isSearching = searchQuery.trim().length > 0;
+  const displaySongs = isSearching ? (searchResults ?? []) : recentSongs;
 
   /* Search bar for topbar */
   const searchBar = (
@@ -165,6 +157,7 @@ export default function Library() {
 
   return (
     <DashboardLayout topbarExtra={searchBar}>
+      {loadError && <ApiErrorBanner message={loadError} onRetry={loadDashboard} />}
       {/* Stats row */}
       {stats && !isSearching && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -222,7 +215,11 @@ export default function Library() {
               <span className="text-xs text-surface-500">{searchResults.length} found</span>
             )}
           </div>
-          {displaySongs.length === 0 ? (
+          {isSearching && searchLoading ? (
+            <div className="flex justify-center py-16">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-aurora-500 border-t-transparent" />
+            </div>
+          ) : displaySongs.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-surface-500 text-sm">
                 {isSearching ? "No songs match your search." : "No songs in the library yet."}

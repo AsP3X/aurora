@@ -120,9 +120,18 @@ export default function SongCard({
       {/* Agent: onClick handleClick; onContextMenu opens menu; cardRef currently unused beyond future hit tests */}
       <div
         ref={cardRef}
+        role="button"
+        tabIndex={0}
+        aria-label={`Play ${song.title} by ${song.artist}`}
         onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
         onContextMenu={handleContextMenu}
-        className="group block w-full text-left space-y-3 hover:bg-surface-900/40 rounded-xl p-2 transition-all duration-200 cursor-pointer"
+        className="group block w-full cursor-pointer space-y-3 rounded-xl p-2 text-left transition-all duration-200 hover:bg-surface-900/40 focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
       >
         <div className="relative aspect-square bg-surface-900 border border-white/5 rounded-xl overflow-hidden shadow-sm">
           <ArtworkImage
@@ -131,7 +140,7 @@ export default function SongCard({
             artist={song.artist}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-colors group-hover:bg-black/30 group-hover:opacity-100 group-focus-within:opacity-100">
             <div className="w-12 h-12 rounded-full bg-aurora-600/90 backdrop-blur-sm flex items-center justify-center shadow-lg">
               <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
@@ -152,11 +161,12 @@ export default function SongCard({
       {menuOpen && (
         <div
           ref={menuRef}
+          role="menu"
           className="fixed z-[100] bg-surface-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden"
           style={menuStyle()}
         >
           {!showPlaylists ? (
-            <div className="py-1 w-48">
+            <div className="py-1 w-48" role="presentation">
               <button
                 onClick={handleAddToQueue}
                 className="w-full text-left px-4 py-2.5 text-sm text-surface-300 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-3"

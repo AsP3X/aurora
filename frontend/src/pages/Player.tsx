@@ -267,7 +267,37 @@ export default function Player() {
     );
   }
 
-  if (!currentSong) return <p className="text-surface-400 text-center py-20">Song not found.</p>;
+  if (loadFailed || !currentSong) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-lg text-white">Could not load this track</p>
+        <p className="max-w-sm text-sm text-surface-400">
+          The song may have been removed or you may not have permission to play it.
+        </p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-surface-300 hover:bg-white/5"
+          >
+            Go back
+          </button>
+          {id && (
+            <button
+              type="button"
+              onClick={() => {
+                setLoadFailed(false);
+                void fetchSong(id).then(playSong).catch(() => setLoadFailed(true));
+              }}
+              className="rounded-lg bg-aurora-600 px-4 py-2 text-sm font-medium text-white hover:bg-aurora-500"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const hasLyrics = Boolean(
     lyrics && lyrics.lines.some((line) => line.text.trim().length > 0),

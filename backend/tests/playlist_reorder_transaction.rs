@@ -36,6 +36,7 @@ fn test_config(db_url: &str, music_dir: &str) -> Config {
         auth_register_rpm: 5,
         upload_rpm: 20,
         hls_segment_rpm: 480,
+        cors_allowed_origins: String::new(),
     }
 }
 

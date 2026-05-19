@@ -55,6 +55,9 @@ pub struct Config {
     /// Max HLS segment fetches per user+song per rolling minute.
     #[serde(default = "default_hls_segment_rpm")]
     pub hls_segment_rpm: u32,
+    /// Comma-separated allowed browser origins for CORS; empty means permissive (dev-friendly).
+    #[serde(default)]
+    pub cors_allowed_origins: String,
 }
 
 impl Config {
@@ -70,11 +73,11 @@ fn default_database_url() -> String {
 }
 
 fn default_meili_url() -> String {
-    "http://localhost:7700".into()
+    String::new()
 }
 
 fn default_meili_master_key() -> String {
-    "aurora-master-key".into()
+    String::new()
 }
 
 fn default_jwt_secret() -> String {

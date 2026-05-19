@@ -1,9 +1,12 @@
 // Human: Library-mode shell — fixed sidebar with playlists + nav, top search slot, and “mini player” from last history entry.
 // Agent: LOADS fetchPlaylists+fetchHistory on pathname; CLOSES mobile sidebar on route change; CHILDREN in scroll main; topbarExtra slot.
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { fetchPlaylists, fetchHistory, createPlaylist } from "../api/client";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { createPlaylist, fetchSong } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useLibraryShell } from "../context/LibraryShellContext";
+import { usePlayer } from "../context/PlayerContext";
+import ApiErrorBanner from "./ApiErrorBanner";
 import ArtworkImage from "./ArtworkImage";
 import type { Playlist } from "../types";
 import SkipLink from "./SkipLink";
@@ -23,38 +26,7 @@ export default function DashboardLayout({
   const [showNewPlaylist, setShowNewPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [lastPlayed, setLastPlayed] = useState<{
-    id: string;
-    title: string;
-    artist: string;
-    artwork_key: string | null;
-    duration_seconds: number;
-  } | null>(null);
-
-  // Human: Refresh sidebar playlists and “last played” card whenever navigation changes so lists feel current.
-  // Agent: EFFECT [pathname]; PARALLEL fetchPlaylists+fetchHistory; DERIVES lastPlayed from hist[0].
-  useEffect(() => {
-    let mounted = true;
-    Promise.all([
-      fetchPlaylists().catch(() => []),
-      fetchHistory().catch(() => []),
-    ]).then(([pls, hist]) => {
-      if (!mounted) return;
-      setPlaylists(pls);
-      if (hist && hist.length > 0) {
-        const h = hist[0];
-        setLastPlayed({
-          id: h.song_id,
-          title: h.title,
-          artist: h.artist,
-          artwork_key: h.artwork_key,
-          duration_seconds: h.duration_seconds,
-        });
-      }
-    });
-    return () => { mounted = false; };
-  }, [pathname]);
+  const { playlists, lastPlayed, error: shellError, refresh, addPlaylist } = useLibraryShell();
 
   // Human: Mobile drawer should not stay open after navigating — otherwise it obscures the new page.
   // Agent: EFFECT [pathname]; SETS sidebarOpen false.
@@ -70,7 +42,7 @@ export default function DashboardLayout({
     setCreatingPlaylist(true);
     try {
       const p = await createPlaylist(newPlaylistName.trim());
-      setPlaylists((prev) => [p, ...prev]);
+      addPlaylist(p);
       setNewPlaylistName("");
       setShowNewPlaylist(false);
     } finally {
@@ -180,9 +152,9 @@ export default function DashboardLayout({
         <div className="p-4 space-y-1">
           <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
           <SidebarNavItem to="/playlists" label="Playlists" icon={<PlaylistsIcon />} active={pathname === "/playlists" || pathname.startsWith("/playlist/")} />
-          <SidebarNavItem to="/artists" label="Artists" icon={<ArtistsIcon />} active={pathname === "/artists"} disabled />
-          <SidebarNavItem to="/albums" label="Albums" icon={<AlbumsIcon />} active={pathname === "/albums"} disabled />
-          <SidebarNavItem to="/genres" label="Genres" icon={<GenresIcon />} active={pathname === "/genres"} disabled />
+          {can("stats.view") && (
+            <SidebarNavItem to="/stats" label="Stats" icon={<StatsIcon />} active={pathname === "/stats"} />
+          )}
         </div>
 
         <div className="mx-4 h-px bg-white/5" />
@@ -197,16 +169,6 @@ export default function DashboardLayout({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
             New Playlist
-          </button>
-          <button
-            disabled
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-900/60 border border-white/5 text-sm text-surface-500 cursor-not-allowed"
-            title="Library scan coming soon"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Import Music
           </button>
         </div>
 
@@ -259,6 +221,9 @@ export default function DashboardLayout({
         tabIndex={-1}
         className="md:ml-64 flex-1 bg-surface-950 p-4 md:p-8 pb-28 md:pb-8 overflow-auto"
       >
+        {shellError && (
+          <ApiErrorBanner message={shellError} onRetry={refresh} />
+        )}
         {children}
       </main>
     </div>
@@ -325,6 +290,24 @@ function SidebarPlaylistItem({ playlist }: { playlist: Playlist }) {
 // Human: Footer teaser that deep-links to the last history entry’s full player — purely navigational, no playback start.
 // Agent: Link /player/:id; USES ArtworkImage for thumb.
 function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; artist: string; artwork_key: string | null; duration_seconds: number } | null }) {
+  const navigate = useNavigate();
+  const { playSong } = usePlayer();
+
+  // Human: Resume playback from the sidebar mini player instead of only navigating.
+  // Agent: CALLS fetchSong+playSong; NAVIGATES /player/:id on success.
+  async function handlePlay(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!lastPlayed) return;
+    try {
+      const song = await fetchSong(lastPlayed.id);
+      await playSong(song);
+      navigate(`/player/${lastPlayed.id}`);
+    } catch {
+      navigate(`/player/${lastPlayed.id}`);
+    }
+  }
+
   if (!lastPlayed) {
     return (
       <div className="p-4 border-t border-white/5">
@@ -350,11 +333,16 @@ function MiniPlayer({ lastPlayed }: { lastPlayed: { id: string; title: string; a
           <p className="text-xs font-medium text-white truncate">{lastPlayed.title}</p>
           <p className="text-[11px] text-surface-400 truncate">{lastPlayed.artist}</p>
         </div>
-        <div className="w-8 h-8 rounded-full bg-aurora-600 flex items-center justify-center shrink-0">
-          <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+        <button
+          type="button"
+          onClick={handlePlay}
+          aria-label={`Play ${lastPlayed.title}`}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-aurora-600 hover:bg-aurora-500"
+        >
+          <svg className="ml-0.5 h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
             <path d="M8 5v14l11-7z" />
           </svg>
-        </div>
+        </button>
       </Link>
     </div>
   );
@@ -377,26 +365,10 @@ function PlaylistsIcon() {
   );
 }
 
-function ArtistsIcon() {
+function StatsIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  );
-}
-
-function AlbumsIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  );
-}
-
-function GenresIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
     </svg>
   );
 }

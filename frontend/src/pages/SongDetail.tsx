@@ -6,6 +6,7 @@ import { usePlayer } from "../context/PlayerContext";
 import { fetchSong, fetchPlayCount } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
 import AddToPlaylist from "../components/AddToPlaylist";
+import DashboardLayout from "../components/DashboardLayout";
 import type { Song } from "../types";
 
 // Human: Duration display supports hours for very long tracks (audiobooks, mixes).
@@ -151,6 +152,7 @@ export default function SongDetail() {
   }
 
   return (
+    <DashboardLayout>
     <div className="flex flex-col min-h-[calc(100vh-4rem)] px-4 sm:px-6">
       {/* Top bar */}
       <div className="py-4">
@@ -348,5 +350,6 @@ export default function SongDetail() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }

@@ -10,6 +10,9 @@
     "dev:frontend": "cd frontend && pnpm dev",
     "build": "cd frontend && pnpm run build",
     "lint": "cd frontend && pnpm run lint",
+    "test:backend": "cd backend && cargo test",
+    "test:frontend": "cd frontend && pnpm run test",
+    "clippy": "cd backend && cargo clippy --all-targets -- -D warnings",
     "test:migrations": "cd backend && cargo test sqlite_migrations_apply_cleanly postgres_migrations_apply_cleanly",
     "docker:up": "docker-compose up",
     "docker:down": "docker-compose down"

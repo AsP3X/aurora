@@ -12,7 +12,10 @@ pub use handlers::{decode_token, Claims};
 
 use crate::{error::AppError, AppState};
 
+pub mod enabled_cache;
 pub mod handlers;
+
+pub use enabled_cache::UserEnabledCache;
 
 // Human: Parse Bearer JWT, verify expiry, confirm the user row still exists and is enabled, then attach claims for downstream handlers.
 // Agent: READS JWT + sqlite/postgres users; REQUIRES enabled=1; MUTATES Request extensions with Claims; CALLS next.run on success.
@@ -43,19 +46,31 @@ pub async fn auth_middleware(
         return Err(AppError::Unauthorized);
     }
 
-    let enabled: Option<(i64,)> = sqlx::query_as(
-        "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
-    )
-    .bind(&claims.sub)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|_| AppError::Unauthorized)?;
+    // Human: Reuse a short-lived cache so HLS segment requests do not hammer `users.enabled` every time.
+    // Agent: READS user_enabled_cache; ON MISS queries DB; WRITES cache; DB errors → Database not Unauthorized.
+    if let Some(cached) = state.user_enabled_cache.get(&claims.sub) {
+        if !cached {
+            return Err(AppError::Forbidden(
+                "account is not activated. Contact an administrator.".into(),
+            ));
+        }
+    } else {
+        let enabled: Option<(i64,)> = sqlx::query_as(
+            "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(AppError::Database)?;
 
-    let (user_enabled,) = enabled.ok_or(AppError::Unauthorized)?;
-    if user_enabled == 0 {
-        return Err(AppError::Forbidden(
-            "account is not activated. Contact an administrator.".into(),
-        ));
+        let (user_enabled,) = enabled.ok_or(AppError::Unauthorized)?;
+        let is_enabled = user_enabled != 0;
+        state.user_enabled_cache.set(&claims.sub, is_enabled);
+        if !is_enabled {
+            return Err(AppError::Forbidden(
+                "account is not activated. Contact an administrator.".into(),
+            ));
+        }
     }
 
     request.extensions_mut().insert(claims);

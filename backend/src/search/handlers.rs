@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     error::AppError,
-    permissions::require_admin_access,
+    permissions::{require_admin_access, require_permission},
     AppState,
 };
 
@@ -26,6 +26,8 @@ pub async fn search(
     claims: axum::Extension<crate::auth::Claims>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.pool, &claims.sub, "library.view").await?;
+
     let q = params.q.trim();
     if q.is_empty() {
         return Err(AppError::BadRequest("search query must not be empty".into()));

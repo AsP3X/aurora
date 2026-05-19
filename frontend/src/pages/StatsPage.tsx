@@ -13,6 +13,9 @@ import {
   type ListeningSessionRow,
 } from "../api/client";
 import ArtworkImage from "../components/ArtworkImage";
+import DashboardLayout from "../components/DashboardLayout";
+import ApiErrorBanner from "../components/ApiErrorBanner";
+import StatCard from "../components/StatCard";
 
 // Human: Compact duration for chart labels — omits seconds when hours present for readability.
 // Agent: PURE helper for BarChart formatter inputs.
@@ -35,26 +38,6 @@ function formatDurationLong(seconds: number) {
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// Human: Reusable KPI tile on the stats page (distinct from admin StatCard component).
-// Agent: PRESENTATIONAL label/value/sub copy.
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <div className="bg-surface-900 border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
-      <p className="text-xs text-surface-400 font-medium uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
-      {sub && <p className="text-xs text-surface-500 mt-1">{sub}</p>}
-    </div>
-  );
-}
 
 // Human: Horizontal bar chart with filled width proportional to max — optional formatter for bar label text.
 // Agent: MAP items; width pct from value/max; MIN width 1% for visibility.
@@ -150,6 +133,8 @@ export default function StatsPage() {
   const [expandedSongId, setExpandedSongId] = useState<string | null>(null);
   const [sessionsBySong, setSessionsBySong] = useState<Record<string, ListeningSessionRow[]>>({});
   const [sessionsLoadingId, setSessionsLoadingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [statsRefresh, setStatsRefresh] = useState(0);
 
   // Human: Changing period refetches everything and collapses any open per-song session tables (fresh data contract).
   // Agent: EFFECT [period]; RESETS expansion cache; Promise.all listening endpoints; WRITES aggregate state.
@@ -158,23 +143,28 @@ export default function StatsPage() {
     setSessionsBySong({});
     setSessionsLoadingId(null);
     setLoading(true);
+    setLoadError(null);
     Promise.all([
-      fetchListeningTime(period).catch(() => ({ total_seconds: 0 })),
-      fetchListeningHabits().catch(() => ({ peak_hours: [], day_of_week: [] })),
-      fetchTopArtists(period).catch(() => []),
-      fetchTopAlbums(period).catch(() => []),
-      fetchHistory(50).catch(() => []),
-      fetchListeningBySong(period).catch(() => []),
-    ]).then(([timeData, habitsData, artists, albums, history, songAgg]) => {
-      setTimeStats((prev) => ({ ...prev, [period]: timeData.total_seconds }));
-      setHabits(habitsData);
-      setTopArtists(artists);
-      setTopAlbums(albums);
-      setSessions(history);
-      setBySong(songAgg);
-      setLoading(false);
-    });
-  }, [period]);
+      fetchListeningTime(period),
+      fetchListeningHabits(),
+      fetchTopArtists(period),
+      fetchTopAlbums(period),
+      fetchHistory(50),
+      fetchListeningBySong(period),
+    ])
+      .then(([timeData, habitsData, artists, albums, history, songAgg]) => {
+        setTimeStats((prev) => ({ ...prev, [period]: timeData.total_seconds }));
+        setHabits(habitsData);
+        setTopArtists(artists);
+        setTopAlbums(albums);
+        setSessions(history);
+        setBySong(songAgg);
+      })
+      .catch(() => {
+        setLoadError("Could not load listening stats. Try again in a moment.");
+      })
+      .finally(() => setLoading(false));
+  }, [period, statsRefresh]);
 
   // Human: Lazy-load session rows for a single song the first time its accordion opens (cached in `sessionsBySong`).
   // Agent: TOGGLE expandedSongId; FETCH fetchListeningSessions(period,500,songId); STORES per-song array.
@@ -222,7 +212,11 @@ export default function StatsPage() {
   const topArtist = topArtists?.[0]?.artist ?? "—";
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <DashboardLayout>
+    <div className="mx-auto max-w-7xl space-y-8">
+      {loadError && (
+        <ApiErrorBanner message={loadError} onRetry={() => setStatsRefresh((n) => n + 1)} />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Listening Stats</h1>
         {loading && (
@@ -231,10 +225,13 @@ export default function StatsPage() {
       </div>
 
       {/* Period tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2" role="tablist" aria-label="Stats period">
         {(["today", "week", "month", "all"] as const).map((p) => (
           <button
             key={p}
+            type="button"
+            role="tab"
+            aria-selected={period === p}
             onClick={() => setPeriod(p)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
               period === p
@@ -492,5 +489,6 @@ export default function StatsPage() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }
