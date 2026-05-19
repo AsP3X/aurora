@@ -38,6 +38,7 @@ export default function AdminSettingsPage() {
   const [artworkMigration, setArtworkMigration] = useState<ArtworkMigrationStatus | null>(null);
   const [migrationStarting, setMigrationStarting] = useState(false);
   const [migrationScanning, setMigrationScanning] = useState(true);
+  const [artworkMigrationExpanded, setArtworkMigrationExpanded] = useState(false);
 
   const publicRegistration = settings.find((s) => s.key === "allow_public_registration");
   const requireActivation = settings.find((s) => s.key === "require_account_activation");
@@ -91,6 +92,28 @@ export default function AdminSettingsPage() {
     }, 2000);
     return () => clearInterval(interval);
   }, [artworkMigration?.status]);
+
+  // Human: Keep the migration panel open while a job is running so progress stays visible.
+  // Agent: EFFECT [status]; SETS artworkMigrationExpanded true when status=running.
+  useEffect(() => {
+    if (artworkMigration?.status === "running") {
+      setArtworkMigrationExpanded(true);
+    }
+  }, [artworkMigration?.status]);
+
+  // Human: Full panel when work remains, a job is active, or the last run failed; otherwise a one-line status only.
+  // Agent: DERIVES from pending_count + status; CONTROLS expandable card vs top chip.
+  const showArtworkMigrationPanel =
+    artworkMigration != null &&
+    (artworkMigration.pending_count > 0 ||
+      artworkMigration.status === "running" ||
+      artworkMigration.status === "failed");
+
+  const showArtworkStatusChip =
+    migrationScanning ||
+    (artworkMigration != null &&
+      !showArtworkMigrationPanel &&
+      artworkMigration.status !== "running");
 
   // Human: Match backend truthy parsing so toggles work even if a row was edited as `True` or `1`.
   // Agent: PURE; TRIMS; LOWERCASE; TRUE for true/1/yes/on.
@@ -264,6 +287,107 @@ export default function AdminSettingsPage() {
         </GlassButton>
       </PageHeader>
 
+      {/* Human: When every cover already has WebP variants, only a quiet line under the page title — no migration card. */}
+      {/* Agent: RENDERS showArtworkStatusChip; TEXT from scanning | up to date | complete. */}
+      {showArtworkStatusChip && (
+        <p className="text-xs text-surface-500 -mt-2">
+          {migrationScanning
+            ? "Checking cover art migration status…"
+            : artworkMigration?.status === "complete"
+              ? "Cover art migration complete — all covers use WebP variants."
+              : "Cover art is up to date (WebP variants)."}
+        </p>
+      )}
+
+      {/* Human: Expandable migration controls when legacy covers still need WebP processing. */}
+      {/* Agent: COLLAPSIBLE AdminGlassCard; TOGGLE artworkMigrationExpanded; CONTAINS start + progress. */}
+      {showArtworkMigrationPanel && artworkMigration && (
+        <AdminGlassCard className="!p-0 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setArtworkMigrationExpanded((open) => !open)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-aurora-500/50"
+            aria-expanded={artworkMigrationExpanded}
+          >
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-white">Cover art (WebP)</h2>
+              <p className="text-xs text-surface-500 mt-0.5 truncate">
+                {artworkMigration.status === "running"
+                  ? `Migrating — ${artworkMigration.processed} / ${artworkMigration.total} processed`
+                  : artworkMigration.status === "failed"
+                    ? "Last migration run reported errors"
+                    : `${artworkMigration.pending_count} artwork${
+                        artworkMigration.pending_count === 1 ? "" : "s"
+                      } need migration`}
+              </p>
+            </div>
+            <svg
+              className={`h-5 w-5 shrink-0 text-surface-400 transition-transform ${
+                artworkMigrationExpanded ? "rotate-180" : ""
+              }`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {artworkMigrationExpanded && (
+            <div className="space-y-4 border-t border-white/5 px-5 pb-5 pt-4">
+              <p className="text-xs text-surface-500">
+                Re-process existing cover images into seeker, library, and detail WebP sizes. Songs
+                that already have all three variants are skipped.
+              </p>
+              <div className="space-y-2 text-sm text-surface-300">
+                <p>
+                  Status:{" "}
+                  <span className="text-surface-200 capitalize">{artworkMigration.status}</span>
+                  {artworkMigration.status === "running" && artworkMigration.total > 0 && (
+                    <span className="text-surface-500">
+                      {" "}
+                      — {artworkMigration.skipped > 0
+                        ? ` (${artworkMigration.skipped} skipped)`
+                        : ""}
+                      {artworkMigration.failed > 0 ? ` (${artworkMigration.failed} failed)` : ""}
+                    </span>
+                  )}
+                </p>
+                {(artworkMigration.status === "running" || artworkMigration.progress > 0) && (
+                  <div className="w-full h-2 bg-surface-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-aurora-500 rounded-full transition-all duration-200"
+                      style={{ width: `${artworkMigration.progress}%` }}
+                    />
+                  </div>
+                )}
+                {artworkMigration.error && (
+                  <p className="text-xs text-red-300">{artworkMigration.error}</p>
+                )}
+              </div>
+              <GlassButton
+                type="button"
+                disabled={
+                  migrationStarting ||
+                  migrationScanning ||
+                  loading ||
+                  artworkMigration.status === "running" ||
+                  artworkMigration.pending_count === 0
+                }
+                onClick={() => void handleStartArtworkMigration()}
+              >
+                {artworkMigration.status === "running"
+                  ? "Migrating…"
+                  : migrationStarting
+                    ? "Starting…"
+                    : "Migrate artwork to WebP"}
+              </GlassButton>
+            </div>
+          )}
+        </AdminGlassCard>
+      )}
+
       {/* Human: First-class toggles for registration policy — avoids typo-prone raw `true`/`false` text edits. */}
       {/* Agent: CALLS handleRegistrationToggle; READS allow_public_registration + require_account_activation rows. */}
       <AdminGlassCard padding="md" className="space-y-4">
@@ -328,75 +452,6 @@ export default function AdminSettingsPage() {
         </div>
       </AdminGlassCard>
 
-      {/* Human: One-shot migration for library covers uploaded before multi-size WebP storage. */}
-      {/* Agent: READS artworkMigration; BUTTON startArtworkMigration; POLL while status=running. */}
-      <AdminGlassCard padding="md" className="space-y-4">
-        <h2 className="text-sm font-semibold text-white">Cover art (WebP)</h2>
-        <p className="text-xs text-surface-500">
-          Re-process existing cover images into seeker, library, and detail WebP sizes. Songs that
-          already have all three variants are skipped.
-        </p>
-        {migrationScanning && !artworkMigration && (
-          <p className="text-sm text-surface-500">Scanning library for artwork to migrate…</p>
-        )}
-        {artworkMigration && (
-          <div className="space-y-2 text-sm text-surface-300">
-            {artworkMigration.status !== "running" && (
-              <p className="text-surface-200">
-                {migrationScanning
-                  ? "Scanning library for artwork to migrate…"
-                  : artworkMigration.pending_count === 0
-                    ? "All cover art is already using WebP variants."
-                    : `${artworkMigration.pending_count} artwork${
-                        artworkMigration.pending_count === 1 ? "" : "s"
-                      } need migration to the new system.`}
-              </p>
-            )}
-            <p>
-              Status:{" "}
-              <span className="text-surface-200 capitalize">{artworkMigration.status}</span>
-              {artworkMigration.status === "running" && artworkMigration.total > 0 && (
-                <span className="text-surface-500">
-                  {" "}
-                  — {artworkMigration.processed} / {artworkMigration.total} processed
-                  {artworkMigration.skipped > 0
-                    ? ` (${artworkMigration.skipped} skipped)`
-                    : ""}
-                  {artworkMigration.failed > 0 ? ` (${artworkMigration.failed} failed)` : ""}
-                </span>
-              )}
-            </p>
-            {(artworkMigration.status === "running" || artworkMigration.progress > 0) && (
-              <div className="w-full h-2 bg-surface-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-aurora-500 rounded-full transition-all duration-200"
-                  style={{ width: `${artworkMigration.progress}%` }}
-                />
-              </div>
-            )}
-            {artworkMigration.error && (
-              <p className="text-xs text-red-300">{artworkMigration.error}</p>
-            )}
-          </div>
-        )}
-        <GlassButton
-          type="button"
-          disabled={
-            migrationStarting ||
-            migrationScanning ||
-            loading ||
-            artworkMigration?.status === "running" ||
-            (artworkMigration != null && artworkMigration.pending_count === 0)
-          }
-          onClick={() => void handleStartArtworkMigration()}
-        >
-          {artworkMigration?.status === "running"
-            ? "Migrating…"
-            : migrationStarting
-              ? "Starting…"
-              : "Migrate artwork to WebP"}
-        </GlassButton>
-      </AdminGlassCard>
 
       <DataTable<Setting>
         columns={columns}
