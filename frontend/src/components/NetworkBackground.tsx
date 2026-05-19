@@ -145,14 +145,16 @@ export default function NetworkBackground({
     }
 
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    const containerEl = containerRef.current;
+    if (!canvas || !containerEl) return;
+    const layoutRoot = containerEl;
 
     const glRenderer = NetworkBackgroundGlRenderer.create(canvas);
     glRendererRef.current = glRenderer;
     setWebglActive(glRenderer !== null);
     if (!glRenderer) return;
 
+    const renderer = glRenderer;
     const meteorField = new MeteorField();
     meteorField.setConfig(meteorConfigFromQuality(qualityRef.current));
     meteorFieldRef.current = meteorField;
@@ -163,7 +165,7 @@ export default function NetworkBackground({
 
     function updateFocusRect() {
       focusRectRef.current = measureFocusRect(
-        container,
+        layoutRoot,
         focusTargetRef?.current ?? null,
         authMode,
       );
@@ -171,7 +173,7 @@ export default function NetworkBackground({
 
     function handleLayoutChange(w: number, h: number) {
       if (w <= 0 || h <= 0) return;
-      glRenderer.resize(w, h, qualityRef.current);
+      renderer.resize(w, h, qualityRef.current);
       updateFocusRect();
     }
 
@@ -186,7 +188,7 @@ export default function NetworkBackground({
 
       const meteorSlots = meteorField.update(dt);
 
-      glRenderer.render({
+      renderer.render({
         time: ((now - startTime) / 1000) * TIME_SCALE,
         focus: focusRectRef.current,
         authMode,
@@ -229,13 +231,13 @@ export default function NetworkBackground({
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      handleLayoutChange(container.clientWidth, container.clientHeight);
+      handleLayoutChange(layoutRoot.clientWidth, layoutRoot.clientHeight);
     });
 
-    handleLayoutChange(container.clientWidth, container.clientHeight);
+    handleLayoutChange(layoutRoot.clientWidth, layoutRoot.clientHeight);
     startLoop();
 
-    resizeObserver.observe(container);
+    resizeObserver.observe(layoutRoot);
     window.addEventListener("resize", updateFocusRect);
     window.addEventListener("scroll", updateFocusRect, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -246,7 +248,7 @@ export default function NetworkBackground({
       window.removeEventListener("resize", updateFocusRect);
       window.removeEventListener("scroll", updateFocusRect, true);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      glRenderer.dispose();
+      renderer.dispose();
       glRendererRef.current = null;
       meteorFieldRef.current = null;
     };
