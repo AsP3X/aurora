@@ -10,6 +10,7 @@ import ApiErrorBanner from "./ApiErrorBanner";
 import ArtworkImage from "./ArtworkImage";
 import type { Playlist } from "../types";
 import SkipLink from "./SkipLink";
+import NetworkBackground from "./NetworkBackground";
 
 export default function DashboardLayout({
   children,
@@ -51,10 +52,15 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-col bg-surface-950 h-screen">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-surface-950">
+      <NetworkBackground variant="library" />
+      {/* Human: Light scrim so library text and cards stay readable over the aurora canvas. */}
+      {/* Agent: FIXED overlay z-1; pointer-events-none; pairs with composite uLibraryMode dim. */}
+      <div className="pointer-events-none absolute inset-0 z-[1] bg-surface-950/40" aria-hidden />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <SkipLink />
       {/* ─── Topbar ─── */}
-      <div className="h-16 bg-white/5 border-b border-white/10 backdrop-blur-xl shrink-0 flex items-center justify-between px-4 md:px-6">
+      <div className="h-16 shrink-0 flex items-center justify-between border-b border-white/10 bg-white/5 px-4 backdrop-blur-md md:px-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen((v) => !v)}
@@ -147,7 +153,7 @@ export default function DashboardLayout({
       )}
 
       {/* ─── Sidebar ─── */}
-      <div className={`fixed left-0 top-16 w-64 z-50 md:z-30 bg-white/5 border-r border-white/10 backdrop-blur-xl flex flex-col h-[calc(100vh-4rem)] transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}>
+      <div className={`fixed left-0 top-16 z-50 flex h-[calc(100vh-4rem)] w-64 flex-col border-r border-white/10 bg-white/5 backdrop-blur-md transition-transform duration-300 md:z-30 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}>
         {/* Main nav */}
         <div className="p-4 space-y-1">
           <SidebarNavItem to="/" label="Library" icon={<LibraryIcon />} active={pathname === "/"} />
@@ -219,13 +225,14 @@ export default function DashboardLayout({
       <main
         id="main-content"
         tabIndex={-1}
-        className="md:ml-64 flex-1 bg-surface-950 p-4 md:p-8 pb-28 md:pb-8 overflow-auto"
+        className="md:ml-64 flex-1 overflow-auto p-4 pb-28 md:p-8 md:pb-8"
       >
         {shellError && (
           <ApiErrorBanner message={shellError} onRetry={refresh} />
         )}
         {children}
       </main>
+      </div>
     </div>
   );
 }

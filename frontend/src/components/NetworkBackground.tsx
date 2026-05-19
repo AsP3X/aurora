@@ -1,21 +1,28 @@
-// Human: Auth/setup background — aurora + meteors; mobile tier, reduced motion, and tab visibility aware.
-// Agent: MeteorField+quality tier; pause rAF when hidden; STATIC fallback for no WebGL or reduce motion.
+// Human: WebGL aurora background — auth/setup (meteors + focus), library dashboard (calm aurora), with motion and quality fallbacks.
+// Agent: MeteorField+quality tier; variant library|auth|default; pause rAF when hidden; STATIC fallback when no WebGL or reduce motion.
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { NetworkBackgroundGlRenderer, type GlFocusRect } from "./networkBackground/glRenderer";
 import {
   STATIC_BACKGROUND_STYLE,
+  applyNetworkBackgroundVariant,
   detectBackgroundQualityTier,
   getBackgroundQualitySettings,
   subscribeBackgroundQualityTier,
   type BackgroundQualitySettings,
+  type NetworkBackgroundVariant,
 } from "./networkBackground/backgroundQuality";
 import { MAX_METEORS, MeteorField } from "./networkBackground/meteors";
 
-/** Scales shader time — lower = slower aurora drift (reduces motion discomfort). */
-const TIME_SCALE = 0.34;
+/** Human: Auth/login drift speed — visible but not frantic. */
+// Agent: CONST time multiplier for auth/default draw loop.
+const TIME_SCALE_AUTH = 0.34;
+
+/** Human: Library shell moves slower so the dashboard feels ambient, not distracting. */
+// Agent: CONST lower time multiplier when variant=library.
+const TIME_SCALE_LIBRARY = 0.2;
 
 export interface NetworkBackgroundProps {
-  variant?: "default" | "auth";
+  variant?: NetworkBackgroundVariant;
   focusTargetRef?: RefObject<HTMLElement | null>;
 }
 
@@ -78,8 +85,14 @@ function meteorConfigFromQuality(quality: BackgroundQualitySettings) {
   };
 }
 
+// Human: Merge device tier with variant-specific caps (library disables meteors, lowers fill rate).
+// Agent: PURE; CALLS getBackgroundQualitySettings+applyNetworkBackgroundVariant.
+function qualityForVariant(tier = detectBackgroundQualityTier(), variant: NetworkBackgroundVariant) {
+  return applyNetworkBackgroundVariant(getBackgroundQualitySettings(tier), variant);
+}
+
 // Human: WebGL aurora when allowed; static CSS when reduced motion or WebGL unavailable; mobile cost tier.
-// Agent: matchMedia reduce motion; visibility pause; quality subscription; passes quality to renderer.
+// Agent: matchMedia reduce motion; visibility pause; quality subscription; passes libraryMode to renderer.
 export default function NetworkBackground({
   variant = "default",
   focusTargetRef,
@@ -88,11 +101,12 @@ export default function NetworkBackground({
   const containerRef = useRef<HTMLDivElement>(null);
   const glRendererRef = useRef<NetworkBackgroundGlRenderer | null>(null);
   const meteorFieldRef = useRef<MeteorField | null>(null);
-  const qualityRef = useRef<BackgroundQualitySettings>(
-    getBackgroundQualitySettings(detectBackgroundQualityTier()),
-  );
+  const qualityRef = useRef<BackgroundQualitySettings>(qualityForVariant(undefined, variant));
+  const variantRef = useRef(variant);
 
   const authMode = variant === "auth";
+  const libraryMode = variant === "library";
+  const timeScale = libraryMode ? TIME_SCALE_LIBRARY : TIME_SCALE_AUTH;
   const focusRectRef = useRef<GlFocusRect>(DEFAULT_FOCUS);
 
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
@@ -100,12 +114,17 @@ export default function NetworkBackground({
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   });
   const [webglActive, setWebglActive] = useState(false);
-  const [quality, setQuality] = useState<BackgroundQualitySettings>(() =>
-    getBackgroundQualitySettings(detectBackgroundQualityTier()),
-  );
+  const [quality, setQuality] = useState<BackgroundQualitySettings>(() => qualityForVariant(undefined, variant));
 
   const useAnimatedWebgl = webglActive && !prefersReducedMotion;
   const useStaticFallback = !useAnimatedWebgl;
+
+  useEffect(() => {
+    variantRef.current = variant;
+    const next = qualityForVariant(detectBackgroundQualityTier(), variant);
+    qualityRef.current = next;
+    setQuality(next);
+  }, [variant]);
 
   useEffect(() => {
     qualityRef.current = quality;
@@ -132,8 +151,9 @@ export default function NetworkBackground({
   }, []);
 
   useEffect(() => {
-    setQuality(getBackgroundQualitySettings(detectBackgroundQualityTier()));
-    return subscribeBackgroundQualityTier(setQuality);
+    return subscribeBackgroundQualityTier((tierSettings) => {
+      setQuality(applyNetworkBackgroundVariant(tierSettings, variantRef.current));
+    });
   }, []);
 
   useEffect(() => {
@@ -189,11 +209,12 @@ export default function NetworkBackground({
       const meteorSlots = meteorField.update(dt);
 
       renderer.render({
-        time: ((now - startTime) / 1000) * TIME_SCALE,
+        time: ((now - startTime) / 1000) * timeScale,
         focus: focusRectRef.current,
         authMode,
+        libraryMode,
         meteors: meteorSlots,
-        meteorCount: countActiveMeteors(meteorSlots, MAX_METEORS),
+        meteorCount: libraryMode ? 0 : countActiveMeteors(meteorSlots, MAX_METEORS),
         quality: qualityRef.current,
       });
     }
@@ -252,13 +273,14 @@ export default function NetworkBackground({
       glRendererRef.current = null;
       meteorFieldRef.current = null;
     };
-  }, [authMode, focusTargetRef, prefersReducedMotion]);
+  }, [authMode, focusTargetRef, libraryMode, prefersReducedMotion, timeScale]);
 
   return (
     <div
       ref={containerRef}
       className="absolute inset-0 overflow-hidden pointer-events-none"
       style={{ zIndex: 0 }}
+      aria-hidden
     >
       <canvas
         ref={canvasRef}

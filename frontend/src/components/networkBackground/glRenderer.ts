@@ -16,6 +16,9 @@ export interface GlFrameInput {
   time: number;
   focus: GlFocusRect;
   authMode: boolean;
+  /** Human: Logged-in dashboard — softer hills/horizon and a readability dim in composite. */
+  // Agent: WHEN true SETS uLibraryMode=1 on aurora+composite passes.
+  libraryMode: boolean;
   meteors: GlMeteorSlot[];
   meteorCount: number;
   quality: BackgroundQualitySettings;
@@ -37,6 +40,7 @@ precision highp float;
 varying vec2 vUv;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform float uLibraryMode;
 uniform int uMeteorCount;
 uniform float uSurfaceCeiling;
 uniform vec4 uMeteorKinematics[8];
@@ -323,11 +327,12 @@ void main() {
   vec3 sky = base + aurora;
 
   vec3 horizonTint = mix(vec3(0.48, 0.3, 0.88), vec3(0.72, 0.58, 0.98), 0.62);
-  float horizon = horizonPlanetGlow(uv);
+  float horizon = horizonPlanetGlow(uv) * (1.0 - uLibraryMode);
   sky += horizonTint * horizon * 0.32;
 
   sky += addMeteors(uv);
 
+  float hillStrength = mix(1.0, 0.22, uLibraryMode);
   float maskFar = silhouetteMask(uv, 0.0, 0.2, 0.055);
   float maskMid = silhouetteMask(uv, 0.4, 0.14, 0.085);
   float maskNear = silhouetteMask(uv, 0.85, 0.09, 0.11);
@@ -336,9 +341,9 @@ void main() {
   vec3 colMid = vec3(0.034, 0.031, 0.045);
   vec3 colNear = vec3(0.022, 0.02, 0.032);
 
-  vec3 rgb = mix(sky, colFar, maskFar * 0.88);
-  rgb = mix(rgb, colMid, maskMid * 0.92);
-  rgb = mix(rgb, colNear, maskNear * 0.96);
+  vec3 rgb = mix(sky, colFar, maskFar * 0.88 * hillStrength);
+  rgb = mix(rgb, colMid, maskMid * 0.92 * hillStrength);
+  rgb = mix(rgb, colNear, maskNear * 0.96 * hillStrength);
 
   vec2 centered = (uv - 0.5) * vec2(1.0, 0.85);
   float vignette = 1.0 - dot(centered, centered) * 0.85;
@@ -410,6 +415,7 @@ uniform vec2 uResolution;
 uniform vec2 uFocusCenter;
 uniform vec2 uFocusRadius;
 uniform float uFocusActive;
+uniform float uLibraryMode;
 uniform float uBloomStrength;
 uniform float uTime;
 
@@ -434,6 +440,13 @@ void main() {
 
   float bottomScrim = smoothstep(0.48, 1.0, vUv.y);
   col *= mix(1.0, 0.72, bottomScrim * 0.38);
+
+  if (uLibraryMode > 0.5) {
+    float topLift = smoothstep(0.0, 0.62, vUv.y);
+    col *= mix(0.38, 0.92, topLift);
+    float sideFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    col *= mix(0.82, 1.0, sideFade);
+  }
 
   col += (hash(vUv * uResolution + uTime) - 0.5) * 0.012;
   gl_FragColor = vec4(col, 1.0);
@@ -491,6 +504,7 @@ function createProgram(gl: GlContext, vertSource: string, fragSource: string): G
   const uniformNames = [
     "uTime",
     "uResolution",
+    "uLibraryMode",
     "uMeteorCount",
     "uSurfaceCeiling",
     "uMeteorKinematics[0]",
@@ -741,7 +755,12 @@ export class NetworkBackgroundGlRenderer {
 
     const gl = this.gl;
     const renderResolution: [number, number] = [this.renderWidth, this.renderHeight];
-    const { auroraBlurStrength, bloomBlurStrength, bloomStrengthMultiplier } = frame.quality;
+    const { bloomStrengthMultiplier } = frame.quality;
+    // Human: Library dashboard keeps aurora edges sharper — extra scale down on top of quality-tier blur tunables.
+    // Agent: libraryMode TRUE → multiply aurora/bloom blur strengths by 0.82 before separable passes.
+    const blurScale = frame.libraryMode ? 0.82 : 1;
+    const auroraBlurStrength = frame.quality.auroraBlurStrength * blurScale;
+    const bloomBlurStrength = frame.quality.bloomBlurStrength * blurScale;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneTarget.framebuffer);
     gl.viewport(0, 0, this.renderWidth, this.renderHeight);
@@ -751,6 +770,7 @@ export class NetworkBackgroundGlRenderer {
     bindProgram(gl, this.auroraProgram);
     gl.uniform1f(this.auroraProgram.uniforms.uTime!, frame.time);
     gl.uniform2f(this.auroraProgram.uniforms.uResolution!, renderResolution[0], renderResolution[1]);
+    gl.uniform1f(this.auroraProgram.uniforms.uLibraryMode!, frame.libraryMode ? 1 : 0);
     this.uploadMeteorUniforms(frame.meteors, frame.meteorCount);
     this.drawQuad(this.auroraProgram);
 
@@ -800,9 +820,10 @@ export class NetworkBackgroundGlRenderer {
     gl.uniform1i(this.compositeProgram.uniforms.uBloomTexture!, 1);
 
     gl.uniform2f(this.compositeProgram.uniforms.uResolution!, displayResolution[0], displayResolution[1]);
-    const bloomBase = frame.authMode ? 0.85 : 0.65;
+    const bloomBase = frame.libraryMode ? 0.42 : frame.authMode ? 0.85 : 0.65;
     gl.uniform1f(this.compositeProgram.uniforms.uBloomStrength!, bloomBase * bloomStrengthMultiplier);
     gl.uniform1f(this.compositeProgram.uniforms.uTime!, frame.time);
+    gl.uniform1f(this.compositeProgram.uniforms.uLibraryMode!, frame.libraryMode ? 1 : 0);
 
     const focusActive = frame.authMode && frame.focus.active ? 1 : 0;
     gl.uniform1f(this.compositeProgram.uniforms.uFocusActive!, focusActive);

@@ -1,9 +1,13 @@
-// Human: Quality tiers for the auth WebGL background — desktop vs mobile/coarse pointer tuning.
-// Agent: detectBackgroundQualityTier; getBackgroundQualitySettings; STATIC_BACKGROUND_STYLE for CSS fallback.
+// Human: Quality tiers for the WebGL background — desktop vs mobile/coarse pointer tuning; library variant dials cost down.
+// Agent: detectBackgroundQualityTier; getBackgroundQualitySettings; applyNetworkBackgroundVariant; STATIC_BACKGROUND_STYLE.
 
 import { MAX_METEORS } from "./meteors";
 
 export type BackgroundQualityTier = "high" | "low";
+
+/** Human: Which screen mounts the background — library is calmer (no meteors, lower fill rate). */
+// Agent: UNION default|auth|library; PASSED to applyNetworkBackgroundVariant.
+export type NetworkBackgroundVariant = "default" | "auth" | "library";
 
 /** Tunables passed from React into the renderer and meteor simulation each frame. */
 export interface BackgroundQualitySettings {
@@ -72,6 +76,27 @@ export function detectBackgroundQualityTier(): BackgroundQualityTier {
 // Agent: PURE; tier→BackgroundQualitySettings; high=defaults low=reduced DPR/blur/meteors.
 export function getBackgroundQualitySettings(tier: BackgroundQualityTier): BackgroundQualitySettings {
   return tier === "low" ? { ...LOW_QUALITY } : { ...HIGH_QUALITY };
+}
+
+// Human: Dashboard library shell — no meteors, softer blur/bloom so the aurora stays defined behind glass UI.
+// Agent: PURE; variant=library MUTATES meteors off + lowers blur strengths + caps renderScale; auth/default unchanged.
+export function applyNetworkBackgroundVariant(
+  settings: BackgroundQualitySettings,
+  variant: NetworkBackgroundVariant,
+): BackgroundQualitySettings {
+  if (variant !== "library") {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    meteorsEnabled: false,
+    maxMeteors: 0,
+    renderScale: Math.min(settings.renderScale, 0.72),
+    bloomStrengthMultiplier: settings.bloomStrengthMultiplier * 0.72,
+    auroraBlurStrength: settings.auroraBlurStrength * 0.48,
+    bloomBlurStrength: settings.bloomBlurStrength * 0.48,
+  };
 }
 
 // Human: Subscribe to viewport/pointer changes so rotating a phone can switch tiers live.
