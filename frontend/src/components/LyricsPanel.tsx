@@ -246,5 +246,15 @@ export default function LyricsPanel({
     return <LyricsScrollView content={content} activePos={activePos} className={className} />;
   }
 
-  return <LyricsCarouselView content={content} activePos={activePos} className={className} />;
+  // Human: Carousel strip stays vertically centered in whatever space the player allots.
+  // Agent: WRAPPER flex flex-1 items-center justify-center min-h-0; CHILD LyricsCarouselView fixed 3-line height.
+  return (
+    <div className={`flex w-full min-h-0 flex-1 items-center justify-center ${className}`}>
+      <LyricsCarouselView
+        content={content}
+        activePos={activePos}
+        className="max-w-md mx-auto w-full max-md:max-w-lg"
+      />
+    </div>
+  );
 }

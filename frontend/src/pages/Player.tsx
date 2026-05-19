@@ -362,6 +362,10 @@ export default function Player() {
         <div
           className={`player-stage ${showLyricsLayout ? "player-stage--open" : "player-stage--closed"} ${
             mobileLyricsChrome ? "player-stage--mobile-lyrics" : ""
+          } ${
+            mobileLyricsChrome && lyricsViewMode === "scroll"
+              ? "player-stage--mobile-lyrics-scroll"
+              : ""
           }`}
         >
           <div className={`player-track-cell ${mobileLyricsChrome ? "max-md:hidden" : ""}`}>
@@ -471,11 +475,9 @@ export default function Player() {
               className={`player-lyrics-cell flex flex-col max-md:min-h-0 ${
                 showLyricsLayout ? "max-md:flex-1" : "max-md:hidden"
               } ${
-                mobileLyricsChrome
-                  ? "justify-start items-stretch min-h-0 max-md:overflow-hidden"
-                  : showLyricsLayout && lyricsViewMode === "scroll"
-                    ? "justify-start items-stretch min-h-0"
-                    : "justify-center"
+                showLyricsLayout && lyricsViewMode === "scroll"
+                  ? "player-lyrics-cell--scroll justify-start items-stretch min-h-0 max-md:overflow-hidden"
+                  : "justify-center items-center"
               }`}
               aria-hidden={!showLyricsLayout}
             >
