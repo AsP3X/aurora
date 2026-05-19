@@ -54,6 +54,12 @@ pub struct DatabaseTestResponse {
     pub driver: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SetupStorageInfo {
+    /// `proxy` for Nebula OS object storage, `local` for plain filesystem storage.
+    pub storage_mode: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SetupRequest {
     pub email: String,
@@ -66,6 +72,8 @@ pub struct SetupRequest {
     pub music_dir: Option<String>,
     /// Target database for first-run data; defaults to the server's startup `DATABASE_URL`.
     pub database_url: Option<String>,
+    /// `proxy` (Nebula OS) or `local` (filesystem); defaults to the server's startup `STORAGE_MODE`.
+    pub storage_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +85,8 @@ pub struct SetupResponse {
     pub restart_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub configured_database_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configured_storage_mode: Option<String>,
 }
 
 // Human: Tell the SPA whether any user row exists so it can route to setup vs login without probing protected endpoints.
@@ -146,6 +156,50 @@ pub async fn test_setup_database(
     Ok(Json(DatabaseTestResponse { ok: true, driver }))
 }
 
+// Human: Expose the live storage mode during first-run so the wizard can pre-fill Docker or local defaults.
+// Agent: READS state.storage_mode; NORMALIZES to proxy|local; ONLY safe before setup_complete.
+pub async fn setup_storage_info(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<SetupStorageInfo>, AppError> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.pool)
+        .await?;
+    if count > 0 {
+        return Err(AppError::Conflict("setup already completed".into()));
+    }
+
+    Ok(Json(SetupStorageInfo {
+        storage_mode: normalize_storage_mode(&state.storage_mode).to_string(),
+    }))
+}
+
+fn normalize_storage_mode(mode: &str) -> &'static str {
+    if mode.trim().eq_ignore_ascii_case("proxy") {
+        "proxy"
+    } else {
+        "local"
+    }
+}
+
+// Human: Reject unknown storage mode strings from the wizard before persisting settings.
+// Agent: RETURNS proxy|local; HTTP 400 when value is neither proxy nor local (case-insensitive).
+fn parse_setup_storage_mode(raw: &str) -> Result<&'static str, AppError> {
+    let trimmed = raw.trim();
+    if trimmed.eq_ignore_ascii_case("proxy") {
+        Ok("proxy")
+    } else if trimmed.eq_ignore_ascii_case("local") {
+        Ok("local")
+    } else {
+        Err(AppError::BadRequest(
+            "storage_mode must be \"proxy\" or \"local\"".into(),
+        ))
+    }
+}
+
+fn storage_modes_equivalent(a: &str, b: &str) -> bool {
+    normalize_storage_mode(a) == normalize_storage_mode(b)
+}
+
 fn urls_equivalent(a: &str, b: &str) -> bool {
     a.trim() == b.trim()
 }
@@ -162,6 +216,11 @@ pub async fn setup(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(state.database_url.as_str());
+
+    let target_storage_mode = match body.storage_mode.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => parse_setup_storage_mode(raw)?,
+        None => normalize_storage_mode(&state.storage_mode),
+    };
 
     if db::driver_from_url(target_url).is_none() {
         return Err(AppError::BadRequest("unsupported database_url scheme".into()));
@@ -263,11 +322,23 @@ pub async fn setup(
             .await?;
     }
 
+    sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
+        .bind("storage_mode")
+        .bind(target_storage_mode)
+        .execute(&mut *tx)
+        .await?;
+
     tx.commit().await?;
 
-    let restart_required = !use_startup_pool;
+    let storage_mode_changed = !storage_modes_equivalent(target_storage_mode, &state.storage_mode);
+    let restart_required = !use_startup_pool || storage_mode_changed;
     if restart_required {
-        env_persist::try_persist_database_url(target_url);
+        if !use_startup_pool {
+            env_persist::try_persist_database_url(target_url);
+        }
+        if storage_mode_changed {
+            env_persist::try_persist_storage_mode(target_storage_mode);
+        }
     }
 
     let token = create_token(user_id.clone(), body.email.clone(), "admin".into(), &state.jwt_secret)
@@ -288,8 +359,13 @@ pub async fn setup(
             },
         },
         restart_required,
-        configured_database_url: if restart_required {
+        configured_database_url: if !use_startup_pool {
             Some(target_url.to_string())
+        } else {
+            None
+        },
+        configured_storage_mode: if storage_mode_changed {
+            Some(target_storage_mode.to_string())
         } else {
             None
         },

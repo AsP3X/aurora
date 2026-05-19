@@ -452,6 +452,17 @@ export async function fetchStats() {
   }>;
 }
 
+// Human: Readiness probe after setup — confirms DB (and Meilisearch when configured) before showing welcome toast.
+// Agent: GET /health/ready; PUBLIC; RETURNS ready flag plus dependency status strings.
+export async function fetchHealthReady() {
+  return apiFetch("/health/ready", { cache: "no-store" }) as Promise<{
+    ready: boolean;
+    database: string;
+    meilisearch: string;
+    environment: string;
+  }>;
+}
+
 export async function fetchListeningTime(period: "today" | "week" | "month" | "all") {
   return apiFetch(`/me/listening-time?period=${period}`) as Promise<{ total_seconds: number }>;
 }
@@ -552,6 +563,12 @@ export async function setupDatabaseInfo() {
   }>;
 }
 
+export async function setupStorageInfo() {
+  return apiFetch("/setup/storage", { cache: "no-store" }) as Promise<{
+    storage_mode: "proxy" | "local";
+  }>;
+}
+
 export async function testSetupDatabase(database_url: string) {
   return apiFetch("/setup/database/test", {
     method: "POST",
@@ -577,6 +594,7 @@ export async function setup(body: {
   require_account_activation?: boolean;
   music_dir: string;
   database_url?: string;
+  storage_mode?: "proxy" | "local";
 }) {
   return apiFetch("/setup", {
     method: "POST",
@@ -586,6 +604,7 @@ export async function setup(body: {
     user: { id: string; email: string; role: string; permissions: string[] };
     restart_required?: boolean;
     configured_database_url?: string;
+    configured_storage_mode?: string;
   }>;
 }
 

@@ -24,6 +24,7 @@ import AdminPlaylistsPage from "./pages/admin/AdminPlaylistsPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminLyricsEditorPage from "./pages/admin/AdminLyricsEditorPage";
 import SkipLink from "./components/SkipLink";
+import { markSetupCompleteForToast } from "./lib/setupNavigation";
 
 // Human: Application shell — providers, setup gate, route table, and the main nav layout around authenticated pages.
 // Agent: WRAPS BrowserRouter+AuthProvider+PlayerProvider; ROUTES /setup /login / library /admin/*; SETUPGUARD reads setupStatus; LAYOUT hides chrome on dashboard paths.
@@ -254,6 +255,9 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
     if (setupComplete === null) return;
 
     if (setupComplete && pathname === "/setup") {
+      if (token) {
+        markSetupCompleteForToast();
+      }
       navigate(token ? "/" : "/login", { replace: true });
       return;
     }

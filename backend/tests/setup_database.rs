@@ -104,3 +104,35 @@ async fn test_setup_database_accepts_sqlite_url() {
     assert_eq!(json["ok"], true);
     assert_eq!(json["driver"], "sqlite");
 }
+
+// Human: Fresh install should expose normalized storage mode on the setup storage info route.
+// Agent: GET /api/v1/setup/storage; EXPECT 200 + local when startup STORAGE_MODE is local.
+#[tokio::test]
+async fn setup_storage_info_returns_startup_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("setup_storage_info.db");
+    let db_url = format!("sqlite:{}", db_path.display());
+    let music_dir = tmp.path().join("music");
+    std::fs::create_dir_all(&music_dir).unwrap();
+
+    let cfg = test_config(&db_url, music_dir.to_str().unwrap());
+    let state = create_app_state(&cfg).await.expect("app state");
+    let app = create_router(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/setup/storage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["storage_mode"], "local");
+}

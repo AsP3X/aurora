@@ -1,6 +1,6 @@
 // Human: Primary dashboard — stats cards, debounced search, recent/topmost grids, all inside `DashboardLayout`.
 // Agent: PARALLEL initial fetch stats/recent/history/top; SEARCH debounce 250ms fetchSongs; KEYBOARD "/" focuses search.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchSongs,
@@ -8,12 +8,15 @@ import {
   fetchHistory,
   fetchStats,
   fetchTopPlays,
+  fetchHealthReady,
 } from "../api/client";
 import SongCard from "../components/SongCard";
 import DashboardLayout from "../components/DashboardLayout";
 import ArtworkImage from "../components/ArtworkImage";
 import StatCard from "../components/StatCard";
 import ApiErrorBanner from "../components/ApiErrorBanner";
+import Toast, { type ToastVariant } from "../components/Toast";
+import { consumeSetupCompleteToast } from "../lib/setupNavigation";
 import type { Song } from "../types";
 
 // Human: Short human-readable duration for aggregate stats (hours appear when large).
@@ -31,6 +34,7 @@ function formatNumber(n: number) {
 
 export default function Library() {
   const searchRef = useRef<HTMLInputElement>(null);
+  const setupCheckStarted = useRef(false);
 
   /* Data states */
   const [stats, setStats] = useState<{ total_songs: number; total_artists: number; total_albums: number; total_duration_seconds: number } | null>(null);
@@ -42,6 +46,9 @@ export default function Library() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
+
+  const dismissToast = useCallback(() => setToast(null), []);
 
   // Human: Vim-style focus — "/" jumps to search unless user is already typing in an input.
   // Agent: keydown listener; PREVENTDEFAULT when target not INPUT/TEXTAREA.
@@ -81,6 +88,36 @@ export default function Library() {
 
   useEffect(() => {
     loadDashboard();
+  }, []);
+
+  // Human: After first-run setup, confirm the API is healthy and show a welcome toast on the library dashboard.
+  // Agent: READS consumeSetupCompleteToast once on mount; CALLS fetchHealthReady; SETS success|error toast; SURVIVES SetupGuard redirect race.
+  useEffect(() => {
+    if (setupCheckStarted.current) return;
+    const pendingToast = consumeSetupCompleteToast();
+    if (!pendingToast) return;
+    setupCheckStarted.current = true;
+
+    fetchHealthReady()
+      .then((health) => {
+        if (health.ready) {
+          setToast({
+            variant: "success",
+            message: "Setup complete — Aurora is now running. Welcome!",
+          });
+        } else {
+          setToast({
+            variant: "error",
+            message: "Setup finished, but the service is not fully ready yet. Check database and search dependencies, then refresh.",
+          });
+        }
+      })
+      .catch(() => {
+        setToast({
+          variant: "error",
+          message: "Setup finished, but Aurora could not be reached. Check that the server is running and try again.",
+        });
+      });
   }, []);
 
   // Human: Debounce typing so we do not hit `/songs` on every keystroke while still feeling instant.
@@ -142,21 +179,30 @@ export default function Library() {
     </div>
   );
 
+  const toastOverlay = toast ? (
+    <Toast message={toast.message} variant={toast.variant} onDismiss={dismissToast} />
+  ) : null;
+
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="flex-1 flex items-center justify-center h-full">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-surface-400 text-sm">Loading dashboard...</p>
+      <>
+        {toastOverlay}
+        <DashboardLayout>
+          <div className="flex-1 flex items-center justify-center h-full">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-8 h-8 border-2 border-aurora-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-surface-400 text-sm">Loading dashboard...</p>
+            </div>
           </div>
-        </div>
-      </DashboardLayout>
+        </DashboardLayout>
+      </>
     );
   }
 
   return (
-    <DashboardLayout topbarExtra={searchBar}>
+    <>
+      {toastOverlay}
+      <DashboardLayout topbarExtra={searchBar}>
       {loadError && <ApiErrorBanner message={loadError} onRetry={loadDashboard} />}
       {/* Stats row */}
       {stats && !isSearching && (
@@ -312,5 +358,6 @@ export default function Library() {
         )}
       </div>
     </DashboardLayout>
+    </>
   );
 }

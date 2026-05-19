@@ -1,6 +1,6 @@
 // Human: Email/password gate — toggles between login and public registration based on server settings and local UI state.
 // Agent: READS registration+activation settings; SUBMIT login/register; SKIPS setAuth when pending_activation; NAVIGATE "/" on token.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -24,6 +24,7 @@ export default function Login() {
   const [activationRequired, setActivationRequired] = useState(false);
   const { setAuth } = useAuth();
   const navigate = useNavigate();
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Human: Hide the register tab when the instance disables open signup — failures default to permissive to avoid locking UI.
   // Agent: EFFECT mount; READS allow_public_registration + require_account_activation; CATCH keeps safe defaults.
@@ -90,10 +91,9 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 aurora-glow relative overflow-hidden">
-      <NetworkBackground />
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950/20 via-transparent to-surface-950/60 z-[1] pointer-events-none" />
-      <div className="w-full max-w-md relative z-10">
+    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 relative overflow-hidden">
+      <NetworkBackground variant="auth" focusTargetRef={contentRef} />
+      <div ref={contentRef} className="w-full max-w-md relative z-10">
         <div className="flex items-center justify-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center shadow-lg shadow-aurora-500/20">
             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

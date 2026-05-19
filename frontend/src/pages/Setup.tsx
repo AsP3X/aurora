@@ -1,8 +1,8 @@
 // Human: First-run wizard (admin user, instance options, database, media path) — completes with JWT via `setup` API.
 // Agent: MULTI-STEP state; VALIDATES per step; CALLS setup/testSetupDatabase; setAuth; REPLACE navigate "/".
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { setup, setupDatabaseInfo, testSetupDatabase } from "../api/client";
+import { setup, setupDatabaseInfo, setupStorageInfo, testSetupDatabase } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import NetworkBackground from "../components/NetworkBackground";
 import DatabaseConnectionDialog from "../components/setup/DatabaseConnectionDialog";
@@ -18,10 +18,12 @@ import {
   type PostgresConnectionFields,
 } from "../lib/databaseConnection";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
+type StorageMode = "proxy" | "local";
 
 export default function Setup() {
   const navigate = useNavigate();
+  const contentRef = useRef<HTMLDivElement>(null);
   const { setAuth } = useAuth();
 
   const [step, setStep] = useState<Step>(1);
@@ -32,6 +34,7 @@ export default function Setup() {
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
   const [requireAccountActivation, setRequireAccountActivation] = useState(false);
   const [musicDir, setMusicDir] = useState("/music");
+  const [storageMode, setStorageMode] = useState<StorageMode>("proxy");
   const [databaseDriver, setDatabaseDriver] = useState<DatabaseDriver>("postgres");
   const [databaseUrl, setDatabaseUrl] = useState(DEFAULT_POSTGRES_URL);
   const [postgresFields, setPostgresFields] = useState<PostgresConnectionFields>(DOCKER_POSTGRES_DEFAULTS);
@@ -43,25 +46,26 @@ export default function Setup() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Human: Pre-fill database fields from the running API when possible (Docker Postgres URL, local SQLite, etc.).
-  // Agent: CALLS setupDatabaseInfo once; MAPS driver + url into wizard state; IGNORES errors (wizard keeps compose defaults).
+  // Human: Pre-fill database and storage fields from the running API when possible (Docker defaults, local dev, etc.).
+  // Agent: CALLS setupDatabaseInfo + setupStorageInfo once; MAPS into wizard state; IGNORES errors (compose defaults remain).
   useEffect(() => {
     let cancelled = false;
-    setupDatabaseInfo()
-      .then((info) => {
+    Promise.all([setupDatabaseInfo(), setupStorageInfo()])
+      .then(([dbInfo, storageInfo]) => {
         if (cancelled) return;
-        const driver = info.driver === "sqlite" ? "sqlite" : "postgres";
+        const driver = dbInfo.driver === "sqlite" ? "sqlite" : "postgres";
         setDatabaseDriver(driver);
-        setDatabaseUrl(info.database_url);
+        setDatabaseUrl(dbInfo.database_url);
         if (driver === "postgres") {
-          const parsed = parsePostgresUrl(info.database_url);
+          const parsed = parsePostgresUrl(dbInfo.database_url);
           if (parsed) setPostgresFields(parsed);
         } else {
-          setSqlitePath(sqlitePathFromUrl(info.database_url));
+          setSqlitePath(sqlitePathFromUrl(dbInfo.database_url));
         }
+        setStorageMode(storageInfo.storage_mode === "local" ? "local" : "proxy");
       })
       .catch(() => {
-        /* keep Docker Postgres defaults */
+        /* keep Docker defaults */
       });
     return () => {
       cancelled = true;
@@ -131,6 +135,10 @@ export default function Setup() {
   }
 
   function validateStep3(): string | null {
+    return null;
+  }
+
+  function validateStep4(): string | null {
     if (!musicDir.trim()) return "Music library path is required";
     return null;
   }
@@ -147,6 +155,10 @@ export default function Setup() {
       const err = validateStep2();
       if (err) { setError(err); return; }
       setStep(3);
+    } else if (step === 3) {
+      const err = validateStep3();
+      if (err) { setError(err); return; }
+      setStep(4);
     }
   };
 
@@ -156,10 +168,10 @@ export default function Setup() {
   };
 
   // Human: Final step posts full payload — successful setup logs the admin in immediately.
-  // Agent: validateStep3; CALLS setup API; setAuth; navigate("/", replace).
+  // Agent: validateStep4; CALLS setup API; setAuth; navigate("/", replace).
   async function handleSubmit() {
     setError("");
-    const err = validateStep3();
+    const err = validateStep4();
     if (err) { setError(err); return; }
 
     setLoading(true);
@@ -172,11 +184,19 @@ export default function Setup() {
         require_account_activation: requireAccountActivation,
         music_dir: musicDir.trim(),
         database_url: databaseUrl.trim(),
+        storage_mode: storageMode,
       });
       if (res.restart_required) {
-        const url = res.configured_database_url ?? databaseUrl.trim();
+        const parts: string[] = [];
+        if (res.configured_database_url) {
+          parts.push(`DATABASE_URL=${res.configured_database_url}`);
+        }
+        if (res.configured_storage_mode) {
+          parts.push(`STORAGE_MODE=${res.configured_storage_mode}`);
+        }
+        const hint = parts.length > 0 ? parts.join(", ") : "updated environment variables";
         setError(
-          `Database configured. Set DATABASE_URL to the chosen connection string, restart Aurora, then sign in. Example: ${url}`,
+          `Configuration saved. Set ${hint}, restart Aurora, then sign in.`,
         );
         return;
       }
@@ -194,11 +214,10 @@ export default function Setup() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 aurora-glow relative overflow-hidden">
-      <NetworkBackground />
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950/20 via-transparent to-surface-950/60 z-[1] pointer-events-none" />
+    <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4 relative overflow-hidden">
+      <NetworkBackground variant="auth" focusTargetRef={contentRef} />
 
-      <div className="w-full max-w-md relative z-10">
+      <div ref={contentRef} className="w-full max-w-md relative z-10">
         {/* Brand */}
         <div className="flex items-center justify-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-aurora-500 to-aurora-700 flex items-center justify-center shadow-lg shadow-aurora-500/20">
@@ -213,7 +232,7 @@ export default function Setup() {
         <div className="bg-surface-900/50 backdrop-blur-sm border border-white/5 rounded-2xl p-8 shadow-2xl">
           {/* Step Indicator */}
           <div className="flex items-center justify-center gap-2 mb-8">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center gap-2">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
@@ -232,7 +251,7 @@ export default function Setup() {
                     s
                   )}
                 </div>
-                {s < 3 && (
+                {s < 4 && (
                   <div className={`w-10 h-0.5 rounded-full ${s < step ? "bg-aurora-600/40" : "bg-surface-800"}`} />
                 )}
               </div>
@@ -390,8 +409,65 @@ export default function Setup() {
             </div>
           )}
 
-          {/* ── STEP 3: Media Library ── */}
+          {/* ── STEP 3: Object Storage ── */}
           {step === 3 && (
+            <div className="animate-[fadeIn_0.2s_ease-out]">
+              <div className="text-center mb-6">
+                <h1 className="text-xl font-semibold mb-1">Object storage</h1>
+                <p className="text-sm text-surface-400">Choose where Aurora stores uploaded music and artwork.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-surface-300 mb-2">Storage backend</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {([
+                      {
+                        id: "proxy" as const,
+                        title: "Nebula OS object storage",
+                        description: "Recommended for Docker and production. Scales uploads and streaming via the Nebula OS service.",
+                      },
+                      {
+                        id: "local" as const,
+                        title: "Plain file storage",
+                        description: "Store files directly on the server filesystem. Simple setup for single-node or local development.",
+                      },
+                    ]).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setStorageMode(option.id)}
+                        className={`w-full text-left rounded-xl border p-4 transition-all ${
+                          storageMode === option.id
+                            ? "border-aurora-500/50 bg-aurora-500/15"
+                            : "border-white/10 bg-surface-950 hover:border-white/20"
+                        }`}
+                      >
+                        <p className={`text-sm font-medium ${storageMode === option.id ? "text-aurora-200" : "text-surface-200"}`}>
+                          {option.title}
+                        </p>
+                        <p className="text-xs text-surface-500 mt-1 leading-relaxed">{option.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-aurora-500/10 border border-aurora-500/15">
+                  <svg className="w-4 h-4 text-aurora-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-xs text-aurora-200 leading-relaxed">
+                    {storageMode === "proxy"
+                      ? "Nebula OS runs as a separate service in Docker Compose. Uploads and HLS segments are stored in its bucket."
+                      : "Files are written under your music library path on disk. No separate object storage service is required."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 4: Media Library ── */}
+          {step === 4 && (
             <div className="animate-[fadeIn_0.2s_ease-out]">
               <div className="text-center mb-6">
                 <h1 className="text-xl font-semibold mb-1">Media library</h1>
@@ -446,7 +522,7 @@ export default function Setup() {
             </button>
             <button
               type="button"
-              onClick={step === 3 ? handleSubmit : next}
+              onClick={step === 4 ? handleSubmit : next}
               disabled={loading}
               className="h-10 px-6 bg-gradient-to-r from-aurora-600 to-aurora-700 hover:from-aurora-500 hover:to-aurora-600 text-white font-medium rounded-xl shadow-lg shadow-aurora-500/20 hover:shadow-aurora-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -455,7 +531,7 @@ export default function Setup() {
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Setting up...
                 </span>
-              ) : step === 3 ? (
+              ) : step === 4 ? (
                 "Complete Setup"
               ) : (
                 "Continue"

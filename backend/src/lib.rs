@@ -67,6 +67,8 @@ pub struct AppState {
     pub search_sync: Arc<search::sync_queue::SearchSyncService>,
     /// Active `DATABASE_URL` the process connected with at startup (used to compare setup wizard input).
     pub database_url: String,
+    /// Active `STORAGE_MODE` at startup (`proxy` = Nebula OS, anything else = local filesystem).
+    pub storage_mode: String,
     /// Short TTL cache for `users.enabled` checks inside auth middleware.
     pub user_enabled_cache: auth::UserEnabledCache,
     /// Comma-separated browser origins allowed for CORS; empty means permissive (dev).
@@ -195,6 +197,7 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         search_indexer,
         search_sync,
         database_url: config.database_url.clone(),
+        storage_mode: config.storage_mode.clone(),
         user_enabled_cache: auth::UserEnabledCache::default(),
         cors_allowed_origins: config.cors_allowed_origins.clone(),
     }))
@@ -244,6 +247,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/v1/setup/database/test",
             post(setup::handlers::test_setup_database),
         )
+        .route("/api/v1/setup/storage", get(setup::handlers::setup_storage_info))
         .route("/api/v1/setup", post(setup::handlers::setup))
         .route("/api/v1/auth/register", post(auth::handlers::register))
         .route("/api/v1/auth/login", post(auth::handlers::login))

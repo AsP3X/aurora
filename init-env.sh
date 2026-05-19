@@ -31,9 +31,18 @@ init_env_file() {
     tmp_file="${env_file}.tmp"
     cp "$env_file" "$tmp_file"
 
-    while grep -q 'GENERATE_ME' "$tmp_file"; do
+    # Human: Replace one assignment placeholder per pass; skip comment lines that mention GENERATE_ME.
+    # Agent: LOOPS while grep '=GENERATE_ME'; CALLS generate_secret; awk first non-# match then mv tmp.
+    while grep -qE '=GENERATE_ME' "$tmp_file"; do
         secret="$(generate_secret)"
-        perl -i -pe "BEGIN { \$replaced = 0 } if (!\$replaced && /GENERATE_ME/) { s/GENERATE_ME/$secret/; \$replaced = 1; }" "$tmp_file"
+        awk -v rep="$secret" '
+          !done && $0 !~ /^[[:space:]]*#/ && /GENERATE_ME/ {
+            sub(/GENERATE_ME/, rep)
+            done = 1
+          }
+          { print }
+        ' "$tmp_file" > "${tmp_file}.new"
+        mv "${tmp_file}.new" "$tmp_file"
     done
 
     mv "$tmp_file" "$env_file"
