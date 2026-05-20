@@ -2,6 +2,7 @@
   "name": "aurora",
   "version": "0.1.0",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.26.1",
   "scripts": {
     "preinstall": "npx only-allow pnpm",

@@ -1,0 +1,91 @@
+Source View and Audit License (SVA-1.0)
+
+Copyright (c) 2026 AsP3X. All rights reserved.
+
+This license applies to the software and associated source code in this
+repository (the "Software").
+
+1. Definitions
+
+   "Official Issue" means a bug report, security report, or other issue
+   opened in the GitHub issue tracker of the canonical repository for this
+   Software, at the URL published by the copyright holder for this project.
+
+   "You" means any individual or legal entity accessing the Software.
+
+2. Permitted uses
+
+   Subject to the restrictions in Section 3, the copyright holder grants You
+   a limited, non-exclusive, non-transferable, revocable license to:
+
+   (a) View and read the source code of the Software for personal
+       reference and understanding;
+
+   (b) Inspect, analyze, and audit the source code solely for the purpose of
+       investigating, reproducing, or verifying a matter described in an
+       Official Issue that You created or to which You are a participant
+       with a clear connection to that issue (for example, as the reporter,
+       assignee, or maintainer responding to the reporter).
+
+3. Restrictions
+
+   Except as expressly permitted in Section 2, You may not, and may not
+   permit others to:
+
+   (a) Use, copy, reproduce, publish, distribute, sublicense, sell, lease,
+       lend, or otherwise make the Software, or any portion of it, available
+       to any third party;
+
+   (b) Modify, adapt, translate, or create derivative works based on the
+       Software;
+
+   (c) Use the Software, or any portion of it, as a template, starter,
+       boilerplate, or basis for another product, service, repository, or
+       project;
+
+   (d) Remove, alter, or obscure any copyright, license, or proprietary
+       notices;
+
+   (e) Use the Software for any purpose other than viewing and audit as
+       described in Section 2, including running it in production,
+       incorporating it into other software, or offering it as a hosted
+       service, without prior written permission from the copyright holder.
+
+4. No implied rights
+
+   No patent, trademark, or other rights are granted except as explicitly
+   stated in this license. All rights not expressly granted are reserved by
+   the copyright holder.
+
+5. Contributions
+
+   If You submit a patch, pull request, or other contribution to this
+   repository, You grant the copyright holder a perpetual, worldwide,
+   royalty-free license to use, reproduce, modify, and distribute that
+   contribution as part of the Software, unless a separate written
+   agreement states otherwise.
+
+6. Termination
+
+   This license terminates automatically if You breach Section 3. Upon
+   termination, You must cease all use of the Software and destroy any
+   copies in Your possession or control, except copies retained solely as
+   needed to comply with applicable law.
+
+7. Disclaimer
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+   OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+   ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+   OTHER DEALINGS IN THE SOFTWARE.
+
+8. Governing law
+
+   This license is governed by the laws applicable in the jurisdiction of
+   the copyright holder, without regard to conflict-of-law rules.
+
+For permissions beyond this license, contact the copyright holder through
+the canonical GitHub repository for this project.

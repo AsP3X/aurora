@@ -123,3 +123,11 @@ Object storage in Docker is **[Nebular OS](https://github.com/AsP3X/nebular-os)*
 | `HLS_SEGMENT_RPM` | `480` | Per-user-per-song rolling cap (60s window) for `GET .../segments/{name}` |
 
 See `backend/src/config.rs` for full configuration options.
+
+## License
+
+Copyright (c) 2026 AsP3X. All rights reserved.
+
+This repository is licensed under the **Source View and Audit License (SVA-1.0)**. See [LICENSE](LICENSE) for the full text.
+
+You may view and read the source for personal reference, and inspect or audit it only in connection with an official issue on this project’s GitHub tracker. Other use (including modification, redistribution, production deployment, or use as a template) requires prior written permission from the copyright holder.
