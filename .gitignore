@@ -51,4 +51,5 @@ temp/
 *.tmp
 .claude/
 .worktrees/
-nebula-os/data/blobs/media/
+# Local Nebular OS dev data (when running nebular-os outside Docker)
+nebular-os/data/

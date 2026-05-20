@@ -60,7 +60,7 @@
 1. **`backend/src/secrets.rs`** — `validate_startup_secrets()` rejects known weak values (including `dev-jwt-secret-change-me`, compose placeholders `GENERATE_ME`) and secrets shorter than 32 characters.
 2. **Startup** — Called from `run()` and `create_app_state()` so every boot path is gated.
 3. **`docker-compose.yml`** — `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, `NOS_JWT_SECRET`, `NOS_SIGNING_SECRET` use `${VAR:?…}` (fail if `.env` missing).
-4. **`nebula-os`** — `secrets.rs` validates `NOS_JWT_SECRET` / `NOS_SIGNING_SECRET` at startup.
+4. **[Nebular OS](https://github.com/AsP3X/nebular-os)** (object-storage service) — `secrets.rs` validates `NOS_JWT_SECRET` / `NOS_SIGNING_SECRET` at startup.
 5. **Docs** — README Docker section documents `docker compose --profile init run --rm init-env` before `up`.
 
 ### Verification

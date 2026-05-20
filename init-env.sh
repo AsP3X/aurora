@@ -97,5 +97,4 @@ upgrade_meili_master_key ".env"
 init_env_file "backend/.env" "backend/.env.example"
 upgrade_meili_master_key "backend/.env"
 
-# Initialize nebula-os .env
-init_env_file "nebula-os/.env" "nebula-os/.env.example"
+# Nebular OS secrets live in root .env (NOS_*); see https://github.com/AsP3X/nebular-os

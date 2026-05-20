@@ -1,0 +1,4 @@
+# Pinned Nebular OS revision for object-storage Docker builds.
+# Keep in sync with docker-compose.yml object-storage.build.args.NEBULAR_OS_REF
+# Repository: https://github.com/AsP3X/nebular-os
+1a16b801cc1469c4fba0d9223c07b4b1e1c36e2e

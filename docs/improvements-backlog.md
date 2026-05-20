@@ -67,8 +67,8 @@ Track and execute improvements one at a time. When you want work started, say wh
 - [x] Done
 - **Priority:** High
 - **Summary:** Avoid predictable `NOS_*` defaults in production; fail fast or require `${VAR:?}` on production compose profile; align with backend weak-secret checks.
-- **References:** `docker-compose.yml`, `nebula-os/`, `backend/src/lib.rs`
-- **Done notes:** 2026-05-17 — Completed with IMP-001/ Vuln 2: compose required secrets, `nebula-os/src/secrets.rs`, shared weak list in `backend/src/secrets.rs`.
+- **References:** `docker-compose.yml`, [nebular-os](https://github.com/AsP3X/nebular-os), `backend/src/lib.rs`
+- **Done notes:** 2026-05-17 — Completed with IMP-001/ Vuln 2: compose required secrets, Nebular OS `secrets.rs`, shared weak list in `backend/src/secrets.rs`.
 
 ### IMP-004 — Expand log redaction beyond email
 
@@ -130,8 +130,8 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 - [ ] **Status**
 - **Priority:** Low
-- **Summary:** Implement public read mode or remove the flag and TODO from `nebula-os`.
-- **References:** `nebula-os/src/server.rs`
+- **Summary:** Implement public read mode or remove the flag and TODO from Nebular OS upstream.
+- **References:** [nebular-os](https://github.com/AsP3X/nebular-os) `src/server.rs`
 - **Done notes:**
 
 ---

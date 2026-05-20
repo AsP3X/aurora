@@ -1,4 +1,4 @@
-// Human: HTTP client for Aurora's Nebula object storage gateway—authenticated with service JWTs and HMAC query signing for browser fetches.
+// Human: HTTP client for Nebular OS (https://github.com/AsP3X/nebular-os)—service JWTs plus HMAC presigned URLs for browser fetches.
 // Agent: USES reqwest with Bearer service token; IMPLEMENTS Storage; generate_signature BUILDS presigned GET URLs; READS base/public URLs + bucket.
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
@@ -119,7 +119,7 @@ impl Storage for NebulaStorage {
         let status = response.status();
         if !status.is_success() {
             tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage GET failed");
-            anyhow::bail!("Nebula OS GET failed: {} {}", status.as_u16(), url);
+            anyhow::bail!("Nebular OS GET failed: {} {}", status.as_u16(), url);
         }
 
         let content_length = response
@@ -173,7 +173,7 @@ impl Storage for NebulaStorage {
         if !status.is_success() && status.as_u16() != 404 {
             tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage DELETE failed");
             anyhow::bail!(
-                "Nebula OS DELETE failed: {} {}",
+                "Nebular OS DELETE failed: {} {}",
                 status.as_u16(),
                 url
             );
@@ -202,7 +202,7 @@ impl Storage for NebulaStorage {
         if !status.is_success() {
             tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage PUT failed");
             anyhow::bail!(
-                "Nebula OS PUT failed: {} {}",
+                "Nebular OS PUT failed: {} {}",
                 status.as_u16(),
                 url
             );

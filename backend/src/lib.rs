@@ -87,7 +87,7 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
 
     let storage: Arc<dyn Storage> = match config.storage_mode.as_str() {
         "proxy" => {
-            info!("Using Nebula OS object storage at {}", config.object_storage_url);
+            info!("Using Nebular OS object storage at {}", config.object_storage_url);
             let nebula = NebulaStorage::new(
                 config.object_storage_url.clone(),
                 config.object_storage_public_url.clone(),
@@ -99,17 +99,17 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
             let health_url = format!("{}/health", config.object_storage_url.trim_end_matches('/'));
             match reqwest::get(&health_url).await {
                 Ok(resp) if resp.status().is_success() => {
-                    info!("Nebula OS health check passed");
+                    info!("Nebular OS health check passed");
                 }
                 Ok(resp) => {
                     anyhow::bail!(
-                        "Nebula OS health check failed with status {} at {}",
+                        "Nebular OS health check failed with status {} at {}",
                         resp.status(),
                         health_url
                     );
                 }
                 Err(e) => {
-                    anyhow::bail!("Nebula OS health check failed: {} at {}", e, health_url);
+                    anyhow::bail!("Nebular OS health check failed: {} at {}", e, health_url);
                 }
             }
 

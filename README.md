@@ -94,9 +94,14 @@ Unauthenticated `GET /api/v1/version` returns the crate version, optional `git_s
 ├── frontend/         # React + Vite + Tailwind
 │   ├── src/
 │   └── package.json
+├── docker/
+│   └── nebular-os/     # Dockerfile clones github.com/AsP3X/nebular-os at build time
 ├── docker-compose.yml
+├── nebular-os.ref      # Pinned commit (sync with compose NEBULAR_OS_REF)
 └── docs/
 ```
+
+Object storage in Docker is **[Nebular OS](https://github.com/AsP3X/nebular-os)** (standalone crate; Aurora no longer vendors `nebula-os/`). The `object-storage` service builds `docker/nebular-os/Dockerfile`, which clones the repo at the commit in `nebular-os.ref`. The backend talks to it over HTTP when `STORAGE_MODE=proxy` (PUT/GET/HEAD/DELETE and presigned URLs).
 
 ## Key Environment Variables
 
