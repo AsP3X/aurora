@@ -136,7 +136,7 @@ pub async fn update_playlist(
     let description = body.description.unwrap_or(playlist.description.unwrap_or_default());
     let is_public = body
         .is_public
-        .map(|v| if v { 1 } else { 0 })
+        .map(crate::any_bool::AnyBool)
         .unwrap_or(playlist.is_public);
 
     let updated = sqlx::query_as::<_, Playlist>(

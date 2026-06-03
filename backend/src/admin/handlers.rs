@@ -122,8 +122,7 @@ pub struct AdminPlaylist {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
-    #[serde(with = "crate::playlists::model::serde_is_public")]
-    pub is_public: i64,
+    pub is_public: crate::any_bool::AnyBool,
     pub created_at: String,
     pub owner_email: String,
     pub song_count: i64,

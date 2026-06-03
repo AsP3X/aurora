@@ -15,6 +15,7 @@ use tower_http::{
 use tracing::{info, Level};
 
 pub mod admin;
+pub mod any_bool;
 pub mod artwork;
 pub mod app_settings;
 pub mod auth;
