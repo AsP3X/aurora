@@ -26,7 +26,7 @@ pub async fn search(
     claims: axum::Extension<crate::auth::Claims>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_permission(&state.pool, &claims.sub, "library.view").await?;
+    require_permission(&state.pool().await, &claims.sub, "library.view").await?;
 
     let q = params.q.trim();
     if q.is_empty() {
@@ -65,7 +65,7 @@ pub async fn admin_search_sync_status(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     let status = state.search_sync.admin_status().await?;
     Ok(Json(status))
 }
@@ -76,7 +76,7 @@ pub async fn admin_search_retry_sync(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     let status = state.search_sync.admin_retry_now().await?;
     Ok(Json(status))
 }

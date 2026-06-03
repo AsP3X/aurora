@@ -78,7 +78,7 @@ async fn register_returns_forbidden_when_public_registration_disabled() {
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'false')",
     )
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert setting");
 
@@ -115,7 +115,7 @@ async fn update_user_role_forbidden_for_listener_with_users_manage() {
     .bind(moderator_id)
     .bind("mod@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert moderator");
 
@@ -125,7 +125,7 @@ async fn update_user_role_forbidden_for_listener_with_users_manage() {
     .bind(target_id)
     .bind("target@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert target");
 
@@ -134,7 +134,7 @@ async fn update_user_role_forbidden_for_listener_with_users_manage() {
     )
     .bind("33333333-3333-3333-3333-333333333333")
     .bind(moderator_id)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("grant users.manage");
 
@@ -160,7 +160,7 @@ async fn update_user_role_forbidden_for_listener_with_users_manage() {
     let role: Option<(String,)> =
         sqlx::query_as("SELECT role FROM users WHERE id = $1")
             .bind(target_id)
-            .fetch_optional(&state.pool)
+            .fetch_optional(&state.pool().await)
             .await
             .expect("role query");
     assert_eq!(role.map(|(r,)| r), Some("listener".to_string()));
@@ -181,7 +181,7 @@ async fn update_user_role_rejects_self_targeting() {
     .bind(admin_id)
     .bind("admin@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert admin");
 
@@ -275,7 +275,7 @@ async fn register_succeeds_when_public_registration_enabled() {
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true')",
     )
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert setting");
 
@@ -305,7 +305,7 @@ async fn register_creates_disabled_user_without_token_when_activation_required()
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true'), ('require_account_activation', 'true')",
     )
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert settings");
 
@@ -337,7 +337,7 @@ async fn register_creates_disabled_user_without_token_when_activation_required()
         "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE email = $1",
     )
     .bind("pending@example.com")
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await
     .expect("enabled query");
     assert_eq!(enabled.map(|(e,)| e), Some(0));
@@ -358,7 +358,7 @@ async fn login_blocked_until_account_enabled() {
     .bind(user_id)
     .bind("inactive@example.com")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert user");
 
@@ -382,7 +382,7 @@ async fn login_blocked_until_account_enabled() {
 
     sqlx::query("UPDATE users SET enabled = true WHERE id = $1")
         .bind(user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await
         .expect("enable user");
 

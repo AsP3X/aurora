@@ -31,7 +31,7 @@ pub async fn list_playlists(
         "SELECT * FROM playlists WHERE user_id = $1 ORDER BY created_at DESC"
     )
     .bind(&claims.sub)
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await?;
 
     Ok(Json(playlists))
@@ -53,7 +53,7 @@ pub async fn create_playlist(
     .bind(&claims.sub)
     .bind(body.name)
     .bind(body.description)
-    .fetch_one(&state.pool)
+    .fetch_one(&state.pool().await)
     .await?;
 
     Ok(Json(playlist))
@@ -69,13 +69,13 @@ pub async fn get_playlist(
     let id_str = id.to_string();
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
 
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_view_all = check_permission(&state.pool, &claims.sub, "playlists.view_all").await;
+    let can_view_all = check_permission(&state.pool().await, &claims.sub, "playlists.view_all").await;
     if !playlist.is_public_bool() && !is_owner && !can_view_all {
         return Err(AppError::Forbidden(
             "you do not have access to this playlist".into(),
@@ -89,11 +89,11 @@ pub async fn get_playlist(
          ORDER BY ps.position"
     )
     .bind(&id_str)
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await?;
 
     let mut songs: Vec<crate::songs::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
-    crate::songs::model::populate_genres(&state.pool, &mut songs).await?;
+    crate::songs::model::populate_genres(&state.pool().await, &mut songs).await?;
 
     Ok(Json(serde_json::json!({
         "playlist": playlist,
@@ -120,12 +120,12 @@ pub async fn update_playlist(
 
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_update = check_permission(&state.pool, &claims.sub, "playlists.update").await;
+    let can_update = check_permission(&state.pool().await, &claims.sub, "playlists.update").await;
     if !is_owner && !can_update {
         return Err(AppError::Forbidden(
             "you do not have permission to modify this playlist".into(),
@@ -146,7 +146,7 @@ pub async fn update_playlist(
     .bind(description)
     .bind(is_public)
     .bind(&id_str)
-    .fetch_one(&state.pool)
+    .fetch_one(&state.pool().await)
     .await?;
 
     Ok(Json(updated))
@@ -163,12 +163,12 @@ pub async fn delete_playlist(
 
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_delete = check_permission(&state.pool, &claims.sub, "playlists.delete").await;
+    let can_delete = check_permission(&state.pool().await, &claims.sub, "playlists.delete").await;
     if !is_owner && !can_delete {
         return Err(AppError::Forbidden(
             "you do not have permission to delete this playlist".into(),
@@ -177,7 +177,7 @@ pub async fn delete_playlist(
 
     sqlx::query("DELETE FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     Ok(Json(serde_json::json!({"ok": true})))
@@ -200,12 +200,12 @@ pub async fn add_song(
 
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_update = check_permission(&state.pool, &claims.sub, "playlists.update").await;
+    let can_update = check_permission(&state.pool().await, &claims.sub, "playlists.update").await;
     if !is_owner && !can_update {
         return Err(AppError::Forbidden(
             "you do not have permission to modify this playlist".into(),
@@ -216,7 +216,7 @@ pub async fn add_song(
         "SELECT MAX(position) FROM playlist_songs WHERE playlist_id = $1"
     )
     .bind(&id_str)
-    .fetch_one(&state.pool)
+    .fetch_one(&state.pool().await)
     .await?;
 
     let position = max_pos.unwrap_or(0) + 1;
@@ -231,7 +231,7 @@ pub async fn add_song(
     .bind(&id_str)
     .bind(&body.song_id)
     .bind(position)
-    .fetch_one(&state.pool)
+    .fetch_one(&state.pool().await)
     .await?;
 
     Ok(Json(serde_json::json!({"ok": true, "entry": entry})))
@@ -248,12 +248,12 @@ pub async fn remove_song(
 
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_delete = check_permission(&state.pool, &claims.sub, "playlists.delete").await;
+    let can_delete = check_permission(&state.pool().await, &claims.sub, "playlists.delete").await;
     if !is_owner && !can_delete {
         return Err(AppError::Forbidden(
             "you do not have permission to modify this playlist".into(),
@@ -263,7 +263,7 @@ pub async fn remove_song(
     sqlx::query("DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2")
         .bind(&id_str)
         .bind(song_id.to_string())
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     Ok(Json(serde_json::json!({"ok": true})))
@@ -286,12 +286,12 @@ pub async fn reorder_songs(
 
     let playlist = sqlx::query_as::<_, Playlist>("SELECT * FROM playlists WHERE id = $1")
         .bind(&id_str)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let playlist = playlist.ok_or(AppError::NotFound)?;
 
     let is_owner = playlist.user_id == claims.sub;
-    let can_update = check_permission(&state.pool, &claims.sub, "playlists.update").await;
+    let can_update = check_permission(&state.pool().await, &claims.sub, "playlists.update").await;
     if !is_owner && !can_update {
         return Err(AppError::Forbidden(
             "you do not have permission to modify this playlist".into(),
@@ -307,7 +307,7 @@ pub async fn reorder_songs(
         "SELECT song_id FROM playlist_songs WHERE playlist_id = $1"
     )
     .bind(&id_str)
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await?;
 
     let existing_set: std::collections::HashSet<String> = existing.into_iter().collect();
@@ -319,7 +319,7 @@ pub async fn reorder_songs(
 
     // Human: UNIQUE (playlist_id, position) means we cannot assign final slots in one pass—use high temp slots first.
     // Agent: TX phase1 offset positions 10_000+; TX phase2 contiguous 1..n; COMMIT rolls back all on failure.
-    let mut tx = state.pool.begin().await?;
+    let mut tx = state.pool().await.begin().await?;
     for (idx, song_id) in body.song_ids.iter().enumerate() {
         let temp_position = 10_000 + (idx as i32);
         sqlx::query(

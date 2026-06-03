@@ -57,7 +57,7 @@ async fn validate_rejects_when_target_is_sqlite() {
     .bind(admin_id)
     .bind("admin@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("admin");
 

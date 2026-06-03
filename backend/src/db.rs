@@ -3,7 +3,58 @@
 use sqlx::any::AnyPoolOptions;
 use sqlx::migrate::{MigrateDatabase, Migrator};
 use sqlx::AnyPool;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Human: Default SQLite library path for Docker upgrades (`./data` volume) vs local dev.
+pub const DEFAULT_SQLITE_SOURCE_DOCKER: &str = "sqlite:/data/aurora.db";
+pub const DEFAULT_SQLITE_SOURCE_LOCAL: &str = "sqlite:aurora.db";
+
+/// Human: Pick the most likely legacy SQLite file path for the admin migration form.
+pub fn default_sqlite_source_url() -> &'static str {
+    if Path::new("/data/aurora.db").exists() {
+        DEFAULT_SQLITE_SOURCE_DOCKER
+    } else {
+        DEFAULT_SQLITE_SOURCE_LOCAL
+    }
+}
+
+/// Human: Hot-swappable live connection — allows post-migration switch from SQLite to Postgres without restart.
+#[derive(Clone)]
+pub struct DbHandle {
+    inner: Arc<Mutex<DbInner>>,
+}
+
+struct DbInner {
+    pool: AnyPool,
+    database_url: String,
+}
+
+impl DbHandle {
+    pub fn new(pool: AnyPool, database_url: String) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(DbInner { pool, database_url })),
+        }
+    }
+
+    pub async fn pool(&self) -> AnyPool {
+        self.inner.lock().await.pool.clone()
+    }
+
+    pub async fn database_url(&self) -> String {
+        self.inner.lock().await.database_url.clone()
+    }
+
+    pub async fn switch_to(&self, database_url: &str) -> anyhow::Result<()> {
+        let url = normalize_database_url(database_url);
+        let pool = init_pool(&url).await?;
+        let mut guard = self.inner.lock().await;
+        guard.pool = pool;
+        guard.database_url = url;
+        Ok(())
+    }
+}
 
 // Human: Normalize wizard URLs (`sqlite://file.db`) into the `sqlite:…` form SQLx expects.
 // Agent: STRIPS sqlite:// prefix; PRESERVES postgres URLs unchanged; TRIMS whitespace.

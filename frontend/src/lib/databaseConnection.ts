@@ -24,6 +24,9 @@ export const DOCKER_POSTGRES_DEFAULTS: PostgresConnectionFields = {
 
 export const DEFAULT_SQLITE_PATH = "aurora.db";
 
+/** Default legacy library path for Admin → SQLite → PostgreSQL migration (Docker `/data` volume). */
+export const DEFAULT_SQLITE_MIGRATION_SOURCE = "sqlite:/data/aurora.db";
+
 // Human: Compose a postgres:// URL from discrete host/user fields shown in the connection dialog.
 // Agent: encodeURIComponent on user/password; RETURNS postgres://user:pass@host:port/db.
 export function buildPostgresUrl(fields: PostgresConnectionFields): string {

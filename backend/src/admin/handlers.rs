@@ -50,7 +50,7 @@ pub async fn list_admin_songs(
     claims: axum::Extension<crate::auth::Claims>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<Vec<crate::songs::model::Song>>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let order_clause = sanitize_order_by(params.order_by);
     let sql = format!(
@@ -65,12 +65,12 @@ pub async fn list_admin_songs(
         .bind(params.q.map(|q| format!("%{}%", q)))
         .bind(params.limit)
         .bind(params.offset)
-        .fetch_all(&state.pool)
+        .fetch_all(&state.pool().await)
         .await?;
 
     let mut songs: Vec<crate::songs::model::Song> = songs_db.into_iter().map(|db| db.into()).collect();
-    crate::songs::model::populate_genres(&state.pool, &mut songs).await?;
-    crate::songs::model::populate_lyrics_status(&state.pool, &mut songs).await?;
+    crate::songs::model::populate_genres(&state.pool().await, &mut songs).await?;
+    crate::songs::model::populate_lyrics_status(&state.pool().await, &mut songs).await?;
 
     Ok(Json(songs))
 }
@@ -84,13 +84,13 @@ pub async fn delete_song(
     claims: axum::Extension<crate::auth::Claims>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let row = sqlx::query_as::<_, (String, Option<String>)>(
         "SELECT file_key, artwork_key FROM songs WHERE id = $1"
     )
     .bind(&id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let (file_key, artwork_key) = row.ok_or(AppError::NotFound)?;
@@ -100,7 +100,7 @@ pub async fn delete_song(
 
     sqlx::query("DELETE FROM songs WHERE id = $1")
         .bind(&id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     // Human: Index delete can lag; spawn so the admin DELETE response is not blocked on Meilisearch RTT.
@@ -134,7 +134,7 @@ pub async fn list_all_playlists(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<AdminPlaylist>>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let playlists = sqlx::query_as::<_, AdminPlaylist>(
         "SELECT p.id, p.user_id, p.name, p.description, p.is_public, p.created_at,
@@ -146,7 +146,7 @@ pub async fn list_all_playlists(
          GROUP BY p.id, u.email
          ORDER BY p.created_at DESC"
     )
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await?;
 
     Ok(Json(playlists))
@@ -157,11 +157,11 @@ pub async fn delete_playlist(
     claims: axum::Extension<crate::auth::Claims>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let result = sqlx::query("DELETE FROM playlists WHERE id = $1")
         .bind(&id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     if result.rows_affected() == 0 {
@@ -184,22 +184,22 @@ pub async fn get_admin_stats(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<AdminStats>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let total_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
 
     let total_songs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM songs")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
 
     let total_playlists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM playlists")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
 
     let total_storage_bytes: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(file_size_bytes), 0)::BIGINT FROM songs")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
 
     let object_storage = state.storage.object_storage_metrics().await;
@@ -226,12 +226,12 @@ pub async fn list_settings(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<AppSetting>>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let settings = sqlx::query_as::<_, AppSetting>(
         "SELECT key, value, updated_at FROM app_settings ORDER BY key"
     )
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await?;
 
     // Human: Migration progress keys are internal — the dedicated artwork migration card polls them instead.
@@ -277,19 +277,19 @@ pub async fn update_setting(
     AxumPath(key): AxumPath<String>,
     Json(body): Json<UpdateSetting>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let updated = sqlx::query("UPDATE app_settings SET value = $1 WHERE key = $2")
         .bind(&body.value)
         .bind(&key)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     if updated.rows_affected() == 0 {
         sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
             .bind(&key)
             .bind(&body.value)
-            .execute(&state.pool)
+            .execute(&state.pool().await)
             .await?;
     }
 
@@ -302,7 +302,7 @@ pub async fn get_public_registration_setting(
     let value: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let enabled = value
@@ -319,7 +319,7 @@ pub async fn get_public_activation_setting(
     let value: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'require_account_activation'",
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let required = value
@@ -343,7 +343,7 @@ pub async fn update_user_role(
     AxumPath(user_id): AxumPath<String>,
     Json(body): Json<UpdateRole>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     if claims.role != "admin" {
         return Err(AppError::Forbidden("only admins can change roles".into()));
@@ -359,7 +359,7 @@ pub async fn update_user_role(
 
     let current_role: Option<(String,)> = sqlx::query_as("SELECT role FROM users WHERE id = $1")
         .bind(&user_id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
 
     let (current_role,) = current_role.ok_or(AppError::NotFound)?;
@@ -367,7 +367,7 @@ pub async fn update_user_role(
     sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
         .bind(&body.role)
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     if body.role == "admin" && current_role != "admin" {
@@ -377,14 +377,14 @@ pub async fn update_user_role(
         )
         .bind(&membership_id)
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await;
     } else if body.role != "admin" && current_role == "admin" {
         let _ = sqlx::query(
             "DELETE FROM group_memberships WHERE user_id = $1 AND group_id = '00000000-0000-0000-0000-000000000002'"
         )
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await;
     }
 
@@ -396,7 +396,7 @@ pub async fn delete_user(
     claims: axum::Extension<crate::auth::Claims>,
     AxumPath(user_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     if claims.sub == user_id {
         return Err(AppError::BadRequest("cannot delete yourself".into()));
@@ -404,12 +404,12 @@ pub async fn delete_user(
 
     sqlx::query("UPDATE songs SET publisher_id = NULL WHERE publisher_id = $1")
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     let result = sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     if result.rows_affected() == 0 {
@@ -440,7 +440,7 @@ pub async fn update_song(
     AxumPath(id): AxumPath<String>,
     req: axum::extract::Request,
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let content_type = req.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
 
@@ -484,7 +484,7 @@ pub async fn update_song(
 
     let current_artwork_key: Option<Option<String>> = sqlx::query_scalar("SELECT artwork_key FROM songs WHERE id = $1")
         .bind(&id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await?;
     let current_artwork_key = current_artwork_key.ok_or(AppError::NotFound)?;
 
@@ -502,7 +502,7 @@ pub async fn update_song(
         current_artwork_key.clone()
     };
 
-    let mut tx = state.pool.begin().await?;
+    let mut tx = state.pool().await.begin().await?;
 
     enum SongUpdateBind {
         Text(String),
@@ -613,7 +613,7 @@ pub async fn update_song(
     }
 
     let mut song: crate::songs::model::Song = song_db.into();
-    crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
+    crate::songs::model::populate_genres_for_one(&state.pool().await, &mut song).await?;
 
     // Human: Re-index after metadata edit so search matches the committed library row.
     // Agent: tokio::spawn notify_song_upsert; QUEUES on Meili failure via search_index_queue.
@@ -637,18 +637,18 @@ pub async fn toggle_song_enabled(
     AxumPath(id): AxumPath<String>,
     Json(body): Json<ToggleEnabledBody>,
 ) -> Result<Json<crate::songs::model::Song>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let song_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
         "UPDATE songs SET enabled = $1 WHERE id = $2 RETURNING *"
     )
     .bind(body.enabled)
     .bind(&id)
-    .fetch_one(&state.pool)
+    .fetch_one(&state.pool().await)
     .await?;
 
     let mut song: crate::songs::model::Song = song_db.into();
-    crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await?;
+    crate::songs::model::populate_genres_for_one(&state.pool().await, &mut song).await?;
 
     // Human: Enabled flag is indexed for filtering — refresh Meili without blocking the toggle response.
     // Agent: tokio::spawn notify_song_upsert after UPDATE songs.enabled RETURNING.

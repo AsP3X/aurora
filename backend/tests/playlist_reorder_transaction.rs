@@ -63,7 +63,7 @@ async fn reorder_songs_updates_all_positions() {
     .bind(&user_id)
     .bind("reorder@test.local")
     .bind("hash")
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("user");
 
@@ -71,7 +71,7 @@ async fn reorder_songs_updates_all_positions() {
     sqlx::query("INSERT INTO playlists (id, user_id, name) VALUES ($1, $2, 'Test')")
         .bind(&playlist_id)
         .bind(&user_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await
         .expect("playlist");
 
@@ -85,7 +85,7 @@ async fn reorder_songs_updates_all_positions() {
         .bind(&sid)
         .bind(title)
         .bind(format!("uploads/{sid}.mp3"))
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await
         .expect("song");
     }
@@ -98,7 +98,7 @@ async fn reorder_songs_updates_all_positions() {
     .bind(&ps_a)
     .bind(&playlist_id)
     .bind(&song_a)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("playlist song a");
     sqlx::query(
@@ -107,7 +107,7 @@ async fn reorder_songs_updates_all_positions() {
     .bind(&ps_b)
     .bind(&playlist_id)
     .bind(&song_b)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("playlist song b");
 
@@ -121,7 +121,7 @@ async fn reorder_songs_updates_all_positions() {
 
     let playlist_row: (String,) = sqlx::query_as("SELECT user_id FROM playlists WHERE id = $1")
         .bind(&playlist_id)
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await
         .expect("playlist row");
     assert_eq!(playlist_row.0, user_id, "owner id must match JWT sub");
@@ -130,7 +130,7 @@ async fn reorder_songs_updates_all_positions() {
         "SELECT song_id FROM playlist_songs WHERE playlist_id = $1",
     )
     .bind(&playlist_id)
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await
     .expect("existing songs");
     assert!(existing.contains(&song_a));
@@ -138,7 +138,7 @@ async fn reorder_songs_updates_all_positions() {
 
     let _: Playlist = sqlx::query_as("SELECT * FROM playlists WHERE id = $1")
         .bind(&playlist_id)
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await
         .expect("playlist deserialize");
 
@@ -159,7 +159,7 @@ async fn reorder_songs_updates_all_positions() {
         "SELECT position, song_id FROM playlist_songs WHERE playlist_id = $1 ORDER BY position ASC",
     )
     .bind(&playlist_id)
-    .fetch_all(&state.pool)
+    .fetch_all(&state.pool().await)
     .await
     .expect("positions");
 

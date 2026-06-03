@@ -239,7 +239,7 @@ pub async fn stage_song(
     let start = std::time::Instant::now();
     tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "stage_song started");
 
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     crate::rate_limit::enforce(&state.upload_rl, &claims.sub)?;
 
     let mut audio_bytes: Option<Vec<u8>> = None;
@@ -457,7 +457,7 @@ pub async fn commit_song(
     let start = std::time::Instant::now();
     tracing::info!(user_id = %claims.sub, email_redacted = %crate::redact::email_for_log(&claims.email), "commit_song started");
 
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     crate::rate_limit::enforce(&state.upload_rl, &claims.sub)?;
 
     let mut metadata_json = String::new();
@@ -554,7 +554,7 @@ pub async fn commit_song(
     let artwork_key: Option<String> = None;
 
     let result: Result<crate::songs::model::SongDb, AppError> = async {
-        let mut tx = state.pool.begin().await?;
+        let mut tx = state.pool().await.begin().await?;
 
         let song_db = sqlx::query_as::<_, crate::songs::model::SongDb>(
             "INSERT INTO songs (
@@ -623,13 +623,13 @@ pub async fn commit_song(
                 "UPDATE songs SET hls_encode_status = 'pending' WHERE id = $1",
             )
             .bind(&song_id)
-            .execute(&state.pool)
+            .execute(&state.pool().await)
             .await;
 
             // Human: Return the committed song immediately while ffmpeg runs in a detached task.
             // Agent: SETS hls_encode_status pending; SPAWNS encode_job with staging cleanup keys.
             crate::hls::encode_job::spawn_hls_encode_job(
-                state.pool.clone(),
+                state.pool().await,
                 state.storage.clone(),
                 state.hls_key_store.clone(),
                 crate::hls::encode_job::HlsEncodeJob {
@@ -644,7 +644,7 @@ pub async fn commit_song(
 
             let mut song: crate::songs::model::Song = song_db.into();
             if let Err(e) =
-                crate::songs::model::populate_genres_for_one(&state.pool, &mut song).await
+                crate::songs::model::populate_genres_for_one(&state.pool().await, &mut song).await
             {
                 tracing::warn!("Failed to populate genres after commit: {}", e);
             }
@@ -699,7 +699,7 @@ pub async fn get_staged_artwork(
     axum::extract::Path(staging_id): axum::extract::Path<String>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     tracing::info!(user_id = %claims.sub, staging_id = %staging_id, "get_staged_artwork");
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     if let Some((key, mime)) = find_staged_artwork_key(state.storage.as_ref(), &staging_id).await {
         let (stream, _, _) = state

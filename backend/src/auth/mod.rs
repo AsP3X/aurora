@@ -59,7 +59,7 @@ pub async fn auth_middleware(
             "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
         )
         .bind(&claims.sub)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&state.pool().await)
         .await
         .map_err(AppError::Database)?;
 

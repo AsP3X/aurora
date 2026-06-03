@@ -42,7 +42,7 @@ use storage::{LocalStorage, Storage, nebula::NebulaStorage};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: AnyPool,
+    pub db: db::DbHandle,
     pub storage: Arc<dyn Storage>,
     pub staging_dir: PathBuf,
     pub jwt_secret: String,
@@ -66,8 +66,6 @@ pub struct AppState {
     pub search_indexer: Option<Arc<search::indexer::SearchIndexer>>,
     /// Coordinates immediate index sync and DB-backed retries after failures.
     pub search_sync: Arc<search::sync_queue::SearchSyncService>,
-    /// Active `DATABASE_URL` the process connected with at startup (used to compare setup wizard input).
-    pub database_url: String,
     /// Active `STORAGE_MODE` at startup (`proxy` = Nebula OS, anything else = local filesystem).
     pub storage_mode: String,
     /// Nebular OS base URL for readiness probes when `storage_mode` is `proxy`.
@@ -76,6 +74,16 @@ pub struct AppState {
     pub user_enabled_cache: auth::UserEnabledCache,
     /// Comma-separated browser origins allowed for CORS; empty means permissive (dev).
     pub cors_allowed_origins: String,
+}
+
+impl AppState {
+    pub async fn pool(&self) -> AnyPool {
+        self.db.pool().await
+    }
+
+    pub async fn database_url(&self) -> String {
+        self.db.database_url().await
+    }
 }
 
 fn install_sqlx_drivers() {
@@ -213,8 +221,10 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         info!("Meilisearch URL/key not set; /api/v1/search uses SQL fallback messaging only");
     }
 
+    let db = db::DbHandle::new(pool.clone(), config.database_url.clone());
+
     Ok(Arc::new(AppState {
-        pool,
+        db,
         storage,
         staging_dir,
         jwt_secret: config.jwt_secret.clone(),
@@ -233,7 +243,6 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         meili_master_key: config.meili_master_key.clone(),
         search_indexer,
         search_sync,
-        database_url: config.database_url.clone(),
         storage_mode: config.storage_mode.clone(),
         object_storage_url: config.object_storage_url.clone(),
         user_enabled_cache: auth::UserEnabledCache::default(),

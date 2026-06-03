@@ -133,8 +133,8 @@ pub async fn get_song_lyrics(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<SongLyrics>, AppError> {
-    require_permission(&state.pool, &claims.sub, "library.view").await?;
-    let lyrics = load_lyrics(&state.pool, &id).await?;
+    require_permission(&state.pool().await, &claims.sub, "library.view").await?;
+    let lyrics = load_lyrics(&state.pool().await, &id).await?;
     Ok(Json(lyrics))
 }
 
@@ -145,8 +145,8 @@ pub async fn admin_get_song_lyrics(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<SongLyrics>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
-    let lyrics = load_lyrics(&state.pool, &id).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
+    let lyrics = load_lyrics(&state.pool().await, &id).await?;
     Ok(Json(lyrics))
 }
 
@@ -158,9 +158,9 @@ pub async fn admin_put_song_lyrics(
     Path(id): Path<String>,
     Json(body): Json<SaveLyricsBody>,
 ) -> Result<Json<SongLyrics>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
-    let lines = validate_lines(&state.pool, &id, &body.lines).await?;
+    let lines = validate_lines(&state.pool().await, &id, &body.lines).await?;
     let json = serde_json::to_string(&lines).map_err(|e| AppError::Internal(e.into()))?;
     let updated_at = Utc::now().to_rfc3339();
 
@@ -176,7 +176,7 @@ pub async fn admin_put_song_lyrics(
     .bind(&json)
     .bind(&claims.sub)
     .bind(&updated_at)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await?;
 
     Ok(Json(SongLyrics {
@@ -194,11 +194,11 @@ pub async fn admin_delete_song_lyrics(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let result = sqlx::query("DELETE FROM song_lyrics WHERE song_id = $1")
         .bind(&id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await?;
 
     if result.rows_affected() == 0 {

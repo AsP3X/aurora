@@ -153,9 +153,9 @@ pub async fn get_artwork_migration_status(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<ArtworkMigrationStatus>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     Ok(Json(
-        migration_status(&state.pool, state.storage.as_ref()).await,
+        migration_status(&state.pool().await, state.storage.as_ref()).await,
     ))
 }
 
@@ -165,9 +165,9 @@ pub async fn start_artwork_migration(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<ArtworkMigrationStatus>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
-    let current = migration_status(&state.pool, state.storage.as_ref()).await;
+    let current = migration_status(&state.pool().await, state.storage.as_ref()).await;
     if current.status == "running" {
         return Err(AppError::BadRequest(
             "Artwork migration is already running".into(),
@@ -181,26 +181,26 @@ pub async fn start_artwork_migration(
     }
 
     upsert_setting(
-        &state.pool,
+        &state.pool().await,
         SETTING_PENDING,
         &current.pending_count.to_string(),
     )
     .await;
-    upsert_setting(&state.pool, SETTING_STATUS, "running").await;
-    upsert_setting(&state.pool, SETTING_PROGRESS, "0").await;
-    upsert_setting(&state.pool, SETTING_PROCESSED, "0").await;
-    upsert_setting(&state.pool, SETTING_SKIPPED, "0").await;
-    upsert_setting(&state.pool, SETTING_FAILED, "0").await;
-    upsert_setting(&state.pool, SETTING_ERROR, "").await;
+    upsert_setting(&state.pool().await, SETTING_STATUS, "running").await;
+    upsert_setting(&state.pool().await, SETTING_PROGRESS, "0").await;
+    upsert_setting(&state.pool().await, SETTING_PROCESSED, "0").await;
+    upsert_setting(&state.pool().await, SETTING_SKIPPED, "0").await;
+    upsert_setting(&state.pool().await, SETTING_FAILED, "0").await;
+    upsert_setting(&state.pool().await, SETTING_ERROR, "").await;
 
-    let pool = state.pool.clone();
+    let pool = state.pool().await;
     let storage = state.storage.clone();
     tokio::spawn(async move {
         run_artwork_migration(pool, storage).await;
     });
 
     Ok(Json(
-        migration_status(&state.pool, state.storage.as_ref()).await,
+        migration_status(&state.pool().await, state.storage.as_ref()).await,
     ))
 }
 

@@ -12,7 +12,7 @@ use crate::AppState;
 // Agent: PUBLIC route; DB required; Meili only checked when indexer configured; NO auth.
 pub async fn readiness(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let db_ok = sqlx::query("SELECT 1")
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await
         .is_ok();
 

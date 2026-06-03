@@ -97,7 +97,7 @@ pub async fn setup_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupStatus>, AppError> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
 
     Ok(Json(SetupStatus {
@@ -111,20 +111,20 @@ pub async fn setup_database_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupDatabaseInfo>, AppError> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
     if count > 0 {
         return Err(AppError::Conflict("setup already completed".into()));
     }
 
-    let driver = db::driver_from_url(&state.database_url)
+    let driver = db::driver_from_url(&state.database_url().await)
         .unwrap_or("unknown")
         .to_string();
 
     Ok(Json(SetupDatabaseInfo {
         migrate_from_sqlite_available: driver == "postgres",
         driver,
-        database_url: state.database_url.clone(),
+        database_url: state.database_url().await,
     }))
 }
 
@@ -135,7 +135,7 @@ pub async fn test_setup_database(
     Json(body): Json<DatabaseUrlBody>,
 ) -> Result<Json<DatabaseTestResponse>, AppError> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
     if count > 0 {
         return Err(AppError::Conflict("setup already completed".into()));
@@ -165,7 +165,7 @@ pub async fn setup_storage_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupStorageInfo>, AppError> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await?;
     if count > 0 {
         return Err(AppError::Conflict("setup already completed".into()));
@@ -213,12 +213,13 @@ pub async fn setup(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<SetupResponse>, AppError> {
+    let current_url = state.database_url().await;
     let target_url = db::normalize_database_url(
         body.database_url
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or(state.database_url.as_str()),
+            .unwrap_or(&current_url),
     );
 
     let target_storage_mode = match body.storage_mode.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -230,9 +231,9 @@ pub async fn setup(
         return Err(AppError::BadRequest("unsupported database_url scheme".into()));
     }
 
-    let use_startup_pool = urls_equivalent(&target_url, &state.database_url);
+    let use_startup_pool = urls_equivalent(&target_url, &state.database_url().await);
     let setup_pool: AnyPool = if use_startup_pool {
-        state.pool.clone()
+        state.pool().await
     } else {
         db::init_pool(&target_url).await.map_err(|e| {
             tracing::warn!(error = %e, "setup could not open configured database");

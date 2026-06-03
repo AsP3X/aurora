@@ -22,13 +22,13 @@ pub async fn retry_hls_encode(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     let row = sqlx::query_as::<_, (String, String, i32, Option<String>, Option<bool>)>(
         "SELECT file_key, file_format, duration_seconds, hls_encode_status, hls_ready FROM songs WHERE id = $1",
     )
     .bind(&id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let (file_key, file_format, duration_seconds, status, hls_ready) =
@@ -63,11 +63,11 @@ pub async fn retry_hls_encode(
         "UPDATE songs SET hls_encode_status = 'pending', hls_encode_error = NULL, conversion_progress = 0 WHERE id = $1",
     )
     .bind(&id)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await?;
 
     encode_job::spawn_hls_encode_job(
-        state.pool.clone(),
+        state.pool().await,
         state.storage.clone(),
         state.hls_key_store.clone(),
         HlsEncodeJob {

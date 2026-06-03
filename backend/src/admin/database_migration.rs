@@ -15,6 +15,7 @@ use crate::{
     db,
     error::AppError,
     permissions::require_admin_access,
+    setup::env_persist,
     storage::Storage,
     AppState,
 };
@@ -84,6 +85,7 @@ pub struct DatabaseMigrationStatus {
     pub phase: Option<String>,
     pub target_driver: String,
     pub source_sqlite_url: Option<String>,
+    pub default_source_sqlite_url: String,
     pub checks: Vec<MigrationCheck>,
     pub source_counts: Vec<TableCount>,
     pub target_counts: Vec<TableCount>,
@@ -546,50 +548,46 @@ pub async fn build_checks(
 }
 
 pub async fn migration_status(state: &AppState) -> DatabaseMigrationStatus {
-    let target_driver = db::driver_from_url(&state.database_url)
+    let default_source = db::default_sqlite_source_url().to_string();
+    let target_driver = db::driver_from_url(&state.database_url().await)
         .unwrap_or("unknown")
         .to_string();
-    let source_url = read_setting(&state.pool, SETTING_SOURCE_URL).await;
-    let status = read_setting(&state.pool, SETTING_STATUS)
+    let pool = state.pool().await;
+    let source_url = read_setting(&pool, SETTING_SOURCE_URL).await;
+    let effective_source = source_url
+        .clone()
+        .unwrap_or_else(|| default_source.clone());
+    let status = read_setting(&pool, SETTING_STATUS)
         .await
         .unwrap_or_else(|| "idle".to_string());
-    let progress = read_setting(&state.pool, SETTING_PROGRESS)
+    let progress = read_setting(&pool, SETTING_PROGRESS)
         .await
         .unwrap_or_else(|| "0".to_string())
         .parse::<i32>()
         .unwrap_or(0);
-    let phase = read_setting(&state.pool, SETTING_PHASE).await;
-    let error = read_setting(&state.pool, SETTING_ERROR).await.filter(|s| !s.is_empty());
-    let verify_ok = read_setting(&state.pool, SETTING_VERIFY_OK)
+    let phase = read_setting(&pool, SETTING_PHASE).await;
+    let error = read_setting(&pool, SETTING_ERROR).await.filter(|s| !s.is_empty());
+    let verify_ok = read_setting(&pool, SETTING_VERIFY_OK)
         .await
         .map(|v| v == "true");
 
-    let (checks, source_counts, target_counts) = if let Some(ref url) = source_url {
-        build_checks(
-            &state.pool,
-            &target_driver,
-            url,
-            state.storage.as_ref(),
-        )
-        .await
-        .unwrap_or_else(|_| (vec![], vec![], vec![]))
-    } else {
-        let checks = vec![MigrationCheck {
-            id: "source_url".into(),
-            label: "SQLite source path".into(),
-            ok: false,
-            message: "set a source SQLite database URL in validate or start".into(),
-        }];
-        (checks, vec![], collect_counts(&state.pool, TABLES_IN_ORDER).await)
-    };
+    let (checks, source_counts, target_counts) = build_checks(
+        &pool,
+        &target_driver,
+        &effective_source,
+        state.storage.as_ref(),
+    )
+    .await
+    .unwrap_or_else(|_| (vec![], vec![], vec![]));
 
     DatabaseMigrationStatus {
-        restart_recommended: status == "complete",
+        restart_recommended: false,
         status,
         progress,
         phase,
         target_driver,
-        source_sqlite_url: source_url,
+        source_sqlite_url: Some(effective_source),
+        default_source_sqlite_url: default_source,
         checks,
         source_counts,
         target_counts,
@@ -602,14 +600,14 @@ pub async fn validate_migration(
     state: &AppState,
     body: ValidateMigrationBody,
 ) -> Result<Json<ValidateMigrationResponse>, AppError> {
-    let target_driver = db::driver_from_url(&state.database_url)
+    let target_driver = db::driver_from_url(&state.database_url().await)
         .unwrap_or("unknown")
         .to_string();
     let sqlite_url = normalize_sqlite_url(&body.sqlite_database_url)?;
-    upsert_setting(&state.pool, SETTING_SOURCE_URL, &sqlite_url).await;
+    upsert_setting(&state.pool().await, SETTING_SOURCE_URL, &sqlite_url).await;
 
     let (checks, source_counts, target_counts) = build_checks(
-        &state.pool,
+        &state.pool().await,
         &target_driver,
         &sqlite_url,
         state.storage.as_ref(),
@@ -629,7 +627,7 @@ pub async fn get_database_migration_status(
     State(state): State<Arc<AppState>>,
     claims: axum::Extension<crate::auth::Claims>,
 ) -> Result<Json<DatabaseMigrationStatus>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     Ok(Json(migration_status(&state).await))
 }
 
@@ -638,7 +636,7 @@ pub async fn post_validate_database_migration(
     claims: axum::Extension<crate::auth::Claims>,
     Json(body): Json<ValidateMigrationBody>,
 ) -> Result<Json<ValidateMigrationResponse>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
     validate_migration(&state, body).await
 }
 
@@ -647,7 +645,7 @@ pub async fn start_database_migration(
     claims: axum::Extension<crate::auth::Claims>,
     Json(body): Json<StartMigrationBody>,
 ) -> Result<Json<DatabaseMigrationStatus>, AppError> {
-    require_admin_access(&state.pool, &claims.sub, &claims.role).await?;
+    require_admin_access(&state.pool().await, &claims.sub, &claims.role).await?;
 
     if body.confirmation_phrase.trim() != CONFIRMATION_PHRASE {
         return Err(AppError::BadRequest(format!(
@@ -661,12 +659,12 @@ pub async fn start_database_migration(
     }
 
     let sqlite_url = normalize_sqlite_url(&body.sqlite_database_url)?;
-    upsert_setting(&state.pool, SETTING_SOURCE_URL, &sqlite_url).await;
+    upsert_setting(&state.pool().await, SETTING_SOURCE_URL, &sqlite_url).await;
 
-    let target_driver = db::driver_from_url(&state.database_url)
+    let target_driver = db::driver_from_url(&state.database_url().await)
         .ok_or_else(|| AppError::BadRequest("unsupported target database".into()))?;
     let (checks, _, _) = build_checks(
-        &state.pool,
+        &state.pool().await,
         target_driver,
         &sqlite_url,
         state.storage.as_ref(),
@@ -678,7 +676,7 @@ pub async fn start_database_migration(
         ));
     }
 
-    let current = read_setting(&state.pool, SETTING_STATUS)
+    let current = read_setting(&state.pool().await, SETTING_STATUS)
         .await
         .unwrap_or_default();
     if current == "running" {
@@ -687,22 +685,43 @@ pub async fn start_database_migration(
         ));
     }
 
-    upsert_setting(&state.pool, SETTING_STATUS, "running").await;
-    upsert_setting(&state.pool, SETTING_PROGRESS, "0").await;
-    upsert_setting(&state.pool, SETTING_PHASE, "starting").await;
-    upsert_setting(&state.pool, SETTING_ERROR, "").await;
-    upsert_setting(&state.pool, SETTING_VERIFY_OK, "").await;
+    upsert_setting(&state.pool().await, SETTING_STATUS, "running").await;
+    upsert_setting(&state.pool().await, SETTING_PROGRESS, "0").await;
+    upsert_setting(&state.pool().await, SETTING_PHASE, "starting").await;
+    upsert_setting(&state.pool().await, SETTING_ERROR, "").await;
+    upsert_setting(&state.pool().await, SETTING_VERIFY_OK, "").await;
 
-    let pool = state.pool.clone();
-    let storage = state.storage.clone();
+    let pool = state.pool().await;
+    let postgres_url = state.database_url().await;
+    let job_state = state.clone();
     tokio::spawn(async move {
-        run_database_migration(pool, storage, sqlite_url).await;
+        run_database_migration(job_state, pool, postgres_url, sqlite_url).await;
     });
 
     Ok(Json(migration_status(&state).await))
 }
 
-async fn run_database_migration(pool: AnyPool, _storage: Arc<dyn Storage>, sqlite_url: String) {
+/// Human: After a verified copy, persist Postgres as the active database and hot-swap when still on SQLite.
+async fn finalize_successful_migration(state: &AppState, postgres_url: &str) {
+    let pool = state.pool().await;
+    upsert_setting(&pool, "database_url", postgres_url).await;
+    env_persist::try_persist_database_url(postgres_url);
+
+    if db::driver_from_url(&state.database_url().await) == Some("sqlite") {
+        if let Err(e) = state.db.switch_to(postgres_url).await {
+            tracing::error!(error = %e, "failed to switch live database to postgres after migration");
+        } else {
+            tracing::info!("Live database connection switched to PostgreSQL after migration");
+        }
+    }
+}
+
+async fn run_database_migration(
+    state: Arc<AppState>,
+    pool: AnyPool,
+    postgres_url: String,
+    sqlite_url: String,
+) {
     let result = run_database_migration_inner(&pool, &sqlite_url).await;
     match result {
         Ok(verify_ok) => {
@@ -713,6 +732,7 @@ async fn run_database_migration(pool: AnyPool, _storage: Arc<dyn Storage>, sqlit
             if verify_ok {
                 let now = chrono::Utc::now().to_rfc3339();
                 upsert_setting(&pool, SETTING_COMPLETED_AT, &now).await;
+                finalize_successful_migration(&state, &postgres_url).await;
             } else {
                 upsert_setting(
                     &pool,
@@ -796,5 +816,11 @@ mod tests {
     #[test]
     fn confirmation_phrase_is_stable() {
         assert_eq!(CONFIRMATION_PHRASE, "MIGRATE-DATABASE");
+    }
+
+    #[test]
+    fn default_sqlite_source_uses_sqlite_prefix() {
+        let url = db::default_sqlite_source_url();
+        assert!(url.starts_with("sqlite:"));
     }
 }

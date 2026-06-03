@@ -121,7 +121,7 @@ pub async fn register(
     let allow_public: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'allow_public_registration'"
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     if let Some((value,)) = allow_public {
@@ -133,7 +133,7 @@ pub async fn register(
     let require_activation: Option<(String,)> = sqlx::query_as(
         "SELECT value FROM app_settings WHERE key = 'require_account_activation'"
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     // Human: New accounts start disabled when activation is required — parse loosely so admin UI typos still work.
@@ -147,7 +147,7 @@ pub async fn register(
     let password_hash = hash_password(&body.password).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
     let user_id = Uuid::new_v4().to_string();
 
-    let mut tx = state.pool.begin().await?;
+    let mut tx = state.pool().await.begin().await?;
 
     // Human: Bind `enabled` as bool — sqlx maps it to BOOLEAN (Postgres) or INTEGER 0/1 (SQLite).
     // Agent: WRITES users.enabled; BINDS bool; REQUIRES Any pool driver-specific encoding.
@@ -187,7 +187,7 @@ pub async fn register(
                 "user registered"
             );
 
-            let permissions = get_user_permission_keys(&state.pool, &user_id).await;
+            let permissions = get_user_permission_keys(&state.pool().await, &user_id).await;
 
             // Human: Pending accounts must not receive a JWT — login and middleware already reject disabled users.
             // Agent: WHEN enabled THEN create_token Some; ELSE token None + pending_activation true.
@@ -241,7 +241,7 @@ pub async fn login(
         "SELECT id, email, password_hash, role, CAST(enabled AS INTEGER) AS enabled FROM users WHERE email = $1",
     )
     .bind(&body.email)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let (id, email, hash, role, enabled_raw) = row.ok_or(AppError::Unauthorized)?;
@@ -266,7 +266,7 @@ pub async fn login(
     let token = create_token(id.clone(), email.clone(), role.clone(), &state.jwt_secret)
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let permissions = get_user_permission_keys(&state.pool, &id).await;
+    let permissions = get_user_permission_keys(&state.pool().await, &id).await;
 
     Ok(Json(AuthResponse {
         token: Some(token),
@@ -291,13 +291,13 @@ pub async fn me(
         "SELECT id, email, role, CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
     )
     .bind(&claims.sub)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let (id, email, role, enabled_raw) = row.ok_or(AppError::NotFound)?;
     let enabled = enabled_raw != 0;
 
-    let permissions = get_user_permission_keys(&state.pool, &id).await;
+    let permissions = get_user_permission_keys(&state.pool().await, &id).await;
 
     info!(user_id = %id, email_redacted = %crate::redact::email_for_log(&email), "me request");
 

@@ -48,14 +48,14 @@ async fn admin_listening_by_song_get_and_post_return_200() {
     .bind(admin_id)
     .bind("admin@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("insert admin");
     assert_eq!(ins.rows_affected(), 1);
 
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = $1")
         .bind(admin_id)
-        .fetch_one(&state.pool)
+        .fetch_one(&state.pool().await)
         .await
         .expect("count");
     assert_eq!(n, 1, "user must be visible to same id binding as middleware");
@@ -72,7 +72,7 @@ async fn admin_listening_by_song_get_and_post_return_200() {
         "SELECT CAST(enabled AS INTEGER) AS enabled FROM users WHERE id = $1",
     )
     .bind(&claims.sub)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await
     .expect("enabled query");
     assert!(enabled.map(|(e,)| e != 0).unwrap_or(false), "middleware user lookup must succeed: {:?}", enabled);

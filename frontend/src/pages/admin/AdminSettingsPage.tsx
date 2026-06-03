@@ -19,6 +19,7 @@ import MobileDataCard from "../../components/admin/MobileDataCard";
 import GlassDialog from "../../components/admin/GlassDialog";
 import GlassButton from "../../components/admin/GlassButton";
 import AdminGlassCard from "../../components/admin/AdminGlassCard";
+import { DEFAULT_SQLITE_MIGRATION_SOURCE } from "../../lib/databaseConnection";
 
 interface Setting {
   key: string;
@@ -168,7 +169,7 @@ export default function AdminSettingsPage() {
 
   const [dbMigration, setDbMigration] = useState<DatabaseMigrationStatus | null>(null);
   const [dbMigrationExpanded, setDbMigrationExpanded] = useState(true);
-  const [sqliteSourceUrl, setSqliteSourceUrl] = useState("");
+  const [sqliteSourceUrl, setSqliteSourceUrl] = useState(DEFAULT_SQLITE_MIGRATION_SOURCE);
   const [dbValidateResult, setDbValidateResult] = useState<{
     ready: boolean;
     checks: DatabaseMigrationStatus["checks"];
@@ -245,9 +246,11 @@ export default function AdminSettingsPage() {
       .then((status) => {
         if (!cancelled) {
           setDbMigration(status);
-          if (status.source_sqlite_url && !sqliteSourceUrl) {
-            setSqliteSourceUrl(status.source_sqlite_url);
-          }
+          const source =
+            status.source_sqlite_url?.trim() ||
+            status.default_source_sqlite_url?.trim() ||
+            DEFAULT_SQLITE_MIGRATION_SOURCE;
+          setSqliteSourceUrl(source);
         }
       })
       .catch(() => {});
@@ -255,6 +258,33 @@ export default function AdminSettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (dbMigration?.target_driver !== "postgres") return;
+    if (!sqliteSourceUrl.trim()) return;
+    if (dbMigration.status === "running" || dbMigration.status === "complete") return;
+    if (dbValidateResult != null) return;
+
+    let cancelled = false;
+    void validateDatabaseMigration(sqliteSourceUrl.trim())
+      .then((res) => {
+        if (!cancelled) {
+          setDbValidateResult({ ready: res.ready, checks: res.checks });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [dbMigration?.target_driver, dbMigration?.status, sqliteSourceUrl, dbValidateResult]);
+
+  useEffect(() => {
+    if (dbMigration?.status !== "complete" || !dbMigration.verify_ok) return;
+    const timer = window.setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [dbMigration?.status, dbMigration?.verify_ok]);
 
   useEffect(() => {
     if (dbMigration?.status !== "running") return;
@@ -639,7 +669,7 @@ export default function AdminSettingsPage() {
             <div className="space-y-4 border-t border-white/10 pt-4">
               {dbMigration.status === "complete" && dbMigration.verify_ok && (
                 <p className="text-sm text-emerald-400">
-                  Migration completed and row counts verified. Restart the backend if you changed env files.
+                  Migration completed and verified. Switching to PostgreSQL and reloading…
                 </p>
               )}
               {dbMigration.error && (

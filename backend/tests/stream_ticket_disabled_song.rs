@@ -56,7 +56,7 @@ async fn disabled_song_rejects_stream_ticket() {
     )
     .bind(&user_id)
     .bind("stream-ticket@test.local")
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .unwrap();
 
@@ -64,7 +64,7 @@ async fn disabled_song_rejects_stream_ticket() {
         "INSERT INTO songs (id, title, artist, file_key, enabled, hls_ready, duration_seconds, file_size_bytes, file_format) VALUES ($1, 'T', 'A', 'files/x.mp3', 1, 0, 180, 1024, 'mp3')",
     )
     .bind(&song_id)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .unwrap();
 
@@ -77,7 +77,7 @@ async fn disabled_song_rejects_stream_ticket() {
 
     sqlx::query("UPDATE songs SET enabled = 0 WHERE id = $1")
         .bind(&song_id)
-        .execute(&state.pool)
+        .execute(&state.pool().await)
         .await
         .unwrap();
 

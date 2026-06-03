@@ -24,13 +24,13 @@ pub async fn get_playlist(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    require_permission(&state.pool, &claims.sub, "library.view").await?;
+    require_permission(&state.pool().await, &claims.sub, "library.view").await?;
 
     let song = sqlx::query_as::<_, (String, Option<bool>, Option<i32>)>(
         "SELECT file_key, hls_ready, segment_count FROM songs WHERE id = $1 AND enabled = true"
     )
     .bind(id.to_string())
-    .fetch_optional(&state.pool)
+    .fetch_optional(&state.pool().await)
     .await?;
 
     let (file_key, hls_ready, segment_count) = song.ok_or(AppError::NotFound)?;
@@ -94,7 +94,7 @@ pub async fn get_key(
     claims: axum::Extension<crate::auth::Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    require_permission(&state.pool, &claims.sub, "library.view").await?;
+    require_permission(&state.pool().await, &claims.sub, "library.view").await?;
 
     let key = state.hls_key_store.get_key(id).await
         .map_err(|e| AppError::Storage(e.to_string()))?
@@ -116,7 +116,7 @@ pub async fn get_segment(
     claims: axum::Extension<crate::auth::Claims>,
     Path((id, segment_name)): Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
-    require_permission(&state.pool, &claims.sub, "library.view").await?;
+    require_permission(&state.pool().await, &claims.sub, "library.view").await?;
 
     let rl_key = format!("{}:{}", claims.sub, id);
     crate::rate_limit::enforce(&state.hls_segment_rl, &rl_key)?;

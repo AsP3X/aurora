@@ -64,7 +64,7 @@ async fn login_returns_429_when_ip_rate_limited() {
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true')",
     )
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("setting");
 
@@ -121,7 +121,7 @@ async fn register_returns_429_when_ip_rate_limited() {
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('allow_public_registration', 'true')",
     )
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("setting");
 
@@ -174,7 +174,7 @@ async fn upload_stage_returns_429_when_user_rate_limited() {
     .bind(admin_id)
     .bind("admin@test.local")
     .bind(&ph)
-    .execute(&state.pool)
+    .execute(&state.pool().await)
     .await
     .expect("admin user");
 

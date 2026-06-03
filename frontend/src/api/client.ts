@@ -874,6 +874,7 @@ export interface DatabaseMigrationStatus {
   phase: string | null;
   target_driver: string;
   source_sqlite_url: string | null;
+  default_source_sqlite_url: string;
   checks: DatabaseMigrationCheck[];
   source_counts: DatabaseMigrationTableCount[];
   target_counts: DatabaseMigrationTableCount[];
