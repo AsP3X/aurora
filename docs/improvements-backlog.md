@@ -128,11 +128,18 @@ Track and execute improvements one at a time. When you want work started, say wh
 
 ### IMP-010 — Nebula `allow_public_read` decision
 
-- [ ] **Status**
+- [x] **Status**
 - **Priority:** Low
 - **Summary:** Implement public read mode or remove the flag and TODO from Nebular OS upstream.
 - **References:** [nebular-os](https://github.com/AsP3X/nebular-os) `src/server.rs`
-- **Done notes:**
+- **Done notes:** 2026-06-03 — Left `NOS_ALLOW_PUBLIC_READ` unset/false in compose; Aurora continues to use presigned URLs for browser fetches.
+
+### Nebular OS integration batch (IMP-NOS-001 … IMP-NOS-008)
+
+- [x] **Status** (2026-06-03)
+- **Summary:** Bump `nebular-os` submodule to `origin/master`, tune compose (zstd, dedup, readiness), wire Aurora readiness/startup to `/health/ready`, map HTTP 507, server-side copy on commit, create-only staging PUTs, multipart uploads ≥8 MiB, admin object-storage metrics, NOCL-1.0 on Aurora.
+- **References:** `nebular-os/`, `backend/src/storage/`, `docker-compose.yml`, `LICENSE`, `frontend/src/pages/admin/AdminOverviewPage.tsx`
+- **Done notes:** Submodule at `bf404a4`; see commit diff for env vars (`NOS_*`, `OBJECT_STORAGE_METRICS_TOKEN`).
 
 ---
 

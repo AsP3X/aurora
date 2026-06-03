@@ -5,12 +5,27 @@ use sqlx::migrate::{MigrateDatabase, Migrator};
 use sqlx::AnyPool;
 use std::path::PathBuf;
 
+// Human: Normalize wizard URLs (`sqlite://file.db`) into the `sqlite:…` form SQLx expects.
+// Agent: STRIPS sqlite:// prefix; PRESERVES postgres URLs unchanged; TRIMS whitespace.
+pub fn normalize_database_url(database_url: &str) -> String {
+    let trimmed = database_url.trim();
+    if let Some(rest) = trimmed.strip_prefix("sqlite://") {
+        let path = rest.trim_start_matches('/');
+        return format!("sqlite:{path}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("sqlite:") {
+        return format!("sqlite:{rest}");
+    }
+    trimmed.to_string()
+}
+
 // Human: Classify a connection string so setup UI and migrations pick the right driver family.
 // Agent: READS url prefix; RETURNS "postgres" | "sqlite" | None when unsupported.
 pub fn driver_from_url(database_url: &str) -> Option<&'static str> {
-    if database_url.starts_with("postgres://") || database_url.starts_with("postgresql://") {
+    let url = normalize_database_url(database_url);
+    if url.starts_with("postgres://") || url.starts_with("postgresql://") {
         Some("postgres")
-    } else if database_url.starts_with("sqlite:") {
+    } else if url.starts_with("sqlite:") {
         Some("sqlite")
     } else {
         None
@@ -20,7 +35,7 @@ pub fn driver_from_url(database_url: &str) -> Option<&'static str> {
 // Human: Verify the URL is reachable and migrations apply without keeping a long-lived pool (setup wizard test button).
 // Agent: CALLS init_pool; DISCONNECTS implicitly when pool drops; PROPAGATES driver/migration errors.
 pub async fn test_connection(database_url: &str) -> anyhow::Result<()> {
-    let pool = init_pool(database_url).await?;
+    let pool = init_pool(&normalize_database_url(database_url)).await?;
     sqlx::query("SELECT 1")
         .execute(&pool)
         .await?;
@@ -30,19 +45,20 @@ pub async fn test_connection(database_url: &str) -> anyhow::Result<()> {
 // Human: Create the database file/cluster DB if missing, open a bounded pool, apply pragmas/migrations once at startup.
 // Agent: CALLS create_database for sqlite/postgres URLs; RUNS migrations; PRAGMA foreign_keys ON for sqlite; DEFAULT max_connections 20.
 pub async fn init_pool(database_url: &str) -> anyhow::Result<AnyPool> {
+    let database_url = normalize_database_url(database_url);
     if database_url.starts_with("postgres://") || database_url.starts_with("postgresql://") {
-        if !sqlx::Postgres::database_exists(database_url).await.unwrap_or(false) {
-            sqlx::Postgres::create_database(database_url).await?;
+        if !sqlx::Postgres::database_exists(&database_url).await.unwrap_or(false) {
+            sqlx::Postgres::create_database(&database_url).await?;
         }
     } else if database_url.starts_with("sqlite:") {
-        if !sqlx::Sqlite::database_exists(database_url).await.unwrap_or(false) {
-            sqlx::Sqlite::create_database(database_url).await?;
+        if !sqlx::Sqlite::database_exists(&database_url).await.unwrap_or(false) {
+            sqlx::Sqlite::create_database(&database_url).await?;
         }
     }
 
     let pool = AnyPoolOptions::new()
         .max_connections(20)
-        .connect(database_url)
+        .connect(&database_url)
         .await?;
 
     if database_url.starts_with("sqlite:") {

@@ -53,6 +53,9 @@ pub enum AppError {
     #[error("storage error: {0}")]
     Storage(String),
 
+    #[error("storage full")]
+    StorageFull,
+
     #[error("not implemented: {0}")]
     NotImplemented(String),
 }
@@ -79,6 +82,13 @@ impl IntoResponse for AppError {
             AppError::Storage(msg) => {
                 error!("Storage error: {}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, "storage error")
+            }
+            AppError::StorageFull => {
+                error!("Object storage quota exceeded");
+                (
+                    StatusCode::INSUFFICIENT_STORAGE,
+                    "library storage is full; free space or raise the object storage cap",
+                )
             }
             AppError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg.as_str()),
         };

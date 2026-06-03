@@ -27,6 +27,7 @@ fn test_config(db_url: &str, music_dir: &str) -> Config {
         object_storage_bucket: "music".to_string(),
         signing_secret: "test-signing-secret-not-default-value".to_string(),
         object_storage_jwt_secret: "test-nos-jwt-secret-not-default-value!!".to_string(),
+        object_storage_metrics_token: String::new(),
         master_secret: "test-master-secret-not-default-value".to_string(),
         url_expiry_seconds: 3600,
         aurora_environment: "development".to_string(),

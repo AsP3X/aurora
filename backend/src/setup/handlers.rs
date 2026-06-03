@@ -41,6 +41,8 @@ pub struct SetupStatus {
 pub struct SetupDatabaseInfo {
     pub driver: String,
     pub database_url: String,
+    /// True when Aurora is already running on Postgres (typical Docker Compose).
+    pub migrate_from_sqlite_available: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +122,7 @@ pub async fn setup_database_info(
         .to_string();
 
     Ok(Json(SetupDatabaseInfo {
+        migrate_from_sqlite_available: driver == "postgres",
         driver,
         database_url: state.database_url.clone(),
     }))
@@ -138,16 +141,16 @@ pub async fn test_setup_database(
         return Err(AppError::Conflict("setup already completed".into()));
     }
 
-    let url = body.database_url.trim();
+    let url = db::normalize_database_url(body.database_url.trim());
     if url.is_empty() {
         return Err(AppError::BadRequest("database_url is required".into()));
     }
 
-    let driver = db::driver_from_url(url)
+    let driver = db::driver_from_url(&url)
         .ok_or_else(|| AppError::BadRequest("unsupported database_url scheme".into()))?
         .to_string();
 
-    db::test_connection(url).await.map_err(|e| {
+    db::test_connection(&url).await.map_err(|e| {
         tracing::warn!(error = %e, "setup database connection test failed");
         AppError::BadRequest("could not connect to database; check host, credentials, and network".into())
     })?;
@@ -210,27 +213,28 @@ pub async fn setup(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<SetupResponse>, AppError> {
-    let target_url = body
-        .database_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(state.database_url.as_str());
+    let target_url = db::normalize_database_url(
+        body.database_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(state.database_url.as_str()),
+    );
 
     let target_storage_mode = match body.storage_mode.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         Some(raw) => parse_setup_storage_mode(raw)?,
         None => normalize_storage_mode(&state.storage_mode),
     };
 
-    if db::driver_from_url(target_url).is_none() {
+    if db::driver_from_url(&target_url).is_none() {
         return Err(AppError::BadRequest("unsupported database_url scheme".into()));
     }
 
-    let use_startup_pool = urls_equivalent(target_url, &state.database_url);
+    let use_startup_pool = urls_equivalent(&target_url, &state.database_url);
     let setup_pool: AnyPool = if use_startup_pool {
         state.pool.clone()
     } else {
-        db::init_pool(target_url).await.map_err(|e| {
+        db::init_pool(&target_url).await.map_err(|e| {
             tracing::warn!(error = %e, "setup could not open configured database");
             AppError::BadRequest(
                 "could not connect to configured database; test the connection first".into(),
@@ -310,7 +314,7 @@ pub async fn setup(
 
     sqlx::query("INSERT INTO app_settings (key, value) VALUES ($1, $2)")
         .bind("database_url")
-        .bind(target_url)
+        .bind(&target_url)
         .execute(&mut *tx)
         .await?;
 
@@ -334,7 +338,7 @@ pub async fn setup(
     let restart_required = !use_startup_pool || storage_mode_changed;
     if restart_required {
         if !use_startup_pool {
-            env_persist::try_persist_database_url(target_url);
+            env_persist::try_persist_database_url(&target_url);
         }
         if storage_mode_changed {
             env_persist::try_persist_storage_mode(target_storage_mode);
@@ -360,7 +364,7 @@ pub async fn setup(
         },
         restart_required,
         configured_database_url: if !use_startup_pool {
-            Some(target_url.to_string())
+            Some(target_url.clone())
         } else {
             None
         },

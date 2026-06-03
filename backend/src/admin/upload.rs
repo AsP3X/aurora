@@ -1,7 +1,7 @@
 // Human: Multipart ingest path that stages audio in object storage, probes tags via Lofty on a temp file, then commits rows and kicks off async HLS packaging.
 // Agent: WRITES staging/* + uploads/* keys; READS metadata with lofty; SPawns background HLSEncoder job; REQUIRES require_admin_access on HTTP entrypoints.
 use axum::extract::{Multipart, State};
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     permissions::require_admin_access,
-    storage::StorageStream,
+    storage::{http_error::into_app_error, PutOptions, StorageStream},
     AppState,
 };
 
@@ -171,6 +171,28 @@ pub(crate) async fn collect_stream(stream: StorageStream) -> Result<Vec<u8>, App
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
     Ok(chunks.into_iter().flat_map(|b| b.to_vec()).collect())
+}
+
+// Human: Stream an object from storage into a local path for ffmpeg without holding the full file in RAM.
+async fn stream_storage_to_file(
+    stream: StorageStream,
+    dest: &std::path::Path,
+) -> Result<(), AppError> {
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::File::create(dest)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let mut pinned = stream;
+    while let Some(chunk) = pinned.next().await {
+        let chunk = chunk.map_err(|e| AppError::Storage(e.to_string()))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| AppError::Storage(e.to_string()))?;
+    }
+    file.flush()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(())
 }
 
 // Human: Probe staging bucket for known artwork file names so commit can copy forward without client re-upload.
@@ -358,15 +380,33 @@ pub async fn stage_song(
     let audio_mime = mime_guess::from_ext(&ext).first_or_octet_stream().to_string();
     state
         .storage
-        .put(&audio_stage_key, &audio_mime, audio_bytes)
+        .put_with_options(
+            &audio_stage_key,
+            &audio_mime,
+            audio_bytes,
+            PutOptions {
+                create_only: true,
+            },
+        )
         .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
+        .map_err(into_app_error)?;
 
     // Upload artwork to object storage if present
     let has_artwork = if let Some((art_ext, art_data)) = artwork_data {
         let art_key = format!("staging/{}/artwork.{}", staging_id, art_ext);
         let art_mime = format!("image/{}", art_ext);
-        match state.storage.put(&art_key, &art_mime, art_data).await {
+        match state
+            .storage
+            .put_with_options(
+                &art_key,
+                &art_mime,
+                art_data,
+                PutOptions {
+                    create_only: true,
+                },
+            )
+            .await
+        {
             Ok(()) => true,
             Err(e) => {
                 tracing::warn!("Failed to store staged artwork: {}", e);
@@ -469,38 +509,29 @@ pub async fn commit_song(
         }
     }
 
-    // Download audio from staging storage
     let audio_stage_key = format!("staging/{}/audio.{}", req.staging_id, req.file_format);
-    let (audio_stream, _, _) = state
-        .storage
-        .get_stream(&audio_stage_key)
-        .await
-        .map_err(|_| AppError::NotFound)?;
-    let audio_data = collect_stream(audio_stream).await?;
-    let file_size = audio_data.len() as i64;
 
     let song_id = Uuid::new_v4().to_string();
     let file_key = format!("uploads/{}_audio.{}", song_id, req.file_format);
-    let audio_mime = mime_guess::from_ext(&req.file_format)
-        .first_or_octet_stream()
-        .to_string();
 
-    // Write audio to temp dir for HLS encoding (ffmpeg needs a real file path)
+    state
+        .storage
+        .copy_object(&audio_stage_key, &file_key)
+        .await
+        .map_err(into_app_error)?;
+
     let hls_tmp_dir = std::env::temp_dir().join(format!("aurora_hls_{}", song_id));
     tokio::fs::create_dir_all(&hls_tmp_dir)
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
     let tmp_audio = hls_tmp_dir.join(format!("audio.{}", req.file_format));
-    tokio::fs::write(&tmp_audio, &audio_data)
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-
-    // Upload to permanent storage
-    state
+    let (audio_stream, size, _) = state
         .storage
-        .put(&file_key, &audio_mime, audio_data)
+        .get_stream(&file_key)
         .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
+        .map_err(|_| AppError::NotFound)?;
+    let file_size = size as i64;
+    stream_storage_to_file(audio_stream, &tmp_audio).await?;
 
     // Human: Defer WebP optimization to the background encode job so the processing UI can show artwork progress.
     // Agent: WRITES artwork_pending/{song_id}/upload when multipart art present; SETS pending_artwork flag on HlsEncodeJob; artwork_key NULL until job finishes.
@@ -511,7 +542,7 @@ pub async fn commit_song(
             .storage
             .put(&pending_key, "application/octet-stream", bytes)
             .await
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            .map_err(into_app_error)?;
         pending_artwork = true;
     } else if find_staged_artwork_key(state.storage.as_ref(), &req.staging_id)
         .await
@@ -675,7 +706,7 @@ pub async fn get_staged_artwork(
             .storage
             .get_stream(&key)
             .await
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            .map_err(into_app_error)?;
         let bytes = collect_stream(stream).await?;
         return Ok(([(axum::http::header::CONTENT_TYPE, mime)], bytes));
     }

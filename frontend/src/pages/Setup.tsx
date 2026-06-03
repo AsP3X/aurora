@@ -39,6 +39,8 @@ export default function Setup() {
   const [databaseUrl, setDatabaseUrl] = useState(DEFAULT_POSTGRES_URL);
   const [postgresFields, setPostgresFields] = useState<PostgresConnectionFields>(DOCKER_POSTGRES_DEFAULTS);
   const [sqlitePath, setSqlitePath] = useState(DEFAULT_SQLITE_PATH);
+  const [runtimeDriver, setRuntimeDriver] = useState<DatabaseDriver>("postgres");
+  const [migrateFromSqliteAvailable, setMigrateFromSqliteAvailable] = useState(false);
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [dbTesting, setDbTesting] = useState(false);
   const [dbTestMessage, setDbTestMessage] = useState<string | null>(null);
@@ -54,6 +56,8 @@ export default function Setup() {
       .then(([dbInfo, storageInfo]) => {
         if (cancelled) return;
         const driver = dbInfo.driver === "sqlite" ? "sqlite" : "postgres";
+        setRuntimeDriver(driver);
+        setMigrateFromSqliteAvailable(Boolean(dbInfo.migrate_from_sqlite_available));
         setDatabaseDriver(driver);
         setDatabaseUrl(dbInfo.database_url);
         if (driver === "postgres") {
@@ -187,17 +191,30 @@ export default function Setup() {
         storage_mode: storageMode,
       });
       if (res.restart_required) {
-        const parts: string[] = [];
+        const lines: string[] = [
+          "Configuration saved. Your admin account was created in the database you selected, but the running server is still using the old connection.",
+        ];
         if (res.configured_database_url) {
-          parts.push(`DATABASE_URL=${res.configured_database_url}`);
+          lines.push(
+            `1. In the project root .env, set DATABASE_URL=${res.configured_database_url}`,
+          );
+          if (res.configured_database_url.startsWith("sqlite")) {
+            lines.push(
+              "   For Docker, use a path under /data (e.g. sqlite:/data/aurora.db) and keep the ./data volume.",
+            );
+          }
         }
         if (res.configured_storage_mode) {
-          parts.push(`STORAGE_MODE=${res.configured_storage_mode}`);
+          lines.push(`2. Set STORAGE_MODE=${res.configured_storage_mode}`);
         }
-        const hint = parts.length > 0 ? parts.join(", ") : "updated environment variables";
-        setError(
-          `Configuration saved. Set ${hint}, restart Aurora, then sign in.`,
-        );
+        lines.push("3. Run: docker compose up -d --force-recreate backend");
+        lines.push("4. Sign in with the email and password you just created.");
+        if (migrateFromSqliteAvailable && res.configured_database_url?.startsWith("postgres")) {
+          lines.push(
+            "To import an old SQLite library: Admin → Settings → SQLite → PostgreSQL migration (after login).",
+          );
+        }
+        setError(lines.join("\n"));
         return;
       }
       if (!res.token) {
@@ -344,6 +361,30 @@ export default function Setup() {
                       </button>
                     ))}
                   </div>
+                  {migrateFromSqliteAvailable && (
+                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-xs text-amber-100 leading-relaxed">
+                        <span className="font-medium">Upgrading from an old SQLite install?</span> Choose{" "}
+                        <span className="font-medium">PostgreSQL</span> here (Docker default), finish setup, sign in,
+                        then use <span className="font-medium">Admin → Settings → SQLite → PostgreSQL migration</span>{" "}
+                        and point at your old <span className="font-mono">.db</span> file (e.g.{" "}
+                        <span className="font-mono">sqlite:/data/aurora.db</span> after copying it into the{" "}
+                        <span className="font-mono">data/</span> folder).
+                      </p>
+                    </div>
+                  )}
+
+                  {runtimeDriver === "postgres" && databaseDriver === "sqlite" && (
+                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                      <p className="text-xs text-red-200 leading-relaxed">
+                        The API is currently running on <span className="font-medium">PostgreSQL</span>. Choosing SQLite
+                        creates a <span className="font-medium">separate</span> database file; you must restart with{" "}
+                        <span className="font-mono">DATABASE_URL</span> matching SQLite before login will work. For
+                        Docker + Nebula, PostgreSQL is recommended.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2">
                     <div className="flex-1 min-w-0 rounded-xl bg-surface-950 border border-white/10 px-3 py-2">
                       <p className="text-xs text-surface-500">Connection</p>
@@ -502,10 +543,7 @@ export default function Setup() {
           )}
 
           {error && (
-            <div className="mt-5 flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="mt-5 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 whitespace-pre-wrap leading-relaxed">
               {error}
             </div>
           )}

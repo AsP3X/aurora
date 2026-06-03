@@ -34,6 +34,13 @@ export default function AdminOverviewPage() {
     total_songs: number;
     total_playlists: number;
     total_storage_bytes: number;
+    object_storage?: {
+      total_objects: number;
+      logical_bytes: number;
+      max_logical_bytes: number;
+      metadata_backend: string;
+      replication_pending_events: number;
+    } | null;
   } | null>(null);
   const [listeningStats, setListeningStats] = useState<{
     total_plays: number;
@@ -114,6 +121,55 @@ export default function AdminOverviewPage() {
           colorClass="bg-rose-500/20 text-rose-400"
         />
       </div>
+
+      {stats?.object_storage && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <AdminStatCard
+            label="Object store objects"
+            value={formatNumber(stats.object_storage.total_objects)}
+            icon={
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+              </svg>
+            }
+            colorClass="bg-indigo-500/20 text-indigo-400"
+          />
+          <AdminStatCard
+            label="Object store logical"
+            value={formatBytes(stats.object_storage.logical_bytes)}
+            icon={
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7" />
+              </svg>
+            }
+            colorClass="bg-indigo-500/20 text-indigo-400"
+          />
+          <AdminStatCard
+            label="Object store cap"
+            value={
+              stats.object_storage.max_logical_bytes > 0
+                ? formatBytes(stats.object_storage.max_logical_bytes)
+                : "Unlimited"
+            }
+            icon={
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            }
+            colorClass="bg-indigo-500/20 text-indigo-400"
+          />
+          <AdminStatCard
+            label="Metadata backend"
+            value={stats.object_storage.metadata_backend}
+            icon={
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7" />
+              </svg>
+            }
+            colorClass="bg-indigo-500/20 text-indigo-400"
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <AdminStatCard

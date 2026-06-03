@@ -70,6 +70,8 @@ pub struct AppState {
     pub database_url: String,
     /// Active `STORAGE_MODE` at startup (`proxy` = Nebula OS, anything else = local filesystem).
     pub storage_mode: String,
+    /// Nebular OS base URL for readiness probes when `storage_mode` is `proxy`.
+    pub object_storage_url: String,
     /// Short TTL cache for `users.enabled` checks inside auth middleware.
     pub user_enabled_cache: auth::UserEnabledCache,
     /// Comma-separated browser origins allowed for CORS; empty means permissive (dev).
@@ -89,28 +91,37 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
     let storage: Arc<dyn Storage> = match config.storage_mode.as_str() {
         "proxy" => {
             info!("Using Nebular OS object storage at {}", config.object_storage_url);
+            let metrics_token = if config.object_storage_metrics_token.is_empty() {
+                None
+            } else {
+                Some(config.object_storage_metrics_token.clone())
+            };
             let nebula = NebulaStorage::new(
                 config.object_storage_url.clone(),
                 config.object_storage_public_url.clone(),
                 config.object_storage_bucket.clone(),
                 &config.object_storage_jwt_secret,
                 &config.signing_secret,
+                metrics_token,
             )?;
 
-            let health_url = format!("{}/health", config.object_storage_url.trim_end_matches('/'));
+            let health_url = format!(
+                "{}/health/ready",
+                config.object_storage_url.trim_end_matches('/')
+            );
             match reqwest::get(&health_url).await {
                 Ok(resp) if resp.status().is_success() => {
-                    info!("Nebular OS health check passed");
+                    info!("Nebular OS readiness check passed");
                 }
                 Ok(resp) => {
                     anyhow::bail!(
-                        "Nebular OS health check failed with status {} at {}",
+                        "Nebular OS readiness check failed with status {} at {}",
                         resp.status(),
                         health_url
                     );
                 }
                 Err(e) => {
-                    anyhow::bail!("Nebular OS health check failed: {} at {}", e, health_url);
+                    anyhow::bail!("Nebular OS readiness check failed: {} at {}", e, health_url);
                 }
             }
 
@@ -199,6 +210,7 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
         search_sync,
         database_url: config.database_url.clone(),
         storage_mode: config.storage_mode.clone(),
+        object_storage_url: config.object_storage_url.clone(),
         user_enabled_cache: auth::UserEnabledCache::default(),
         cors_allowed_origins: config.cors_allowed_origins.clone(),
     }))
@@ -357,6 +369,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/v1/admin/artwork-migration/start",
             axum::routing::post(admin::artwork_migration::start_artwork_migration),
+        )
+        .route(
+            "/api/v1/admin/database-migration/status",
+            get(admin::database_migration::get_database_migration_status),
+        )
+        .route(
+            "/api/v1/admin/database-migration/validate",
+            axum::routing::post(admin::database_migration::post_validate_database_migration),
+        )
+        .route(
+            "/api/v1/admin/database-migration/start",
+            axum::routing::post(admin::database_migration::start_database_migration),
         )
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 

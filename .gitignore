@@ -28,6 +28,8 @@ target/
 *.rs.bk
 
 # ─── Database ───
+data/*
+!data/.gitkeep
 *.db
 *.db-shm
 *.db-wal

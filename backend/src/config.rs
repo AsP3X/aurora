@@ -30,6 +30,9 @@ pub struct Config {
     pub signing_secret: String,
     #[serde(default = "default_object_storage_jwt_secret")]
     pub object_storage_jwt_secret: String,
+    /// Optional bearer token for Nebular `GET /metrics` (maps to `NOS_METRICS_TOKEN`).
+    #[serde(default)]
+    pub object_storage_metrics_token: String,
     #[serde(default = "default_master_secret")]
     pub master_secret: String,
     #[serde(default = "default_url_expiry_seconds")]

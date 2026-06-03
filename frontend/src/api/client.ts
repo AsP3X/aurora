@@ -854,6 +854,67 @@ export async function startArtworkMigration() {
   return apiFetch("/admin/artwork-migration/start", { method: "POST" }) as Promise<ArtworkMigrationStatus>;
 }
 
+export interface DatabaseMigrationCheck {
+  id: string;
+  label: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface DatabaseMigrationTableCount {
+  table: string;
+  count: number;
+}
+
+export interface DatabaseMigrationStatus {
+  status: string;
+  progress: number;
+  phase: string | null;
+  target_driver: string;
+  source_sqlite_url: string | null;
+  checks: DatabaseMigrationCheck[];
+  source_counts: DatabaseMigrationTableCount[];
+  target_counts: DatabaseMigrationTableCount[];
+  verify_ok: boolean | null;
+  error: string | null;
+  restart_recommended: boolean;
+}
+
+export interface ValidateDatabaseMigrationResponse {
+  ready: boolean;
+  checks: DatabaseMigrationCheck[];
+  source_counts: DatabaseMigrationTableCount[];
+  target_counts: DatabaseMigrationTableCount[];
+}
+
+export async function fetchDatabaseMigrationStatus() {
+  return apiFetch("/admin/database-migration/status") as Promise<DatabaseMigrationStatus>;
+}
+
+export async function validateDatabaseMigration(sqliteDatabaseUrl: string) {
+  return apiFetch("/admin/database-migration/validate", {
+    method: "POST",
+    body: JSON.stringify({ sqlite_database_url: sqliteDatabaseUrl }),
+  }) as Promise<ValidateDatabaseMigrationResponse>;
+}
+
+export async function startDatabaseMigration(payload: {
+  sqlite_database_url: string;
+  confirm_target_empty: boolean;
+  confirm_source_backup: boolean;
+  confirmation_phrase: string;
+}) {
+  return apiFetch("/admin/database-migration/start", {
+    method: "POST",
+    body: JSON.stringify({
+      sqlite_database_url: payload.sqlite_database_url,
+      confirm_target_empty: payload.confirm_target_empty,
+      confirm_source_backup: payload.confirm_source_backup,
+      confirmation_phrase: payload.confirmation_phrase,
+    }),
+  }) as Promise<DatabaseMigrationStatus>;
+}
+
 export async function fetchAdminPlaylists() {
   return apiFetch("/admin/playlists") as Promise<Array<{
     id: string;
@@ -877,6 +938,13 @@ export async function fetchAdminStats() {
     total_songs: number;
     total_playlists: number;
     total_storage_bytes: number;
+    object_storage?: {
+      total_objects: number;
+      logical_bytes: number;
+      max_logical_bytes: number;
+      metadata_backend: string;
+      replication_pending_events: number;
+    } | null;
   }>;
 }
 

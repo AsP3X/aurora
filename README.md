@@ -2,6 +2,8 @@
 
 Self-hosted music streaming server with a web player UI.
 
+**License:** [NOCL-1.0](LICENSE) (private, non-commercial use). Commercial use requires a separate license — see [nebular-os/COMMERCIAL-LICENSE.md](nebular-os/COMMERCIAL-LICENSE.md) for the object-storage component.
+
 ## Quick Start
 
 ### Prerequisites

@@ -1,16 +1,17 @@
-// Human: HTTP client for Nebular OS (https://github.com/AsP3X/nebular-os)—service JWTs plus HMAC presigned URLs for browser fetches.
+// Human: HTTP client for Nebular OS (https://github.com/AsP3X/nebular-os)—service JWTs, HMAC presigned URLs, copy, multipart, and metrics.
 // Agent: USES reqwest with Bearer service token; IMPLEMENTS Storage; generate_signature BUILDS presigned GET URLs; READS base/public URLs + bucket.
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, IF_NONE_MATCH};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::storage::{Storage, StorageStream};
+use super::http_error::{ensure_success, StorageHttpError};
+use super::{ObjectStorageMetrics, PutOptions, Storage, StorageStream, NEBULA_MULTIPART_THRESHOLD};
 
 type HmacSha256 = Hmac<Sha256>;
 
 // Human: Canonical string `${METHOD}\n${bucket}\n${key}\n${expires}` signed with the object-store signing secret for time-bounded URLs.
-// Agent: READS method, secret, bucket, key, expires; RETURNS hex HMAC; USED by presigned_url + presigned_segment_url.
 fn generate_signature(method: &str, secret: &str, bucket: &str, key: &str, expires: u64) -> anyhow::Result<String> {
     let payload = format!("{}\n{}\n{}\n{}", method.to_uppercase(), bucket, key, expires);
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
@@ -27,12 +28,19 @@ pub struct NebulaStorage {
     bucket: String,
     jwt_token: String,
     signing_secret: String,
+    metrics_token: Option<String>,
 }
 
 impl NebulaStorage {
     // Human: Bootstrap HTTP client state and mint a long-lived backend JWT so subsequent object verbs share one Authorization header.
-    // Agent: READS jwt_secret + signing_secret; CALLS generate_service_token; TRIMS base URLs; LOGS non-secret connection metadata only.
-    pub fn new(base_url: String, public_base_url: String, bucket: String, jwt_secret: &str, signing_secret: &str) -> anyhow::Result<Self> {
+    pub fn new(
+        base_url: String,
+        public_base_url: String,
+        bucket: String,
+        jwt_secret: &str,
+        signing_secret: &str,
+        metrics_token: Option<String>,
+    ) -> anyhow::Result<Self> {
         let token = generate_service_token(jwt_secret)?;
         let base_url = base_url.trim_end_matches('/').to_string();
         let public_base_url = public_base_url.trim_end_matches('/').to_string();
@@ -44,6 +52,7 @@ impl NebulaStorage {
             bucket,
             jwt_token: token,
             signing_secret: signing_secret.to_string(),
+            metrics_token: metrics_token.filter(|t| !t.is_empty()),
         })
     }
 
@@ -55,14 +64,99 @@ impl NebulaStorage {
         format!("{}/{}/{}", self.public_base_url, self.bucket, key)
     }
 
-    fn auth_header(&self) -> reqwest::header::HeaderValue {
-        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.jwt_token))
-            .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static(""))
+    fn auth_header(&self) -> HeaderValue {
+        HeaderValue::from_str(&format!("Bearer {}", self.jwt_token))
+            .unwrap_or_else(|_| HeaderValue::from_static(""))
+    }
+
+    fn put_headers(&self, content_type: &str, options: PutOptions) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, self.auth_header());
+        headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")));
+        if options.create_only {
+            headers.insert(IF_NONE_MATCH, HeaderValue::from_static("*"));
+        }
+        headers
+    }
+
+    async fn put_multipart(
+        &self,
+        key: &str,
+        content_type: &str,
+        data: Vec<u8>,
+        options: PutOptions,
+    ) -> anyhow::Result<()> {
+        #[derive(serde::Deserialize)]
+        struct InitResp {
+            upload_id: String,
+            part_size: usize,
+        }
+
+        let init_url = format!(
+            "{}/{}/_multipart?key={}",
+            self.base_url,
+            self.bucket,
+            urlencoding::encode(key)
+        );
+        let mut init_req = self
+            .client
+            .post(&init_url)
+            .header(AUTHORIZATION, self.auth_header())
+            .header(CONTENT_TYPE, content_type);
+        if options.create_only {
+            init_req = init_req.header(IF_NONE_MATCH, "*");
+        }
+        let init_resp = init_req.send().await?;
+        let status = init_resp.status();
+        if !status.is_success() {
+            let body = init_resp.text().await.unwrap_or_default();
+            return Err(StorageHttpError {
+                status: status.as_u16(),
+                body,
+                context: "multipart init".into(),
+            }
+            .into());
+        }
+        let init: InitResp = init_resp.json().await?;
+        let part_size = init.part_size.max(1);
+        let upload_id = init.upload_id;
+
+        let mut offset = 0usize;
+        let mut part_number = 1i32;
+        while offset < data.len() {
+            let end = (offset + part_size).min(data.len());
+            let chunk = &data[offset..end];
+            let part_url = format!(
+                "{}/{}/_multipart/{}/parts/{}",
+                self.base_url, self.bucket, upload_id, part_number
+            );
+            let part_resp = self
+                .client
+                .put(&part_url)
+                .header(AUTHORIZATION, self.auth_header())
+                .body(chunk.to_vec())
+                .send()
+                .await?;
+            ensure_success(part_resp, "multipart part").await?;
+            offset = end;
+            part_number += 1;
+        }
+
+        let complete_url = format!(
+            "{}/{}/_multipart/{}/complete",
+            self.base_url, self.bucket, upload_id
+        );
+        let complete_resp = self
+            .client
+            .post(&complete_url)
+            .header(AUTHORIZATION, self.auth_header())
+            .send()
+            .await?;
+        ensure_success(complete_resp, "multipart complete").await?;
+        Ok(())
     }
 }
 
-// Human: Mint a dedicated HS256 token identifying the backend service subject so Nebula accepts bucket operations without user cookies.
-// Agent: READS jwt_secret; ENCODE Claims `{ sub: aurora-backend, role: admin }`; TTL ~1y; RETURNS compact JWT string.
 fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
     use serde::{Deserialize, Serialize};
@@ -80,7 +174,7 @@ fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    let exp = now + 86400 * 365; // 1 year
+    let exp = now + 86400 * 365;
 
     let claims = Claims {
         sub: "aurora-backend".to_string(),
@@ -101,8 +195,6 @@ fn generate_service_token(jwt_secret: &str) -> anyhow::Result<String> {
 
 #[async_trait::async_trait]
 impl Storage for NebulaStorage {
-    // Human: Stream the object bytes through reqwest into an async Reader-compatible byte stream with declared length and content-type.
-    // Agent: HTTP GET with Bearer; REQUIRES 2xx; MAPS Body bytes_stream into io::Error adapter; LOGS URL/status metadata.
     async fn get_stream(
         &self,
         key: &str,
@@ -112,27 +204,30 @@ impl Storage for NebulaStorage {
         let response = self
             .client
             .get(&url)
-            .header(reqwest::header::AUTHORIZATION, self.auth_header())
+            .header(AUTHORIZATION, self.auth_header())
             .send()
             .await?;
 
         let status = response.status();
         if !status.is_success() {
             tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage GET failed");
-            anyhow::bail!("Nebular OS GET failed: {} {}", status.as_u16(), url);
+            let body = response.text().await.unwrap_or_default();
+            return Err(StorageHttpError {
+                status: status.as_u16(),
+                body,
+                context: "GET".into(),
+            }
+            .into());
         }
 
-        let content_length = response
-            .content_length()
-            .unwrap_or(0);
+        let content_length = response.content_length().unwrap_or(0);
         let content_type = response
             .headers()
-            .get(reqwest::header::CONTENT_TYPE)
+            .get(CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("application/octet-stream")
             .to_string();
 
-        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, content_length, %content_type, "NebulaStorage GET success");
         let stream = response.bytes_stream().map(|res| {
             res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         });
@@ -140,106 +235,131 @@ impl Storage for NebulaStorage {
         Ok((Box::pin(stream), content_length, content_type))
     }
 
-    // Human: Cheap existence probe using HTTP HEAD so upload/commit paths can branch without downloading bodies.
-    // Agent: HTTP HEAD with Bearer; RETURNS status.is_success; LOGS debug only.
     async fn exists(&self, key: &str) -> anyhow::Result<bool> {
         let url = self.url(key);
-        tracing::debug!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage HEAD request");
         let response = self
             .client
             .head(&url)
-            .header(reqwest::header::AUTHORIZATION, self.auth_header())
+            .header(AUTHORIZATION, self.auth_header())
             .send()
             .await?;
-
-        let exists = response.status().is_success();
-        tracing::debug!(url_redacted = %crate::redact::url_for_log(&url), key, exists, "NebulaStorage HEAD result");
-        Ok(exists)
+        Ok(response.status().is_success())
     }
 
-    // Human: Remove an object key; treat 404 as success so deletes are idempotent during cleanup paths.
-    // Agent: HTTP DELETE; ALLOWS 404; BAIL on other non-success; LOGS info/error with URL.
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         let url = self.url(key);
-        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage DELETE request");
         let response = self
             .client
             .delete(&url)
-            .header(reqwest::header::AUTHORIZATION, self.auth_header())
+            .header(AUTHORIZATION, self.auth_header())
             .send()
             .await?;
 
         let status = response.status();
-        if !status.is_success() && status.as_u16() != 404 {
-            tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage DELETE failed");
-            anyhow::bail!(
-                "Nebular OS DELETE failed: {} {}",
-                status.as_u16(),
-                url
-            );
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
         }
-        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage DELETE success");
-        Ok(())
+        let body = response.text().await.unwrap_or_default();
+        Err(StorageHttpError {
+            status: status.as_u16(),
+            body,
+            context: "DELETE".into(),
+        }
+        .into())
     }
 
-    // Human: Upload arbitrary bytes with explicit content type—used for audio, images, HLS segments, and playlists alike.
-    // Agent: HTTP PUT body=data; REQUIRES 2xx; SETS CONTENT-TYPE; LOGS len + URL.
-    async fn put(
-        &self, key: &str, content_type: &str, data: Vec<u8>) -> anyhow::Result<()> {
+    async fn put_with_options(
+        &self,
+        key: &str,
+        content_type: &str,
+        data: Vec<u8>,
+        options: PutOptions,
+    ) -> anyhow::Result<()> {
+        if data.len() >= NEBULA_MULTIPART_THRESHOLD {
+            return self.put_multipart(key, content_type, data, options).await;
+        }
+
         let url = self.url(key);
         let len = data.len();
         tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, %content_type, len, "NebulaStorage PUT request");
         let response = self
             .client
             .put(&url)
-            .header(reqwest::header::AUTHORIZATION, self.auth_header())
-            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .headers(self.put_headers(content_type, options))
             .body(data)
             .send()
             .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            tracing::error!(url_redacted = %crate::redact::url_for_log(&url), key, status = status.as_u16(), "NebulaStorage PUT failed");
-            anyhow::bail!(
-                "Nebular OS PUT failed: {} {}",
-                status.as_u16(),
-                url
-            );
-        }
-        tracing::info!(url_redacted = %crate::redact::url_for_log(&url), key, "NebulaStorage PUT success");
-        Ok(())
+        ensure_success(response, "PUT").await
     }
 
-    // Human: Hand clients a time-limited CDN-style URL for full-file streaming when HLS is not ready or for simple proxies.
-    // Agent: READS wall clock + expiry_seconds; APPENDS signature + expires query params on public_url; SAME scheme as segments.
+    async fn copy_object(&self, src_key: &str, dest_key: &str) -> anyhow::Result<()> {
+        let url = self.url(dest_key);
+        let copy_source = format!("{}/{}", self.bucket, src_key);
+        tracing::info!(
+            src_key,
+            dest_key,
+            url_redacted = %crate::redact::url_for_log(&url),
+            "NebulaStorage COPY request"
+        );
+        let response = self
+            .client
+            .put(&url)
+            .header(AUTHORIZATION, self.auth_header())
+            .header("x-nd-copy-source", copy_source)
+            .send()
+            .await?;
+        ensure_success(response, "COPY").await
+    }
+
     fn presigned_url(&self, key: &str, expiry_seconds: u64) -> anyhow::Result<String> {
         let expires = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
-            .as_secs() + expiry_seconds;
+            .as_secs()
+            + expiry_seconds;
 
         let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
-        let url = format!(
+        Ok(format!(
             "{}?signature={}&expires={}",
-            self.public_url(key), signature, expires
-        );
-        tracing::debug!(key, url_redacted = %crate::redact::url_for_log(&url), expires, "NebulaStorage presigned_url generated");
-        Ok(url)
+            self.public_url(key),
+            signature,
+            expires
+        ))
     }
 
-    // Human: Variant kept distinct for clarity at call sites even though signing matches `presigned_url` today—HLS segments use the same GET HMAC contract.
-    // Agent: IDENTICAL signing inputs to presigned_url; RETURNS public_url + signature query; USED by handlers guessing nebula mode.
     fn presigned_segment_url(&self, key: &str, expires_secs: u64) -> anyhow::Result<String> {
-        let expires = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs() + expires_secs;
+        self.presigned_url(key, expires_secs)
+    }
 
-        let signature = generate_signature("GET", &self.signing_secret, &self.bucket, key, expires)?;
-        let url = format!(
-            "{}?signature={}&expires={}",
-            self.public_url(key), signature, expires
-        );
-        tracing::debug!(key, url_redacted = %crate::redact::url_for_log(&url), expires, "NebulaStorage presigned_segment_url generated");
-        Ok(url)
+    async fn object_storage_metrics(&self) -> Option<ObjectStorageMetrics> {
+        #[derive(serde::Deserialize)]
+        struct MetricsResp {
+            total_objects: i64,
+            logical_bytes: i64,
+            max_logical_bytes: i64,
+            metadata_backend: String,
+            replication_pending_events: u64,
+        }
+
+        let url = format!("{}/metrics", self.base_url);
+        let mut req = self.client.get(&url);
+        if let Some(token) = &self.metrics_token {
+            req = req.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let resp = req.send().await.ok()?;
+        if !resp.status().is_success() {
+            tracing::warn!(
+                status = resp.status().as_u16(),
+                "NebulaStorage metrics fetch failed"
+            );
+            return None;
+        }
+        let m: MetricsResp = resp.json().await.ok()?;
+        Some(ObjectStorageMetrics {
+            total_objects: m.total_objects,
+            logical_bytes: m.logical_bytes,
+            max_logical_bytes: m.max_logical_bytes,
+            metadata_backend: m.metadata_backend,
+            replication_pending_events: m.replication_pending_events,
+        })
     }
 }

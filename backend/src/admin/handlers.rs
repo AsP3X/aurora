@@ -177,6 +177,7 @@ pub struct AdminStats {
     pub total_songs: i64,
     pub total_playlists: i64,
     pub total_storage_bytes: i64,
+    pub object_storage: Option<crate::storage::ObjectStorageMetrics>,
 }
 
 pub async fn get_admin_stats(
@@ -201,11 +202,14 @@ pub async fn get_admin_stats(
         .fetch_one(&state.pool)
         .await?;
 
+    let object_storage = state.storage.object_storage_metrics().await;
+
     Ok(Json(AdminStats {
         total_users,
         total_songs,
         total_playlists,
         total_storage_bytes,
+        object_storage,
     }))
 }
 
@@ -234,7 +238,9 @@ pub async fn list_settings(
     // Agent: FILTER OUT keys starting with artwork_migration_; KEEP user-facing settings in the table.
     let settings: Vec<AppSetting> = settings
         .into_iter()
-        .filter(|s| !s.key.starts_with("artwork_migration_"))
+        .filter(|s| {
+            !s.key.starts_with("artwork_migration_") && !s.key.starts_with("database_migration_")
+        })
         .collect();
 
     let mut merged: std::collections::HashMap<String, AppSetting> =

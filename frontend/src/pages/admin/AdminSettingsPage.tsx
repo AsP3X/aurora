@@ -7,6 +7,10 @@ import {
   fetchArtworkMigrationStatus,
   startArtworkMigration,
   type ArtworkMigrationStatus,
+  fetchDatabaseMigrationStatus,
+  validateDatabaseMigration,
+  startDatabaseMigration,
+  type DatabaseMigrationStatus,
 } from "../../api/client";
 import PageHeader from "../../components/admin/PageHeader";
 import DataTable from "../../components/admin/DataTable";
@@ -162,6 +166,18 @@ export default function AdminSettingsPage() {
   const [migrationScanning, setMigrationScanning] = useState(true);
   const [artworkMigrationExpanded, setArtworkMigrationExpanded] = useState(false);
 
+  const [dbMigration, setDbMigration] = useState<DatabaseMigrationStatus | null>(null);
+  const [dbMigrationExpanded, setDbMigrationExpanded] = useState(true);
+  const [sqliteSourceUrl, setSqliteSourceUrl] = useState("");
+  const [dbValidateResult, setDbValidateResult] = useState<{
+    ready: boolean;
+    checks: DatabaseMigrationStatus["checks"];
+  } | null>(null);
+  const [dbConfirmEmpty, setDbConfirmEmpty] = useState(false);
+  const [dbConfirmBackup, setDbConfirmBackup] = useState(false);
+  const [dbConfirmPhrase, setDbConfirmPhrase] = useState("");
+  const [dbMigrationBusy, setDbMigrationBusy] = useState(false);
+
   const publicRegistration = settings.find((s) => s.key === "allow_public_registration");
   const requireActivation = settings.find((s) => s.key === "require_account_activation");
 
@@ -222,6 +238,33 @@ export default function AdminSettingsPage() {
       setArtworkMigrationExpanded(true);
     }
   }, [artworkMigration?.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDatabaseMigrationStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setDbMigration(status);
+          if (status.source_sqlite_url && !sqliteSourceUrl) {
+            setSqliteSourceUrl(status.source_sqlite_url);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (dbMigration?.status !== "running") return;
+    const interval = setInterval(() => {
+      void fetchDatabaseMigrationStatus()
+        .then((status) => setDbMigration(status))
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [dbMigration?.status]);
 
   // Human: Full panel when work remains, a job is active, or the last run failed; otherwise a one-line status only.
   // Agent: DERIVES from pending_count + status; CONTROLS expandable card vs top chip.
@@ -316,6 +359,48 @@ export default function AdminSettingsPage() {
 
   // Human: Start background WebP migration for songs that still use a single legacy cover file.
   // Agent: POST startArtworkMigration; SETS artworkMigration from response; DISABLES button while running.
+  async function handleValidateDatabaseMigration() {
+    if (!sqliteSourceUrl.trim()) {
+      setError("Enter the path or sqlite: URL of your old SQLite database");
+      return;
+    }
+    setDbMigrationBusy(true);
+    setError("");
+    try {
+      const res = await validateDatabaseMigration(sqliteSourceUrl.trim());
+      setDbValidateResult({ ready: res.ready, checks: res.checks });
+      const status = await fetchDatabaseMigrationStatus();
+      setDbMigration(status);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Database validation failed");
+    } finally {
+      setDbMigrationBusy(false);
+    }
+  }
+
+  async function handleStartDatabaseMigration() {
+    if (!sqliteSourceUrl.trim()) {
+      setError("Enter the SQLite source database first");
+      return;
+    }
+    setDbMigrationBusy(true);
+    setError("");
+    try {
+      const status = await startDatabaseMigration({
+        sqlite_database_url: sqliteSourceUrl.trim(),
+        confirm_target_empty: dbConfirmEmpty,
+        confirm_source_backup: dbConfirmBackup,
+        confirmation_phrase: dbConfirmPhrase,
+      });
+      setDbMigration(status);
+      setDbValidateResult(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to start database migration");
+    } finally {
+      setDbMigrationBusy(false);
+    }
+  }
+
   async function handleStartArtworkMigration() {
     setMigrationStarting(true);
     setError("");
@@ -528,6 +613,137 @@ export default function AdminSettingsPage() {
                   : migrationStarting
                     ? "Starting…"
                     : "Migrate artwork to WebP"}
+              </GlassButton>
+            </div>
+          )}
+        </AdminGlassCard>
+      )}
+
+      {dbMigration?.target_driver === "postgres" && (
+        <AdminGlassCard padding="md" className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setDbMigrationExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left focus:outline-none focus:ring-2 focus:ring-aurora-500/40 rounded"
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-white">SQLite → PostgreSQL migration</h2>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Move an existing SQLite library into this PostgreSQL instance (target must be empty)
+              </p>
+            </div>
+            <span className="text-surface-400 text-xs">{dbMigrationExpanded ? "Hide" : "Show"}</span>
+          </button>
+
+          {dbMigrationExpanded && (
+            <div className="space-y-4 border-t border-white/10 pt-4">
+              {dbMigration.status === "complete" && dbMigration.verify_ok && (
+                <p className="text-sm text-emerald-400">
+                  Migration completed and row counts verified. Restart the backend if you changed env files.
+                </p>
+              )}
+              {dbMigration.error && (
+                <p className="text-sm text-red-400">{dbMigration.error}</p>
+              )}
+              {dbMigration.status === "running" && (
+                <p className="text-sm text-aurora-300">
+                  Migrating… {dbMigration.progress}% {dbMigration.phase ? `(${dbMigration.phase})` : ""}
+                </p>
+              )}
+
+              <label className="block space-y-1">
+                <span className="text-xs text-surface-400">SQLite source (path or sqlite: URL)</span>
+                <input
+                  value={sqliteSourceUrl}
+                  onChange={(e) => setSqliteSourceUrl(e.target.value)}
+                  placeholder="sqlite:./aurora.db or /data/aurora.db"
+                  disabled={dbMigration.status === "running" || dbMigrationBusy}
+                  className="w-full px-3 py-2 bg-surface-950/80 border border-white/10 rounded-lg text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-aurora-500/50"
+                />
+              </label>
+
+              <div className="flex flex-wrap gap-2">
+                <GlassButton
+                  type="button"
+                  disabled={dbMigrationBusy || dbMigration.status === "running"}
+                  onClick={() => void handleValidateDatabaseMigration()}
+                >
+                  {dbMigrationBusy ? "Working…" : "Validate"}
+                </GlassButton>
+              </div>
+
+              {(dbValidateResult?.checks ?? dbMigration.checks).length > 0 && (
+                <ul className="space-y-2 text-xs">
+                  {(dbValidateResult?.checks ?? dbMigration.checks).map((c) => (
+                    <li
+                      key={c.id}
+                      className={`flex gap-2 ${c.ok ? "text-surface-300" : "text-red-300"}`}
+                    >
+                      <span aria-hidden>{c.ok ? "✓" : "✗"}</span>
+                      <span>
+                        <span className="font-medium text-surface-200">{c.label}:</span> {c.message}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {dbMigration.source_counts.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px] font-mono text-surface-400">
+                  {dbMigration.source_counts.map((t) => (
+                    <div key={`src-${t.table}`}>
+                      {t.table}: {t.count}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-2 text-sm text-surface-300">
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={dbConfirmBackup}
+                    onChange={(e) => setDbConfirmBackup(e.target.checked)}
+                    disabled={dbMigration.status === "running"}
+                    className="mt-1"
+                  />
+                  <span>I have backed up the SQLite file and object storage blobs</span>
+                </label>
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={dbConfirmEmpty}
+                    onChange={(e) => setDbConfirmEmpty(e.target.checked)}
+                    disabled={dbMigration.status === "running"}
+                    className="mt-1"
+                  />
+                  <span>
+                    I confirm PostgreSQL has no existing users/songs/playlists/history (empty target)
+                  </span>
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-surface-400">
+                    Type <span className="font-mono text-white">MIGRATE-DATABASE</span> to start
+                  </span>
+                  <input
+                    value={dbConfirmPhrase}
+                    onChange={(e) => setDbConfirmPhrase(e.target.value)}
+                    disabled={dbMigration.status === "running"}
+                    className="w-full px-3 py-2 bg-surface-950/80 border border-white/10 rounded-lg text-sm text-white font-mono"
+                  />
+                </label>
+              </div>
+
+              <GlassButton
+                type="button"
+                disabled={
+                  dbMigrationBusy ||
+                  dbMigration.status === "running" ||
+                  !(dbValidateResult?.ready ?? false)
+                }
+                onClick={() => void handleStartDatabaseMigration()}
+              >
+                {dbMigration.status === "running" ? "Migration running…" : "Start migration"}
               </GlassButton>
             </div>
           )}

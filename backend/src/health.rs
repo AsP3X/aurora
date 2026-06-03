@@ -27,7 +27,24 @@ pub async fn readiness(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         true
     };
 
-    let ready = db_ok && meili_ok;
+    let object_storage = if state.storage_mode == "proxy" {
+        let ready_url = format!(
+            "{}/health/ready",
+            state
+                .object_storage_url
+                .trim_end_matches('/')
+        );
+        match reqwest::get(&ready_url).await {
+            Ok(resp) if resp.status().is_success() => "ok",
+            Ok(_) => "error",
+            Err(_) => "error",
+        }
+    } else {
+        "not_configured"
+    };
+
+    let object_storage_ok = object_storage == "ok" || object_storage == "not_configured";
+    let ready = db_ok && meili_ok && object_storage_ok;
 
     Json(json!({
         "ready": ready,
@@ -39,6 +56,7 @@ pub async fn readiness(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         } else {
             "error"
         },
+        "object_storage": object_storage,
         "environment": state.environment,
     }))
 }
