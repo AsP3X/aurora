@@ -856,6 +856,24 @@ export async function startArtworkMigration() {
   return apiFetch("/admin/artwork-migration/start", { method: "POST" }) as Promise<ArtworkMigrationStatus>;
 }
 
+export interface HlsMigrationStatus {
+  status: string;
+  progress: number;
+  processed: number;
+  total: number;
+  failed: number;
+  pending_count: number;
+  error: string | null;
+}
+
+export async function fetchHlsMigrationStatus() {
+  return apiFetch("/admin/hls-migration/status") as Promise<HlsMigrationStatus>;
+}
+
+export async function startHlsMigration() {
+  return apiFetch("/admin/hls-migration/start", { method: "POST" }) as Promise<HlsMigrationStatus>;
+}
+
 export interface DatabaseMigrationCheck {
   id: string;
   label: string;

@@ -7,6 +7,9 @@ import {
   fetchArtworkMigrationStatus,
   startArtworkMigration,
   type ArtworkMigrationStatus,
+  fetchHlsMigrationStatus,
+  startHlsMigration,
+  type HlsMigrationStatus,
   fetchDatabaseMigrationStatus,
   validateDatabaseMigration,
   startDatabaseMigration,
@@ -167,6 +170,10 @@ export default function AdminSettingsPage() {
   const [migrationScanning, setMigrationScanning] = useState(true);
   const [artworkMigrationExpanded, setArtworkMigrationExpanded] = useState(false);
 
+  const [hlsMigration, setHlsMigration] = useState<HlsMigrationStatus | null>(null);
+  const [hlsMigrationExpanded, setHlsMigrationExpanded] = useState(false);
+  const [hlsMigrationStarting, setHlsMigrationStarting] = useState(false);
+
   const [dbMigration, setDbMigration] = useState<DatabaseMigrationStatus | null>(null);
   const [dbMigrationExpanded, setDbMigrationExpanded] = useState(true);
   const [sqliteSourceUrl, setSqliteSourceUrl] = useState(DEFAULT_SQLITE_MIGRATION_SOURCE);
@@ -239,6 +246,34 @@ export default function AdminSettingsPage() {
       setArtworkMigrationExpanded(true);
     }
   }, [artworkMigration?.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchHlsMigrationStatus()
+      .then((status) => {
+        if (!cancelled) setHlsMigration(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hlsMigration?.status !== "running") return;
+    const interval = setInterval(() => {
+      void fetchHlsMigrationStatus()
+        .then((status) => setHlsMigration(status))
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [hlsMigration?.status]);
+
+  useEffect(() => {
+    if (hlsMigration?.status === "running") {
+      setHlsMigrationExpanded(true);
+    }
+  }, [hlsMigration?.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -445,6 +480,19 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function handleStartHlsMigration() {
+    setHlsMigrationStarting(true);
+    setError("");
+    try {
+      const status = await startHlsMigration();
+      setHlsMigration(status);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to start HLS encryption migration");
+    } finally {
+      setHlsMigrationStarting(false);
+    }
+  }
+
   async function handleAdd() {
     if (!newKey.trim()) return;
     setSaving(true);
@@ -643,6 +691,67 @@ export default function AdminSettingsPage() {
                   : migrationStarting
                     ? "Starting…"
                     : "Migrate artwork to WebP"}
+              </GlassButton>
+            </div>
+          )}
+        </AdminGlassCard>
+      )}
+
+      {hlsMigration != null &&
+        (hlsMigration.pending_count > 0 ||
+          hlsMigration.status === "running" ||
+          hlsMigration.status === "failed" ||
+          hlsMigration.failed > 0) && (
+        <AdminGlassCard padding="md" className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setHlsMigrationExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left focus:outline-none focus:ring-2 focus:ring-aurora-500/40 rounded"
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-white">HLS encryption migration</h2>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Transcode songs that lack AES-128 HLS segments or decryptable encryption keys (common after SQLite imports)
+              </p>
+            </div>
+            <span className="text-surface-400 text-xs">{hlsMigrationExpanded ? "Hide" : "Show"}</span>
+          </button>
+
+          {hlsMigrationExpanded && (
+            <div className="space-y-4 border-t border-white/10 pt-4">
+              <p className="text-sm text-surface-300">
+                {hlsMigration.status === "running"
+                  ? `Encrypting… ${hlsMigration.progress}% (${hlsMigration.processed}/${hlsMigration.total} done, ${hlsMigration.failed} failed)`
+                  : hlsMigration.pending_count > 0
+                    ? `${hlsMigration.pending_count} song(s) need HLS encryption before playback can decrypt streams.`
+                    : "All songs have working encrypted HLS."}
+              </p>
+              {(hlsMigration.status === "running" || hlsMigration.progress > 0) && (
+                <div className="w-full h-2 bg-surface-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-aurora-500 rounded-full transition-all duration-200"
+                    style={{ width: `${hlsMigration.progress}%` }}
+                  />
+                </div>
+              )}
+              {hlsMigration.error && (
+                <p className="text-xs text-red-300">{hlsMigration.error}</p>
+              )}
+              <GlassButton
+                type="button"
+                disabled={
+                  hlsMigrationStarting ||
+                  loading ||
+                  hlsMigration.status === "running" ||
+                  hlsMigration.pending_count === 0
+                }
+                onClick={() => void handleStartHlsMigration()}
+              >
+                {hlsMigration.status === "running"
+                  ? "Migrating…"
+                  : hlsMigrationStarting
+                    ? "Starting…"
+                    : "Migrate songs to encrypted HLS"}
               </GlassButton>
             </div>
           )}

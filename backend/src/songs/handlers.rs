@@ -221,7 +221,16 @@ pub async fn get_stream_url(
 
     let (_file_key, hls_ready) = row.ok_or(AppError::NotFound)?;
 
-    if hls_ready.unwrap_or(false) {
+    let use_hls = hls_ready.unwrap_or(false)
+        && crate::hls::playback::song_hls_is_playable(
+            &state.hls_key_store,
+            state.storage.as_ref(),
+            id,
+            true,
+        )
+        .await;
+
+    if use_hls {
         let playlist_url = format!("/api/v1/songs/{}/playlist", id);
         return Ok(Json(serde_json::json!({ "url": playlist_url })));
     }

@@ -4,4 +4,5 @@ pub mod artwork_migration;
 pub mod database_migration;
 pub mod handlers;
 pub mod hls_handlers;
+pub mod hls_migration;
 pub mod upload;

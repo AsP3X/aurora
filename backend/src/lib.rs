@@ -405,6 +405,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             axum::routing::post(admin::artwork_migration::start_artwork_migration),
         )
         .route(
+            "/api/v1/admin/hls-migration/status",
+            get(admin::hls_migration::get_hls_migration_status),
+        )
+        .route(
+            "/api/v1/admin/hls-migration/start",
+            axum::routing::post(admin::hls_migration::start_hls_migration),
+        )
+        .route(
             "/api/v1/admin/database-migration/status",
             get(admin::database_migration::get_database_migration_status),
         )

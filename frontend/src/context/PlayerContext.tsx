@@ -1,8 +1,8 @@
 // Human: Global playback model: one shared audio element (wired in PlayerBar), queue, shuffle, and stream URLs (HLS vs progressive).
-// Agent: PROVIDES currentSong, queue, shuffle, volume, progress mirrors; CALLS fetchSong/fetchStreamUrl; SETS playlist URL when hls_ready.
+// Agent: PROVIDES currentSong, queue, shuffle, volume, progress mirrors; CALLS fetchStreamUrl; SETS stream URL from API.
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import type { Song } from "../types";
-import { fetchStreamUrl, fetchSong } from "../api/client";
+import { fetchStreamUrl } from "../api/client";
 import { usePlayerKeyboard } from "../hooks/usePlayerKeyboard";
 
 // Human: Invisible child so keyboard shortcuts share the same provider tree as playback state.
@@ -65,17 +65,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queueOpen, setQueueOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Human: Ask the API whether this song is HLS-ready; use master playlist URL or signed stream URL, with a same-origin fallback.
-  // Agent: CALLS fetchSong; IF hls_ready USES `/songs/:id/playlist` else fetchStreamUrl; CATCH falls back to `/stream`; READS VITE_API_URL.
+  // Human: Ask the API which stream URL to use — backend verifies AES-HLS keys and segments before returning a playlist.
+  // Agent: CALLS fetchStreamUrl; SETS currentStreamUrl from response; FALLBACK same-origin /stream on error.
   const loadStreamUrl = useCallback(async (song: Song) => {
     let url: string;
     try {
-      const songData = await fetchSong(song.id);
-      if (songData.hls_ready) {
-        url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/playlist`;
-      } else {
-        url = await fetchStreamUrl(song.id);
-      }
+      url = await fetchStreamUrl(song.id);
     } catch {
       url = `${import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000/api/v1`}/songs/${song.id}/stream`;
     }

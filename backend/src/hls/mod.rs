@@ -4,4 +4,5 @@ pub mod encode_job;
 pub mod encoder;
 pub mod handlers;
 pub mod key_store;
+pub mod playback;
 pub mod playlist;

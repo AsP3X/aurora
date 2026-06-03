@@ -93,8 +93,8 @@ export default function AdminLyricsEditorPage() {
     };
   }, [songId]);
 
-  // Human: Attach HLS or direct stream URL to the preview audio element for sync workflow.
-  // Agent: READS song.hls_ready; USES Hls.js with auth header or audio.src; CLEANUP destroy Hls.
+  // Human: Attach stream URL from the API so preview respects decryptable HLS vs direct fallback.
+  // Agent: CALLS fetchStreamUrl; USES Hls.js when playlist URL; CLEANUP destroy Hls.
   useEffect(() => {
     if (!song || !audioRef.current) return;
     const audio = audioRef.current;
@@ -113,11 +113,7 @@ export default function AdminLyricsEditorPage() {
 
       let url: string;
       try {
-        if (song!.hls_ready) {
-          url = `${apiBase}/songs/${song!.id}/playlist`;
-        } else {
-          url = await fetchStreamUrl(song!.id);
-        }
+        url = await fetchStreamUrl(song!.id);
       } catch {
         url = `${apiBase}/songs/${song!.id}/stream`;
       }
