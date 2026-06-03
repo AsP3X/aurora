@@ -13,6 +13,8 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Apply SQLite migrations (test)
         run: cargo test sqlite_migrations_apply_cleanly -- --nocapture
@@ -38,6 +40,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Apply Postgres migrations (test)
         env:

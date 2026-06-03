@@ -45,12 +45,10 @@ services:
 
   object-storage:
     build:
-      # Human: Object storage image clones Nebular OS at build time (pin in nebular-os.ref / NEBULAR_OS_REF).
-      # Agent: BUILD context docker/nebular-os; ARG NEBULAR_OS_REF; NOT vendored nebula-os/; see github.com/AsP3X/nebular-os.
-      context: ./docker/nebular-os
+      # Human: Object storage builds from the nebular-os git submodule (pinned commit in parent repo).
+      # Agent: BUILD context ./nebular-os; REQUIRES git submodule update --init; see github.com/AsP3X/nebular-os.
+      context: ./nebular-os
       dockerfile: Dockerfile
-      args:
-        NEBULAR_OS_REF: 1a16b801cc1469c4fba0d9223c07b4b1e1c36e2e
     container_name: aurora-object-storage
     environment:
       # Human: Optional at compose-parse time so `docker compose down` works without .env; Nebular validates on start.

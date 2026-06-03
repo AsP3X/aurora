@@ -8,7 +8,20 @@ Self-hosted music streaming server with a web player UI.
 
 - [Rust](https://rustup.rs/) (latest stable)
 - [Node.js](https://nodejs.org/) (20+) with [pnpm](https://pnpm.io/) (repo enforces pnpm via `packageManager`)
-- (Optional) [Docker](https://docker.com/) for PostgreSQL + Meilisearch
+- (Optional) [Docker](https://docker.com/) for PostgreSQL + Meilisearch + object storage
+
+### Clone
+
+```bash
+git clone --recurse-submodules https://github.com/AsP3X/aurora.git
+cd aurora
+```
+
+If you already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
 
 ### Install dependencies
 
@@ -59,7 +72,7 @@ docker compose --profile init run --rm init-env
 
 If you already have a `.env` with the old `MEILI_MASTER_KEY=aurora-master-key` (17 characters), re-run `init-env` above or set a key of at least 32 characters—otherwise the backend exits on startup.
 
-Then start the stack (Compose requires `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, and `NOS_*` secrets in `.env`):
+Ensure the **nebular-os** submodule is present (`git submodule update --init --recursive`), then start the stack (Compose requires `JWT_SECRET`, `SIGNING_SECRET`, `MASTER_SECRET`, and `NOS_*` secrets in `.env`):
 
 ```bash
 docker compose up --build
@@ -94,14 +107,22 @@ Unauthenticated `GET /api/v1/version` returns the crate version, optional `git_s
 ├── frontend/         # React + Vite + Tailwind
 │   ├── src/
 │   └── package.json
-├── docker/
-│   └── nebular-os/     # Dockerfile clones github.com/AsP3X/nebular-os at build time
+├── nebular-os/       # Git submodule → github.com/AsP3X/nebular-os (object storage)
 ├── docker-compose.yml
-├── nebular-os.ref      # Pinned commit (sync with compose NEBULAR_OS_REF)
 └── docs/
 ```
 
-Object storage in Docker is **[Nebular OS](https://github.com/AsP3X/nebular-os)** (standalone crate; Aurora no longer vendors `nebula-os/`). The `object-storage` service builds `docker/nebular-os/Dockerfile`, which clones the repo at the commit in `nebular-os.ref`. The backend talks to it over HTTP when `STORAGE_MODE=proxy` (PUT/GET/HEAD/DELETE and presigned URLs).
+Object storage in Docker is **[Nebular OS](https://github.com/AsP3X/nebular-os)**, included as a **git submodule** at `nebular-os/`. The pinned commit is recorded in the parent repo; bump it with `cd nebular-os && git fetch && git checkout <sha> && cd .. && git add nebular-os`. The `object-storage` service builds `nebular-os/Dockerfile`. The backend talks to it over HTTP when `STORAGE_MODE=proxy` (PUT/GET/HEAD/DELETE and presigned URLs).
+
+### Update Nebular OS on a server
+
+After `git pull`, refresh the submodule and rebuild object storage:
+
+```bash
+git submodule update --init --recursive
+docker compose build object-storage
+docker compose up -d object-storage
+```
 
 ## Key Environment Variables
 
