@@ -187,10 +187,7 @@ async fn clear_song_hls_artifacts(
         }
     }
 
-    let _ = sqlx::query("DELETE FROM song_encryption_keys WHERE song_id = $1")
-        .bind(song_id)
-        .execute(pool)
-        .await;
+    // Clear the FK reference before deleting the encryption key row (PostgreSQL enforces songs_hls_key_id_fkey).
     let _ = sqlx::query(
         "UPDATE songs SET hls_ready = false, hls_key_id = NULL, segment_count = 0,
          hls_encode_status = 'pending', hls_encode_error = NULL, conversion_progress = 0
@@ -199,6 +196,10 @@ async fn clear_song_hls_artifacts(
     .bind(song_id)
     .execute(pool)
     .await;
+    let _ = sqlx::query("DELETE FROM song_encryption_keys WHERE song_id = $1")
+        .bind(song_id)
+        .execute(pool)
+        .await;
 }
 
 async fn run_hls_migration(state: Arc<AppState>) {
