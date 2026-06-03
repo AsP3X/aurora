@@ -82,6 +82,49 @@ fn install_sqlx_drivers() {
     sqlx::any::install_default_drivers();
 }
 
+/// Human: Startup must not fail when Nebular routes `/health/ready` through object auth (pre-`faffe55`+ routing).
+/// Agent: TRY `/health/ready` first; ON non-success FALLBACK to unauthenticated `/health` liveness.
+async fn probe_nebular_object_storage(base_url: &str) -> anyhow::Result<()> {
+    let base = base_url.trim_end_matches('/');
+    let ready_url = format!("{base}/health/ready");
+    match reqwest::get(&ready_url).await {
+        Ok(resp) if resp.status().is_success() => {
+            info!("Nebular OS readiness check passed at {ready_url}");
+            return Ok(());
+        }
+        Ok(resp) => {
+            tracing::warn!(
+                status = %resp.status(),
+                %ready_url,
+                "Nebular OS /health/ready probe failed; falling back to /health"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                %ready_url,
+                "Nebular OS /health/ready unreachable; falling back to /health"
+            );
+        }
+    }
+
+    let health_url = format!("{base}/health");
+    match reqwest::get(&health_url).await {
+        Ok(resp) if resp.status().is_success() => {
+            info!(
+                "Nebular OS liveness check passed at {health_url} (readiness route unavailable)"
+            );
+            Ok(())
+        }
+        Ok(resp) => anyhow::bail!(
+            "Nebular OS liveness check failed with status {} at {}",
+            resp.status(),
+            health_url
+        ),
+        Err(e) => anyhow::bail!("Nebular OS liveness check failed: {e} at {health_url}"),
+    }
+}
+
 pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     secrets::validate_startup_secrets(config)?;
     install_sqlx_drivers();
@@ -105,25 +148,7 @@ pub async fn create_app_state(config: &Config) -> anyhow::Result<Arc<AppState>> 
                 metrics_token,
             )?;
 
-            let health_url = format!(
-                "{}/health/ready",
-                config.object_storage_url.trim_end_matches('/')
-            );
-            match reqwest::get(&health_url).await {
-                Ok(resp) if resp.status().is_success() => {
-                    info!("Nebular OS readiness check passed");
-                }
-                Ok(resp) => {
-                    anyhow::bail!(
-                        "Nebular OS readiness check failed with status {} at {}",
-                        resp.status(),
-                        health_url
-                    );
-                }
-                Err(e) => {
-                    anyhow::bail!("Nebular OS readiness check failed: {} at {}", e, health_url);
-                }
-            }
+            probe_nebular_object_storage(&config.object_storage_url).await?;
 
             Arc::new(nebula)
         }
