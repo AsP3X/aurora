@@ -567,6 +567,8 @@ export async function setupDatabaseInfo() {
   return apiFetch("/setup/database", { cache: "no-store" }) as Promise<{
     driver: string;
     database_url: string;
+    /** True when the running backend already uses Postgres (SQLite migration available in admin settings). */
+    migrate_from_sqlite_available: boolean;
   }>;
 }
 
